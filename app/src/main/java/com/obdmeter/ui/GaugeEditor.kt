@@ -1,5 +1,10 @@
 package com.obdmeter.ui
 
+import androidx.compose.ui.draw.clip
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.SliderDefaults
+import androidx.compose.foundation.border
+import androidx.compose.ui.graphics.toArgb
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
@@ -627,13 +632,110 @@ private fun ColorLine(
     extra: List<Pair<String, Long>> = emptyList(),
     onChange: (Long?) -> Unit,
 ) {
+    val presets = Layout.COLORS + EXTRA_COLORS + extra
+    var editing by remember { mutableStateOf(false) }
     Text(label, fontSize = 14.sp, modifier = Modifier.padding(top = 12.dp, bottom = 6.dp))
     Row(Modifier.horizontalScroll(rememberScrollState()), verticalAlignment = Alignment.CenterVertically) {
         ColorDot(default, value == null, "既定") { onChange(null) }
         Spacer(Modifier.width(4.dp))
-        (Layout.COLORS + EXTRA_COLORS + extra).forEach { (name, argb) ->
+        // RGB で指定した色 (候補に無い色) は先頭に出す。タップで RGB の画面を開く
+        if (value != null && presets.none { it.second == value }) {
+            ColorDot(Color(value), true, "指定した色") { editing = true }
+        }
+        Box(
+            Modifier
+                .padding(end = 8.dp)
+                .height(28.dp)
+                .clip(RoundedCornerShape(14.dp))
+                .border(1.dp, GaugeColors.CardBorder, RoundedCornerShape(14.dp))
+                .clickable { editing = true }
+                .padding(horizontal = 10.dp),
+            contentAlignment = Alignment.Center,
+        ) { Text("RGB", fontSize = 12.sp) }
+        presets.forEach { (name, argb) ->
             ColorDot(Color(argb), value == argb, name) { onChange(argb) }
         }
+    }
+    if (editing) {
+        RgbColorDialog(
+            title = label,
+            initial = value ?: (default.toArgb().toLong() and 0xFFFFFFFFL),
+            onDismiss = { editing = false },
+            onPick = { onChange(it); editing = false },
+        )
+    }
+}
+
+/** 色を R・G・B (0〜255) と不透明度、またはカラーコード (#RRGGBB / #AARRGGBB) で指定する */
+@Composable
+private fun RgbColorDialog(title: String, initial: Long, onDismiss: () -> Unit, onPick: (Long) -> Unit) {
+    var a by remember { mutableStateOf(((initial shr 24) and 0xFF).toInt()) }
+    var r by remember { mutableStateOf(((initial shr 16) and 0xFF).toInt()) }
+    var g by remember { mutableStateOf(((initial shr 8) and 0xFF).toInt()) }
+    var b by remember { mutableStateOf((initial and 0xFF).toInt()) }
+    fun argb(): Long = (a.toLong() shl 24) or (r.toLong() shl 16) or (g.toLong() shl 8) or b.toLong()
+    fun hexOf(): String = if (a == 255) "%02X%02X%02X".format(r, g, b) else "%02X%02X%02X%02X".format(a, r, g, b)
+    var hex by remember { mutableStateOf(hexOf()) }
+    var hexError by remember { mutableStateOf(false) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(title) },
+        text = {
+            Column {
+                // 見本 (暗い背景と明るい背景の両方に置いて見え方を確かめる)
+                Row(Modifier.fillMaxWidth().height(44.dp)) {
+                    Box(Modifier.weight(1f).fillMaxSize().background(GaugeColors.Background).padding(6.dp)) {
+                        Box(Modifier.fillMaxSize().clip(RoundedCornerShape(8.dp)).background(Color(argb())))
+                    }
+                    Box(Modifier.weight(1f).fillMaxSize().background(Color(0xFFE8EAED)).padding(6.dp)) {
+                        Box(Modifier.fillMaxSize().clip(RoundedCornerShape(8.dp)).background(Color(argb())))
+                    }
+                }
+                Spacer(Modifier.height(8.dp))
+                RgbSlider("R", r, Color(0xFFFF4040)) { r = it; hex = hexOf(); hexError = false }
+                RgbSlider("G", g, Color(0xFF40C040)) { g = it; hex = hexOf(); hexError = false }
+                RgbSlider("B", b, Color(0xFF4080FF)) { b = it; hex = hexOf(); hexError = false }
+                RgbSlider("不透明", a, GaugeColors.SubText) { a = it; hex = hexOf(); hexError = false }
+                OutlinedTextField(
+                    value = hex,
+                    onValueChange = { t ->
+                        hex = t.uppercase().filter { it in "0123456789ABCDEF#" }.take(9)
+                        val h = hex.removePrefix("#")
+                        val v = h.toLongOrNull(16)
+                        hexError = v == null || (h.length != 6 && h.length != 8)
+                        if (!hexError && v != null) {
+                            a = if (h.length == 8) ((v shr 24) and 0xFF).toInt() else 255
+                            r = ((v shr 16) and 0xFF).toInt()
+                            g = ((v shr 8) and 0xFF).toInt()
+                            b = (v and 0xFF).toInt()
+                        }
+                    },
+                    label = { Text("カラーコード (RRGGBB / AARRGGBB)") },
+                    prefix = { Text("#") },
+                    isError = hexError,
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
+                )
+            }
+        },
+        confirmButton = { TextButton(onClick = { onPick(argb()) }) { Text("決定") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("キャンセル") } },
+    )
+}
+
+@Composable
+private fun RgbSlider(label: String, value: Int, color: Color, onChange: (Int) -> Unit) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Text(label, Modifier.width(44.dp), fontSize = 13.sp)
+        Slider(
+            value = value.toFloat(),
+            onValueChange = { onChange(it.roundToInt().coerceIn(0, 255)) },
+            valueRange = 0f..255f,
+            colors = SliderDefaults.colors(thumbColor = color, activeTrackColor = color),
+            modifier = Modifier.weight(1f),
+        )
+        Text(value.toString(), Modifier.width(36.dp), fontSize = 13.sp, color = GaugeColors.SubText)
     }
 }
 
