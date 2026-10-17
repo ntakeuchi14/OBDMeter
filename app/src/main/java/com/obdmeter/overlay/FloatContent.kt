@@ -4,12 +4,9 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
@@ -20,14 +17,12 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.key
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.obdmeter.AppCore
@@ -38,15 +33,15 @@ import com.obdmeter.ui.resolvedDef
 import com.obdmeter.ui.statusColor
 
 /**
- * フロート表示の中身。表示中のページのメーターを、アプリと同じ並び・同じデザインで描く。
- * タップで操作ボタン (ページ切替・アプリを開く・閉じる)、ダブルタップでアプリを開く。
+ * フロート表示のメーター 1 つ。アプリと同じデザインで描く。
+ * タップで操作ボタン (アプリを開く・閉じる)、ダブルタップでアプリを開く。
  */
 @Composable
-fun FloatContent(
+fun FloatGauge(
     core: AppCore,
+    gaugeId: Long,
     showControls: Boolean,
     onToggleControls: () -> Unit,
-    onPage: (Int) -> Unit,
     onOpenApp: () -> Unit,
     onClose: () -> Unit,
 ) {
@@ -57,7 +52,7 @@ fun FloatContent(
     val supported by core.session.supported.collectAsState()
     val state by core.session.state.collectAsState()
     val fonts by core.fonts.collectAsState()
-    val page = pages.firstOrNull { it.id == settings.floatPageId } ?: pages.firstOrNull()
+    val gauge = pages.firstNotNullOfOrNull { d -> d.gauges.firstOrNull { it.id == gaugeId } }
 
     CompositionLocalProvider(
         LocalContentColor provides GaugeColors.Text,
@@ -73,21 +68,9 @@ fun FloatContent(
                     detectTapGestures(onTap = { onToggleControls() }, onDoubleTap = { onOpenApp() })
                 }
         ) {
-            if (page != null) {
-                val b = page.floatBounds()
-                BoxWithConstraints(Modifier.fillMaxSize()) {
-                    val cw = maxWidth / b[2]
-                    val ch = maxHeight / b[3]
-                    page.gauges.forEach { g ->
-                        key(g.id) {
-                            Box(
-                                Modifier
-                                    .offset(cw * (g.x - b[0]), ch * (g.y - b[1]))
-                                    .size(cw * g.w, ch * g.h)
-                                    .padding(2.dp)
-                            ) { GaugeView(g, g.resolvedDef(catalog), values, supported) }
-                        }
-                    }
+            if (gauge != null) {
+                Box(Modifier.fillMaxSize().padding(2.dp)) {
+                    GaugeView(gauge, gauge.resolvedDef(catalog), values, supported)
                 }
             }
 
@@ -100,24 +83,15 @@ fun FloatContent(
             if (showControls) {
                 Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.35f)))
                 Row(
-                    Modifier.align(Alignment.TopCenter).fillMaxWidth().padding(4.dp),
+                    Modifier.align(Alignment.TopEnd).padding(4.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    CtrlButton("◀") { onPage(-1) }
-                    Text(
-                        page?.name ?: "",
-                        Modifier.weight(1f).padding(horizontal = 4.dp),
-                        fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis,
-                        color = GaugeColors.Text,
-                    )
-                    CtrlButton("▶") { onPage(1) }
-                    Spacer(Modifier.size(6.dp))
                     CtrlButton("開く", onOpenApp)
-                    Spacer(Modifier.size(6.dp))
+                    Spacer(Modifier.size(4.dp))
                     CtrlButton("✕", onClose)
                 }
                 // 右下: ここをドラッグすると大きさを変えられる
-                Text("◢", Modifier.align(Alignment.BottomEnd).padding(6.dp), fontSize = 20.sp, color = GaugeColors.Text)
+                Text("◢", Modifier.align(Alignment.BottomEnd).padding(4.dp), fontSize = 18.sp, color = GaugeColors.Text)
             }
         }
     }
@@ -130,7 +104,7 @@ private fun CtrlButton(text: String, onClick: () -> Unit) {
             .clip(RoundedCornerShape(8.dp))
             .background(GaugeColors.Card.copy(alpha = 0.9f))
             .clickable(onClick = onClick)
-            .padding(horizontal = 10.dp, vertical = 6.dp),
+            .padding(horizontal = 8.dp, vertical = 4.dp),
         contentAlignment = Alignment.Center,
-    ) { Text(text, fontSize = 13.sp, color = GaugeColors.Text) }
+    ) { Text(text, fontSize = 12.sp, color = GaugeColors.Text) }
 }

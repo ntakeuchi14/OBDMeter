@@ -41,11 +41,8 @@ data class AppSettings(
     // --- フロート表示 (ほかのアプリやホーム画面の上にメーターを出す) ---
     /** フロート表示するページの id (null = 先頭のページ) */
     val floatPageId: Long? = null,
-    /** フロート表示の位置 (画面左上からの px) */
-    val floatX: Int = 40,
-    val floatY: Int = 120,
-    /** フロート表示の幅 (dp)。高さはメーターの並びに合わせて決まる */
-    val floatWidthDp: Int = 220,
+    /** メーターごとのフロート表示の位置・大きさ (キーはメーターの id)。無いメーターは自動で並べる */
+    val floatPlacements: Map<Long, FloatPlacement> = emptyMap(),
     /** フロート表示全体の不透明度 (0.2〜1) */
     val floatOpacity: Float = 1f,
     /** フロート表示の背景の濃さ (0 = 透明) */
@@ -214,6 +211,10 @@ data class GaugeConfig(
      */
     val fallbackKey: String? = null,
 )
+
+/** フロート表示したメーター 1 つの位置 (画面左上からの px) と幅 (dp)。高さはメーターの形で決まる */
+@Serializable
+data class FloatPlacement(val x: Int, val y: Int, val widthDp: Int)
 
 @Serializable
 data class Dashboard(

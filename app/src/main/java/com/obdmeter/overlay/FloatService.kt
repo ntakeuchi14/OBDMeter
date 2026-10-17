@@ -16,6 +16,7 @@ import android.view.MotionEvent
 import android.view.ViewConfiguration
 import android.view.WindowManager
 import android.widget.FrameLayout
+import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.platform.ComposeView
 import androidx.compose.ui.platform.ViewCompositionStrategy
@@ -33,6 +34,8 @@ import com.obdmeter.AppCore
 import com.obdmeter.R
 import com.obdmeter.data.AppSettings
 import com.obdmeter.data.Dashboard
+import com.obdmeter.data.FloatPlacement
+import com.obdmeter.data.GaugeConfig
 import com.obdmeter.session.ConnectionState
 import com.obdmeter.ui.MainActivity
 import kotlinx.coroutines.Job
@@ -62,20 +65,11 @@ object FloatController {
     }
 }
 
-/** ページ内のメーターを囲む範囲 (x, y, 列数, 行数)。フロート表示ではこの範囲だけを出す */
-fun Dashboard.floatBounds(): IntArray {
-    if (gauges.isEmpty()) return intArrayOf(0, 0, 8, 6)
-    val x0 = gauges.minOf { it.x }
-    val y0 = gauges.minOf { it.y }
-    val x1 = gauges.maxOf { it.x + it.w }
-    val y1 = gauges.maxOf { it.y + it.h }
-    return intArrayOf(x0, y0, (x1 - x0).coerceAtLeast(1), (y1 - y0).coerceAtLeast(1))
-}
-
 /**
- * メーターを、ほかのアプリやホーム画面の上に小さなウィンドウで表示するサービス。
- * - ドラッグで移動、2 本指で拡大縮小 (操作ボタン表示中は右下の ◢ でも可)
- * - タップで操作ボタン (ページ切替・アプリを開く・閉じる) を表示
+ * メーターを 1 つずつ、ほかのアプリやホーム画面の上に小さなウィンドウ (ガジェット) で表示するサービス。
+ * - アプリを離れたときに表示していたページの、各メーターがそれぞれ独立したウィンドウになる
+ * - ドラッグで移動、2 本指で拡大縮小 (操作ボタン表示中は右下の ◢ でも可)。位置と大きさはメーターごとに保存
+ * - タップで操作ボタン (アプリを開く・このメーターを閉じる)、ダブルタップでアプリを開く
  * - アプリの画面が前面にある間は隠れる
  */
 class FloatService : LifecycleService(), SavedStateRegistryOwner {
@@ -85,6 +79,8 @@ class FloatService : LifecycleService(), SavedStateRegistryOwner {
         const val ACTION_STOP = "com.obdmeter.FLOAT_STOP"
         private const val CHANNEL = "float"
         private const val NOTIFICATION_ID = 21
+        /** 位置を保存していないメーターを並べるときの縮尺 (アプリのダッシュボードに対する比率) */
+        private const val DEFAULT_SCALE = 0.45f
     }
 
     private val savedState = SavedStateRegistryController.create(this)
@@ -92,15 +88,24 @@ class FloatService : LifecycleService(), SavedStateRegistryOwner {
 
     private lateinit var core: AppCore
     private lateinit var wm: WindowManager
-    private var frame: DragFrame? = null
-    private var params: WindowManager.LayoutParams? = null
 
-    /** 操作ボタンを表示中か (Compose から参照) */
-    private val controls = mutableStateOf(false)
-    private var hideJob: Job? = null
+    /** メーター 1 つ分のウィンドウ */
+    private inner class Gadget(val gaugeId: Long) {
+        var frame: DragFrame? = null
+        var params: WindowManager.LayoutParams? = null
+        val controls: MutableState<Boolean> = mutableStateOf(false)
+        var hideJob: Job? = null
+        /** 指で大きさを変えている間の幅 (px)。null = 保存済みの幅 */
+        var liveWidth: Int? = null
+        /** 指で動かしている最中 (設定の変化で位置を戻さない) */
+        var dragging = false
+    }
 
-    /** 指で大きさを変えている間の幅 (px)。null = 保存済みの幅 */
-    private var liveWidth: Int? = null
+    private val gadgets = linkedMapOf<Long, Gadget>()
+    /** ✕ で閉じたメーター。次にアプリを離れたときはまた表示する */
+    private val closed = mutableSetOf<Long>()
+    /** アプリが隠れていて、ウィンドウを出す状態か */
+    private var showing = false
 
     override fun onCreate() {
         savedState.performAttach()
@@ -114,26 +119,24 @@ class FloatService : LifecycleService(), SavedStateRegistryOwner {
         // アプリが前面にある間は隠す
         lifecycleScope.launch {
             core.appVisible.collect { visible ->
-                if (visible) removeWindow()
-                else {
-                    // アプリで表示していたページをそのままフロート表示する
+                if (visible) {
+                    showing = false
+                    closed.clear()
+                    removeAll()
+                } else {
+                    // アプリで表示していたページのメーターを出す
                     core.appPage.value?.let { id ->
                         if (id != core.settings.value.floatPageId) core.repo.updateSettings { it.copy(floatPageId = id) }
                     }
-                    addWindow()
+                    showing = true
+                    sync()
                 }
             }
         }
-        // 大きさ・画面の点灯・表示ページを設定に合わせる
+        // メーターの追加・削除、大きさ・デザイン・画面の点灯を設定に合わせる
         lifecycleScope.launch {
-            combine(core.settings, core.dashboards, core.cellAspect, core.session.state) { s, d, a, st ->
-                Triple(s, d, a) to st
-            }.collect { (t, st) ->
-                val (s, pages, aspect) = t
-                val page = pages.firstOrNull { it.id == s.floatPageId } ?: pages.firstOrNull()
-                if (frame != null) core.floatPage.value = page?.id
-                applyLayout(s, page, aspect, keepOn = s.keepScreenOn && st !is ConnectionState.Disconnected)
-            }
+            combine(core.settings, core.dashboards, core.cellAspect, core.session.state) { _, _, _, _ -> }
+                .collect { sync() }
         }
     }
 
@@ -151,7 +154,7 @@ class FloatService : LifecycleService(), SavedStateRegistryOwner {
     }
 
     override fun onDestroy() {
-        removeWindow()
+        removeAll()
         core.floatActive.value = false
         core.floatPage.value = null
         // アプリの画面も出ていないなら、誰も見ていないので切断する (アプリに戻ったら自動で再接続)
@@ -183,8 +186,8 @@ class FloatService : LifecycleService(), SavedStateRegistryOwner {
         )
         val n = NotificationCompat.Builder(this, CHANNEL)
             .setSmallIcon(R.drawable.ic_launcher_foreground)
-            .setContentTitle("メーターをフロート表示中")
-            .setContentText("タップでアプリを開きます")
+            .setContentTitle("メーターのフロート表示")
+            .setContentText("アプリを離れるとメーターを表示します。タップでアプリを開きます")
             .setContentIntent(open)
             .addAction(0, "閉じる", stop)
             .setOngoing(true)
@@ -199,91 +202,123 @@ class FloatService : LifecycleService(), SavedStateRegistryOwner {
 
     // ---- ウィンドウ ----
 
-    private fun addWindow() {
-        if (frame != null || !FloatController.canDraw(this)) return
+    private fun currentPage(): Dashboard? {
+        val pages = core.dashboards.value
+        return pages.firstOrNull { it.id == core.settings.value.floatPageId } ?: pages.firstOrNull()
+    }
+
+    /** 表示すべきメーターとウィンドウを合わせる */
+    private fun sync() {
+        if (!showing || !FloatController.canDraw(this)) {
+            removeAll()
+            return
+        }
         val s = core.settings.value
+        val page = currentPage()
+        core.floatPage.value = page?.id
+        val want = page?.gauges.orEmpty().filter { it.id !in closed }
+        val wantIds = want.map { it.id }.toSet()
+        gadgets.keys.filter { it !in wantIds }.forEach { id -> gadgets.remove(id)?.let { remove(it) } }
+        if (want.isEmpty()) {
+            // 全部閉じたらフロート表示を終える (次にアプリを開いたとき、また待機する)
+            if (page != null && page.gauges.isNotEmpty()) stopSelf()
+            return
+        }
+        val keepOn = s.keepScreenOn && core.session.state.value !is ConnectionState.Disconnected
+        want.forEach { g ->
+            val gadget = gadgets.getOrPut(g.id) { Gadget(g.id) }
+            if (gadget.frame == null) add(gadget)
+            if (!gadget.dragging) layout(gadget, g, s, keepOn)
+        }
+    }
+
+    private fun add(gadget: Gadget) {
         val p = WindowManager.LayoutParams(
-            dp(s.floatWidthDp), dp(s.floatWidthDp / 2),
+            dp(120), dp(120),
             WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
             WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
             PixelFormat.TRANSLUCENT,
-        ).apply {
-            gravity = Gravity.TOP or Gravity.START
-            x = s.floatX
-            y = s.floatY
-        }
+        ).apply { gravity = Gravity.TOP or Gravity.START }
         val compose = ComposeView(this).apply {
             setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnDetachedFromWindowOrReleasedFromPool)
             setContent {
-                FloatContent(
+                FloatGauge(
                     core = core,
-                    showControls = controls.value,
-                    onToggleControls = { showControls(!controls.value) },
-                    onPage = ::changePage,
+                    gaugeId = gadget.gaugeId,
+                    showControls = gadget.controls.value,
+                    onToggleControls = { showControls(gadget, !gadget.controls.value) },
                     onOpenApp = ::openApp,
-                    onClose = { stopSelf() },
+                    onClose = { closeGauge(gadget.gaugeId) },
                 )
             }
         }
-        val f = DragFrame(this).apply {
+        val f = DragFrame(this, gadget).apply {
             setViewTreeLifecycleOwner(this@FloatService)
             setViewTreeSavedStateRegistryOwner(this@FloatService)
             addView(compose)
         }
         runCatching { wm.addView(f, p) }.onSuccess {
-            frame = f
-            params = p
-            val pages = core.dashboards.value
-            val page = pages.firstOrNull { it.id == s.floatPageId } ?: pages.firstOrNull()
-            core.floatPage.value = page?.id
-            applyLayout(s, page, core.cellAspect.value, keepOn = s.keepScreenOn &&
-                core.session.state.value !is ConnectionState.Disconnected)
+            gadget.frame = f
+            gadget.params = p
         }
     }
 
-    private fun removeWindow() {
-        frame?.let { runCatching { wm.removeView(it) } }
-        frame = null
-        params = null
-        core.floatPage.value = null
-        controls.value = false
+    private fun remove(gadget: Gadget) {
+        gadget.hideJob?.cancel()
+        gadget.frame?.let { runCatching { wm.removeView(it) } }
+        gadget.frame = null
+        gadget.params = null
     }
 
-    /** 幅とメーターの並びから、ウィンドウの大きさ・位置を決める */
-    private fun applyLayout(s: AppSettings, page: Dashboard?, cellAspect: Float, keepOn: Boolean) {
-        val f = frame ?: return
-        val p = params ?: return
-        val b = page?.floatBounds() ?: intArrayOf(0, 0, 8, 6)
+    private fun removeAll() {
+        gadgets.values.forEach { remove(it) }
+        gadgets.clear()
+        core.floatPage.value = null
+    }
+
+    private fun closeGauge(id: Long) {
+        closed += id
+        sync()
+    }
+
+    /** 位置を保存していないメーターの既定の位置・幅: アプリのダッシュボードの並びを縮小したもの */
+    private fun defaultPlacement(g: GaugeConfig): FloatPlacement {
+        val m = resources.displayMetrics
+        val cellW = m.widthPixels / 24f * DEFAULT_SCALE
+        val cellH = cellW / core.cellAspect.value
+        return FloatPlacement(
+            x = (dp(16) + g.x * cellW).roundToInt(),
+            y = (dp(80) + g.y * cellH).roundToInt(),
+            widthDp = (g.w * cellW / m.density).roundToInt(),
+        )
+    }
+
+    /** メーターの形と保存済みの位置から、ウィンドウの大きさ・位置を決める */
+    private fun layout(gadget: Gadget, g: GaugeConfig, s: AppSettings, keepOn: Boolean) {
+        val f = gadget.frame ?: return
+        val p = gadget.params ?: return
+        val place = s.floatPlacements[g.id] ?: defaultPlacement(g)
         val screenW = resources.displayMetrics.widthPixels
         val screenH = resources.displayMetrics.heightPixels
-        val ratio = (b[2] * cellAspect) / b[3] // 幅 / 高さ
-        var w = (liveWidth ?: dp(s.floatWidthDp)).coerceIn(dp(80), screenW)
+        val ratio = (g.w * core.cellAspect.value) / g.h.coerceAtLeast(1) // 幅 / 高さ
+        var w = (gadget.liveWidth ?: dp(place.widthDp)).coerceIn(dp(48), screenW)
         var h = (w / ratio).roundToInt()
         if (h > screenH) { h = screenH; w = (h * ratio).roundToInt() }
         p.width = w
         p.height = h
-        if (liveWidth == null) {
-            p.x = s.floatX.coerceIn(0, (screenW - w).coerceAtLeast(0))
-            p.y = s.floatY.coerceIn(0, (screenH - h).coerceAtLeast(0))
+        if (gadget.liveWidth == null) {
+            p.x = place.x.coerceIn(0, (screenW - w).coerceAtLeast(0))
+            p.y = place.y.coerceIn(0, (screenH - h).coerceAtLeast(0))
         }
         p.flags = if (keepOn) p.flags or WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON
         else p.flags and WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON.inv()
         runCatching { wm.updateViewLayout(f, p) }
     }
 
-    private fun showControls(show: Boolean) {
-        controls.value = show
-        hideJob?.cancel()
-        if (show) hideJob = lifecycleScope.launch { delay(5000); controls.value = false }
-    }
-
-    private fun changePage(delta: Int) {
-        showControls(true)
-        val pages = core.dashboards.value
-        if (pages.isEmpty()) return
-        val cur = pages.indexOfFirst { it.id == core.settings.value.floatPageId }.coerceAtLeast(0)
-        val next = pages[(cur + delta).mod(pages.size)]
-        lifecycleScope.launch { core.repo.updateSettings { it.copy(floatPageId = next.id) } }
+    private fun showControls(gadget: Gadget, show: Boolean) {
+        gadget.controls.value = show
+        gadget.hideJob?.cancel()
+        if (show) gadget.hideJob = lifecycleScope.launch { delay(5000); gadget.controls.value = false }
     }
 
     private fun openApp() {
@@ -298,12 +333,17 @@ class FloatService : LifecycleService(), SavedStateRegistryOwner {
     private fun dp(v: Int): Int = (v * resources.displayMetrics.density).roundToInt()
 
     /** 位置・大きさを保存する (指を離したとき) */
-    private fun savePlacement() {
-        val p = params ?: return
-        val widthDp = (p.width / resources.displayMetrics.density).roundToInt()
-        liveWidth = null
+    private fun savePlacement(gadget: Gadget) {
+        val p = gadget.params ?: return
+        val place = FloatPlacement(p.x, p.y, (p.width / resources.displayMetrics.density).roundToInt())
         lifecycleScope.launch {
-            core.repo.updateSettings { it.copy(floatX = p.x, floatY = p.y, floatWidthDp = widthDp) }
+            core.repo.updateSettings { st ->
+                // 消えたメーターの記録は残さない
+                val alive = core.dashboards.value.flatMap { d -> d.gauges.map { it.id } }.toSet()
+                st.copy(floatPlacements = (st.floatPlacements + (gadget.gaugeId to place)).filterKeys { it in alive })
+            }
+            gadget.liveWidth = null
+            gadget.dragging = false
         }
     }
 
@@ -312,7 +352,7 @@ class FloatService : LifecycleService(), SavedStateRegistryOwner {
      * 指が少し動いたらドラッグとみなして横取りし、動かなければ中のメーター (タップで操作ボタン) に渡す。
      */
     @SuppressLint("ViewConstructor")
-    private inner class DragFrame(context: Context) : FrameLayout(context) {
+    private inner class DragFrame(context: Context, private val gadget: Gadget) : FrameLayout(context) {
         private val slop = ViewConfiguration.get(context).scaledTouchSlop
         private var downX = 0f
         private var downY = 0f
@@ -333,23 +373,27 @@ class FloatService : LifecycleService(), SavedStateRegistryOwner {
         }
 
         private fun track(e: MotionEvent): Boolean {
-            val p = params ?: return false
+            val p = gadget.params ?: return false
             when (e.actionMasked) {
                 MotionEvent.ACTION_DOWN -> {
                     downX = e.rawX; downY = e.rawY
                     startX = p.x; startY = p.y; startW = p.width
-                    corner = controls.value && e.x > width - dp(44) && e.y > height - dp(44)
+                    corner = gadget.controls.value && e.x > width - dp(40) && e.y > height - dp(40)
                     mode = 0
                 }
                 MotionEvent.ACTION_POINTER_DOWN -> if (e.pointerCount == 2) {
                     pinchStart = spacing(e)
                     startW = p.width
                     mode = 3
+                    gadget.dragging = true
                 }
                 MotionEvent.ACTION_MOVE -> {
                     val dx = e.rawX - downX
                     val dy = e.rawY - downY
-                    if (mode == 0 && hypot(dx, dy) > slop) mode = if (corner) 2 else 1
+                    if (mode == 0 && hypot(dx, dy) > slop) {
+                        mode = if (corner) 2 else 1
+                        gadget.dragging = true
+                    }
                     when (mode) {
                         1 -> {
                             val screenW = resources.displayMetrics.widthPixels
@@ -367,7 +411,7 @@ class FloatService : LifecycleService(), SavedStateRegistryOwner {
                 MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
                     val was = mode
                     mode = 0
-                    if (was != 0) savePlacement()
+                    if (was != 0) savePlacement(gadget)
                     return was != 0
                 }
             }
@@ -375,12 +419,10 @@ class FloatService : LifecycleService(), SavedStateRegistryOwner {
         }
 
         private fun resizeTo(w: Int) {
-            liveWidth = w.coerceIn(dp(80), resources.displayMetrics.widthPixels)
-            val s = core.settings.value
-            val pages = core.dashboards.value
-            val page = pages.firstOrNull { it.id == s.floatPageId } ?: pages.firstOrNull()
-            applyLayout(s, page, core.cellAspect.value, keepOn = params?.flags?.and(
-                WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON) != 0)
+            val g = currentPage()?.gauges?.firstOrNull { it.id == gadget.gaugeId } ?: return
+            gadget.liveWidth = w.coerceIn(dp(48), resources.displayMetrics.widthPixels)
+            val keepOn = (gadget.params?.flags ?: 0) and WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON != 0
+            layout(gadget, g, core.settings.value, keepOn)
         }
 
         private fun spacing(e: MotionEvent): Float = hypot(e.getX(0) - e.getX(1), e.getY(0) - e.getY(1))

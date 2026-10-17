@@ -282,7 +282,7 @@ private fun FloatSection(vm: MainViewModel, s: AppSettings) {
 
     SwitchRow(
         "メーターをフロート表示",
-        "ホームボタンなどでアプリを離れると、表示していたページのメーターを、ほかのアプリやホーム画面の上に小さく表示します。" +
+        "ホームボタンなどでアプリを離れると、表示していたページのメーターを 1 つずつ、ほかのアプリやホーム画面の上に小さく表示します。" +
             "ON のときは起動時の自動接続も ON になります",
         s.floatOnLeave,
     ) { v ->
@@ -307,7 +307,9 @@ private fun FloatSection(vm: MainViewModel, s: AppSettings) {
     }
     if (s.floatOnLeave) {
         Text(
-            "フロート表示の操作: ドラッグで移動、2 本指または右下の ◢ で大きさ変更、タップでページ切替・閉じるボタン、ダブルタップでアプリを開く",
+            "フロート表示の操作 (メーターごと): ドラッグで移動、2 本指または右下の ◢ で大きさ変更、" +
+                "タップで「開く」「✕」ボタン、ダブルタップでアプリを開く。位置と大きさはメーターごとに保存されます。" +
+                "✕ で閉じたメーターは、次にアプリを離れたときにまた表示されます",
             color = GaugeColors.SubText, fontSize = 12.sp,
         )
         FloatSlider("不透明度", s.floatOpacity, 0.2f..1f) { v -> vm.updateSettings { it.copy(floatOpacity = v) } }
