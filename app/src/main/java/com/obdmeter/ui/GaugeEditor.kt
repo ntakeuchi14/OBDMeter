@@ -748,7 +748,21 @@ private fun ChartSettings(
                 Modifier.padding(end = 6.dp))
         }
     }
-    Hint("接続中の値を 1 秒ごとに端末に記録します。期間を過ぎた記録は自動で消えます。")
+    Hint("接続中の値を端末に記録します。期間を過ぎた記録は自動で消えます。")
+
+    Head("記録する間隔")
+    Row(Modifier.horizontalScroll(rememberScrollState())) {
+        listOf(0.2f to "0.2秒", 0.5f to "0.5秒", 1f to "1秒", 2f to "2秒", 5f to "5秒", 10f to "10秒", 30f to "30秒", 60f to "1分")
+            .forEach { (sec, label) ->
+                FilterChip(d.recordIntervalSec == sec, { update { it.copy(recordIntervalSec = sec) } }, { Text(label) },
+                    Modifier.padding(end = 6.dp))
+            }
+    }
+    val perDay = 86_400f / d.recordIntervalSec * g.chartAllKeys.size * 50 / 1_000_000f
+    Hint(
+        "短いほど細かく記録できますが、端末の容量を使います (この設定で 1 日あたり約 ${"%.0f".format(perDay.coerceAtLeast(1f))} MB)。" +
+            "実際の値の更新間隔は、表示している項目の数によって遅くなることがあります。"
+    )
 
     Head("線の色")
     g.chartAllKeys.forEachIndexed { i, key ->

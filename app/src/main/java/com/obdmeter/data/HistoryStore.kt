@@ -15,8 +15,9 @@ class Sample(val t: Long, val v: Float)
 
 /**
  * 折れ線グラフ用の値の記録。
- * - 直近 [MEMORY_MS] はメモリに細かく (最短 [MEMORY_STEP_MS] 間隔) 持ち、ライブ表示に使う
- * - それより前は端末のデータベースに 1 秒ごとに保存し、さかのぼって表示するときに読む
+ * - 項目ごとに指定の間隔 ([intervals]) で記録する
+ * - 直近 [MEMORY_MS] はメモリにも持ち、ライブ表示に使う
+ * - データベースにも同じ間隔で保存し、さかのぼって表示するときに読む
  * - 保存期間 ([retentionDays]) を過ぎた記録は 1 時間ごとに消す
  * 記録するのは [keys] の項目 (どこかの折れ線グラフで使われている項目) だけ。
  */
@@ -24,8 +25,8 @@ class HistoryStore(context: Context, private val scope: CoroutineScope) {
 
     companion object {
         const val MEMORY_MS = 10 * 60_000L
-        const val MEMORY_STEP_MS = 200L
-        const val DB_STEP_MS = 1_000L
+        /** 記録間隔の最短 (値の更新が最大 10 回/秒のため) */
+        const val MIN_INTERVAL_MS = 200L
         const val MAX_DAYS = 30
     }
 
@@ -40,15 +41,14 @@ class HistoryStore(context: Context, private val scope: CoroutineScope) {
     private val helper = Helper(context.applicationContext)
     private val db: SQLiteDatabase by lazy { helper.writableDatabase }
 
-    /** 記録する項目のキー */
-    @Volatile var keys: Set<String> = emptySet()
+    /** 記録する項目のキーと記録間隔 (ミリ秒) */
+    @Volatile var intervals: Map<String, Long> = emptyMap()
     /** 保存期間 (日) */
     @Volatile var retentionDays: Int = 1
 
     private val lock = Any()
     private val recent = HashMap<String, ArrayDeque<Sample>>()
     private val lastMem = HashMap<String, Long>()
-    private val lastDb = HashMap<String, Long>()
     private val pending = ArrayList<Triple<String, Long, Float>>()
 
     init {
@@ -68,22 +68,19 @@ class HistoryStore(context: Context, private val scope: CoroutineScope) {
 
     /** 最新の値を記録する (値が届くたびに呼ぶ。間引きはここで行う) */
     fun record(values: Map<String, Double>, now: Long = System.currentTimeMillis()) {
-        val ks = keys
+        val ks = intervals
         if (ks.isEmpty()) return
         synchronized(lock) {
-            for (k in ks) {
+            for ((k, step) in ks) {
                 val v = values[k] ?: continue
                 if (v.isNaN() || v.isInfinite()) continue
-                if (now - (lastMem[k] ?: 0L) >= MEMORY_STEP_MS) {
-                    lastMem[k] = now
-                    val q = recent.getOrPut(k) { ArrayDeque() }
-                    q.addLast(Sample(now, v.toFloat()))
-                    while (q.isNotEmpty() && q.first().t < now - MEMORY_MS) q.removeFirst()
-                }
-                if (now - (lastDb[k] ?: 0L) >= DB_STEP_MS) {
-                    lastDb[k] = now
-                    pending += Triple(k, now, v.toFloat())
-                }
+                // 少し早めでも記録する (値の届く間隔のゆらぎで 1 回分飛ばさないように)
+                if (now - (lastMem[k] ?: 0L) < step.coerceAtLeast(MIN_INTERVAL_MS) - 50) continue
+                lastMem[k] = now
+                val q = recent.getOrPut(k) { ArrayDeque() }
+                q.addLast(Sample(now, v.toFloat()))
+                while (q.isNotEmpty() && q.first().t < now - MEMORY_MS) q.removeFirst()
+                pending += Triple(k, now, v.toFloat())
             }
         }
     }
@@ -170,7 +167,7 @@ class HistoryStore(context: Context, private val scope: CoroutineScope) {
     /** 記録をすべて消す */
     suspend fun clear() = withContext(Dispatchers.IO) {
         synchronized(lock) {
-            recent.clear(); lastMem.clear(); lastDb.clear(); pending.clear()
+            recent.clear(); lastMem.clear(); pending.clear()
         }
         runCatching { db.delete("samples", null, null) }
         Unit

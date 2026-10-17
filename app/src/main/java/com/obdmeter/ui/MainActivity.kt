@@ -6,7 +6,9 @@ import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
 import com.obdmeter.AppCore
 import com.obdmeter.overlay.FloatController
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import android.view.WindowManager
@@ -60,6 +62,23 @@ class MainActivity : ComponentActivity() {
                     } else if (!on && core.floatActive.value) {
                         FloatController.stop(this@MainActivity)
                     }
+                }
+            }
+        }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        // 起動時にフロート表示で始める: 最初の 1 回だけ、サービスを起動してからホーム画面に戻る
+        val core = AppCore.get(this)
+        if (!core.startInFloatDone) {
+            core.startInFloatDone = true
+            lifecycleScope.launch {
+                val s = core.repo.settings.first()
+                if (s.floatOnLeave && s.startInFloat && FloatController.canDraw(this@MainActivity)) {
+                    if (!core.floatActive.value) FloatController.start(this@MainActivity, null)
+                    delay(400) // サービスの起動を待つ
+                    moveTaskToBack(true)
                 }
             }
         }

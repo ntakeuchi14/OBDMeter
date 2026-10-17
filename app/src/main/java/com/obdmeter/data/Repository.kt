@@ -39,6 +39,7 @@ class Repository(private val context: Context) {
         val FLOAT_OPACITY = floatPreferencesKey("float_opacity")
         val FLOAT_BG = floatPreferencesKey("float_background_v2")
         val FLOAT_ON_LEAVE = booleanPreferencesKey("float_on_leave")
+        val START_IN_FLOAT = booleanPreferencesKey("start_in_float")
         val DASHBOARDS = stringPreferencesKey("dashboards_json")
         val CUSTOM_PIDS = stringPreferencesKey("custom_pids_json")
         val FONTS = stringPreferencesKey("fonts_json")
@@ -98,6 +99,7 @@ class Repository(private val context: Context) {
             p[Keys.FLOAT_OPACITY] = s.floatOpacity
             p[Keys.FLOAT_BG] = s.floatBackground
             p[Keys.FLOAT_ON_LEAVE] = s.floatOnLeave
+            p[Keys.START_IN_FLOAT] = s.startInFloat
         }
     }
 
@@ -130,6 +132,7 @@ class Repository(private val context: Context) {
             floatOpacity = this[Keys.FLOAT_OPACITY] ?: d.floatOpacity,
             floatBackground = this[Keys.FLOAT_BG] ?: d.floatBackground,
             floatOnLeave = this[Keys.FLOAT_ON_LEAVE] ?: d.floatOnLeave,
+            startInFloat = this[Keys.START_IN_FLOAT] ?: d.startInFloat,
         )
     }
 }

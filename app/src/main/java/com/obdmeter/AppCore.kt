@@ -66,6 +66,9 @@ class AppCore private constructor(context: Context) {
     /** 起動時の自動接続をこのプロセスで済ませたか */
     @Volatile var autoConnectDone = false
 
+    /** 「起動時にフロート表示で始める」をこのプロセスで済ませたか */
+    @Volatile var startInFloatDone = false
+
     /** フロート表示を閉じたときに切断した。次にアプリが前面に来たら再接続する */
     @Volatile var reconnectOnReturn = false
 
@@ -93,7 +96,13 @@ class AppCore private constructor(context: Context) {
         scope.launch {
             dashboards.collect { pages ->
                 val charts = pages.flatMap { it.gauges }.filter { it.style == GaugeStyle.CHART }
-                history.keys = charts.flatMap { it.chartAllKeys }.toSet()
+                // 同じ項目を複数のグラフで使うときは、短いほうの間隔で記録する
+                val iv = HashMap<String, Long>()
+                charts.forEach { g ->
+                    val ms = (g.design.recordIntervalSec * 1000).toLong().coerceAtLeast(HistoryStore.MIN_INTERVAL_MS)
+                    g.chartAllKeys.forEach { k -> iv[k] = minOf(iv[k] ?: Long.MAX_VALUE, ms) }
+                }
+                history.intervals = iv
                 history.retentionDays = charts.maxOfOrNull { it.design.historyDays } ?: 1
             }
         }

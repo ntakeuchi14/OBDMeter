@@ -313,6 +313,12 @@ private fun FloatSection(vm: MainViewModel, s: AppSettings) {
                 "✕ で閉じたメーターは、次にアプリを離れたときにまた表示されます",
             color = GaugeColors.SubText, fontSize = 12.sp,
         )
+        SwitchRow(
+            "起動時にフロート表示で始める",
+            "アプリを開くと自動で接続し、すぐにホーム画面に戻ってメーターをフロート表示します。" +
+                "アプリの画面は、フロート表示の「開く」か通知から出せます",
+            s.startInFloat,
+        ) { v -> vm.updateSettings { it.copy(startInFloat = v) } }
         FloatSlider("不透明度", s.floatOpacity, 0.2f..1f) { v -> vm.updateSettings { it.copy(floatOpacity = v) } }
         FloatSlider("背景の濃さ", s.floatBackground, 0f..1f) { v -> vm.updateSettings { it.copy(floatBackground = v) } }
     }

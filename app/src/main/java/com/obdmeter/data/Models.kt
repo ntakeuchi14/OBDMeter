@@ -52,6 +52,8 @@ data class AppSettings(
      * ほかのアプリやホーム画面の上に小さなウィンドウで出す。ON のときは起動時の自動接続も ON 扱い
      */
     val floatOnLeave: Boolean = false,
+    /** アプリを起動したら、すぐにホーム画面に戻ってフロート表示で始める (フロート表示が ON のときだけ) */
+    val startInFloat: Boolean = false,
 ) {
     /** 起動時に自動接続するか (フロート表示が ON なら常に接続する) */
     val autoConnectEffective: Boolean get() = autoConnect || floatOnLeave
@@ -198,6 +200,8 @@ data class GaugeDesign(
     val chartSpanSec: Int = 60,
     /** 記録を残す日数 (この日数分までさかのぼって見られる) */
     val historyDays: Int = 1,
+    /** 記録する間隔 (秒) */
+    val recordIntervalSec: Float = 1f,
     /** 項目ごとの線の色 (並びは「表示する項目」→ 追加した項目の順。null = 自動) */
     val chartColors: List<Long?> = emptyList(),
 )
