@@ -181,11 +181,15 @@ class ConnectionTest(private val context: Context, private val log: CommLogger) 
             cmd("ATSP6")
             cmd("ATSH7DF")
             // 06 00/20/…/A0 = 対応している MID の一覧。A1 = 全体、A2〜A7 = 1〜6 番の気筒
-            for (mid in listOf("00", "20", "40", "60", "80", "A0", "A1", "A2", "A3")) cmd("06$mid", 5000)
-            // エンジン ECU (7E0) だけに直接聞く
+            for (mid in listOf("00", "20", "40", "60", "80", "A0", "C0", "E0")) cmd("06$mid", 5000)
+            // A1 = 全体、A2〜A7 = 1〜6 番の気筒 (エンジン ECU 7E0 に直接聞く)
             cmd("ATSH7E0")
-            cmd("06A0", 5000)
+            for (mid in listOf("A1", "A2", "A3", "A4", "A5", "A6", "A7")) cmd("06$mid", 5000)
+            // アプリの通常の読み方 (ヘッダー表示 OFF) での応答の形
+            cmd("ATH0")
             cmd("06A2", 5000)
+            cmd("ATH1")
+            cmd("ATSH7DF")
 
             line("--- 3. BMW 方式 (6F1 + 拡張アドレス、BimmerLink などが使う方式) ---")
             cmd("ATSP6")
