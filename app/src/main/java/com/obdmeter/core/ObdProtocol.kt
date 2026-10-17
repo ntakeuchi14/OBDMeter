@@ -15,8 +15,16 @@ interface ObdProtocol {
      */
     fun readPid(pid: Int): IntArray?
 
-    /** 直近の readPid が失敗した理由 (ログ表示用)。 */
+    /** 直近の readPid / query が失敗した理由 (ログ表示用)。 */
     val lastFailure: String? get() = null
+
+    /**
+     * 任意のモード・PID を問い合わせる (カスタム PID 用)。
+     * 応答からサービス ID (0x40+mode) と PID のエコーを除いたデータ部を返す。
+     * 既定実装は Mode 01・ヘッダー指定なしのときだけ [readPid] に委ねる。
+     */
+    fun query(request: PidRequest): IntArray? =
+        if (request.isPlainMode01) readPid(request.pid[0]) else null
 
     /** アダプター自身が測るバッテリー電圧 (ELM327 の ATRV)。非対応なら null。 */
     fun readAdapterVoltage(): Double? = null
@@ -66,4 +74,49 @@ fun decodeBitmap(base: Int, data: IntArray): Set<Int> {
         if ((data[i / 8] shr (7 - i % 8)) and 1 == 1) out += base + i + 1
     }
     return out
+}
+
+/**
+ * 1 回の問い合わせ内容。
+ * @param mode サービス (01 = 現在値、22 = メーカー独自 DID 読み出し など)
+ * @param pid  PID / DID のバイト列 (Mode 01 なら 1 バイト、Mode 22 なら通常 2 バイト)
+ * @param header 送信ヘッダー。ELM327 なら ATSH の値 (例 "7E0")、K+DCAN なら送信先 ECU アドレス (例 "12")。空なら既定
+ * @param canExtAddress CAN 拡張アドレス (ELM327 の ATCEA)。BMW の 6F1 系で使う。空なら使わない
+ */
+class PidRequest(
+    val mode: Int,
+    val pid: IntArray,
+    val header: String = "",
+    val canExtAddress: String = "",
+) {
+    val isPlainMode01: Boolean get() = mode == 0x01 && pid.size == 1 && header.isEmpty() && canExtAddress.isEmpty()
+
+    /** "01 0C" / "22 1234 @7E0" のようなログ用表記 */
+    override fun toString(): String = buildString {
+        append("%02X ".format(mode))
+        pid.forEach { append("%02X".format(it)) }
+        if (header.isNotEmpty()) append(" @").append(header)
+        if (canExtAddress.isNotEmpty()) append(" CEA=").append(canExtAddress)
+    }
+
+    companion object {
+        /** "22", "1234" のような 16 進文字列から作る。不正なら例外。 */
+        fun parse(modeHex: String, pidHex: String, header: String = "", cea: String = ""): PidRequest {
+            val mode = modeHex.trim().toIntOrNull(16)?.takeIf { it in 0x01..0x3F }
+                ?: throw IllegalArgumentException("モードは 01〜3F の 16 進数で入力してください")
+            val p = pidHex.replace(" ", "")
+            if (p.length % 2 != 0 || p.length > 8 || p.any { !(it.isDigit() || it.uppercaseChar() in 'A'..'F') }) {
+                throw IllegalArgumentException("PID は 16 進数 (2〜8 桁、偶数桁) で入力してください")
+            }
+            val h = header.trim().uppercase()
+            if (h.isNotEmpty() && (h.length !in 2..8 || h.any { !(it.isDigit() || it in 'A'..'F') })) {
+                throw IllegalArgumentException("ヘッダーは 16 進数で入力してください (例: 7E0)")
+            }
+            val c = cea.trim().uppercase()
+            if (c.isNotEmpty() && (c.length != 2 || c.any { !(it.isDigit() || it in 'A'..'F') })) {
+                throw IllegalArgumentException("拡張アドレスは 16 進 2 桁で入力してください (例: 12)")
+            }
+            return PidRequest(mode, Hex.parse(p), h, c)
+        }
+    }
 }

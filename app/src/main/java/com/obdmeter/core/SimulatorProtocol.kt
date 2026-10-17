@@ -88,6 +88,19 @@ class SimulatorProtocol(
         }
     }
 
+    /**
+     * カスタム PID の動作確認用。Mode 01 以外は PID の値から決まる疑似データ (4 バイト) を返す。
+     * 例: Mode 22 / DID 1234 → 12 34 xx yy (xx yy は時間で変化)
+     */
+    override fun query(request: PidRequest): IntArray? {
+        if (request.mode == 0x01 && request.pid.size == 1) return readPid(request.pid[0])
+        if (responseDelayMs > 0) Thread.sleep(responseDelayMs)
+        val t = ((clock() - start) / 100 % 256).toInt()
+        val p0 = request.pid.getOrElse(0) { 0 }
+        val p1 = request.pid.getOrElse(1) { 0 }
+        return intArrayOf(p0, p1, t, (t * 7) and 0xFF)
+    }
+
     override fun readAdapterVoltage(): Double = 14.2
 
     override fun close() {}

@@ -29,6 +29,7 @@ class Repository(private val context: Context) {
         val AUTO_RECONNECT = booleanPreferencesKey("auto_reconnect")
         val KEEP_SCREEN_ON = booleanPreferencesKey("keep_screen_on")
         val DASHBOARDS = stringPreferencesKey("dashboards_json")
+        val CUSTOM_PIDS = stringPreferencesKey("custom_pids_json")
     }
 
     private val json = Json { ignoreUnknownKeys = true; encodeDefaults = true }
@@ -39,7 +40,18 @@ class Repository(private val context: Context) {
         p[Keys.DASHBOARDS]
             ?.let { runCatching { json.decodeFromString<List<Dashboard>>(it) }.getOrNull() }
             ?.takeIf { it.isNotEmpty() }
+            ?.map(Layout::normalize) // 旧形式 (列数のみ) の保存データを自由配置に移行
             ?: Defaults.dashboards
+    }
+
+    val customPids: Flow<List<CustomPid>> = context.dataStore.data.map { p ->
+        p[Keys.CUSTOM_PIDS]
+            ?.let { runCatching { json.decodeFromString<List<CustomPid>>(it) }.getOrNull() }
+            .orEmpty()
+    }
+
+    suspend fun saveCustomPids(list: List<CustomPid>) {
+        context.dataStore.edit { it[Keys.CUSTOM_PIDS] = json.encodeToString(list) }
     }
 
     suspend fun updateSettings(transform: (AppSettings) -> AppSettings) {

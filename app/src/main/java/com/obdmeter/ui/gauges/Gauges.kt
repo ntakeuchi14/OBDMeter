@@ -65,6 +65,10 @@ fun GaugeCard(
     style: GaugeStyle,
     unsupported: Boolean,
     modifier: Modifier = Modifier,
+    /** メーターの色 (弧・バー)。デジタル表示では数値の色になる */
+    accent: Color = GaugeColors.Accent,
+    /** 色をユーザーが指定したか (デジタル表示の数値を色付けするかどうか) */
+    customColor: Boolean = false,
 ) {
     Box(
         modifier
@@ -74,9 +78,10 @@ fun GaugeCard(
     ) {
         val v = rememberDisplayValue(def, if (unsupported) null else value)
         when (style) {
-            GaugeStyle.ANALOG -> AnalogGauge(def, v, unsupported, Modifier.fillMaxSize())
-            GaugeStyle.BAR -> BarGauge(def, v, unsupported, Modifier.fillMaxSize())
-            GaugeStyle.DIGITAL -> DigitalGauge(def, v, unsupported, Modifier.fillMaxSize())
+            GaugeStyle.ANALOG -> AnalogGauge(def, v, unsupported, Modifier.fillMaxSize(), accent)
+            GaugeStyle.BAR -> BarGauge(def, v, unsupported, Modifier.fillMaxSize(), accent)
+            GaugeStyle.DIGITAL -> DigitalGauge(def, v, unsupported, Modifier.fillMaxSize(),
+                if (customColor) accent else GaugeColors.Text)
         }
     }
 }
@@ -134,7 +139,7 @@ private const val START_ANGLE = 150f
 private const val SWEEP = 240f
 
 @Composable
-fun AnalogGauge(def: PidDef, value: Double?, unsupported: Boolean, modifier: Modifier = Modifier) {
+fun AnalogGauge(def: PidDef, value: Double?, unsupported: Boolean, modifier: Modifier = Modifier, accent: Color = GaugeColors.Accent) {
     val tm = rememberTextMeasurer()
     val f = animated(def, value)
     val warn = isWarn(def, value)
@@ -162,7 +167,7 @@ fun AnalogGauge(def: PidDef, value: Double?, unsupported: Boolean, modifier: Mod
         }
         // 現在値の弧
         if (value != null) {
-            drawArc(if (warn) GaugeColors.Warn else GaugeColors.Accent, START_ANGLE, SWEEP * f, false,
+            drawArc(if (warn) GaugeColors.Warn else accent, START_ANGLE, SWEEP * f, false,
                 arcTopLeft, arcSize, style = Stroke(stroke, cap = StrokeCap.Round))
         }
 
@@ -239,7 +244,7 @@ private fun DrawScope.drawCenteredText(tm: TextMeasurer, text: String, center: O
 // ---------------------------------------------------------------------------
 
 @Composable
-fun BarGauge(def: PidDef, value: Double?, unsupported: Boolean, modifier: Modifier = Modifier) {
+fun BarGauge(def: PidDef, value: Double?, unsupported: Boolean, modifier: Modifier = Modifier, accent: Color = GaugeColors.Accent) {
     val tm = rememberTextMeasurer()
     val f = animated(def, value)
     val warn = isWarn(def, value)
@@ -270,7 +275,7 @@ fun BarGauge(def: PidDef, value: Double?, unsupported: Boolean, modifier: Modifi
         def.warnAbove?.let { drawRect(GaugeColors.WarnZone, Offset(w * fraction(def, it), barY), Size(w * (1 - fraction(def, it)), barH)) }
         def.warnBelow?.let { drawRect(GaugeColors.WarnZone, Offset(0f, barY), Size(w * fraction(def, it), barH)) }
         if (value != null) {
-            val color = if (warn) GaugeColors.Warn else GaugeColors.Accent
+            val color = if (warn) GaugeColors.Warn else accent
             if (def.min < 0 && def.max > 0) {
                 // 燃調のような ± 値は 0 から伸ばす
                 val zero = w * fraction(def, 0.0)
@@ -289,7 +294,7 @@ fun BarGauge(def: PidDef, value: Double?, unsupported: Boolean, modifier: Modifi
 // ---------------------------------------------------------------------------
 
 @Composable
-fun DigitalGauge(def: PidDef, value: Double?, unsupported: Boolean, modifier: Modifier = Modifier) {
+fun DigitalGauge(def: PidDef, value: Double?, unsupported: Boolean, modifier: Modifier = Modifier, valueColor: Color = GaugeColors.Text) {
     val tm = rememberTextMeasurer()
     val warn = isWarn(def, value)
     Canvas(modifier) {
@@ -299,7 +304,7 @@ fun DigitalGauge(def: PidDef, value: Double?, unsupported: Boolean, modifier: Mo
         drawText(name, topLeft = Offset(4f, 0f))
         drawCenteredText(tm, if (unsupported) "非対応" else def.format(value),
             Offset(size.width / 2, size.height * 0.52f),
-            TextStyle(color = if (warn) GaugeColors.Warn else GaugeColors.Text,
+            TextStyle(color = if (warn) GaugeColors.Warn else valueColor,
                 fontSize = (unit * if (unsupported) 0.2f else 0.38f).toSp(),
                 fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace))
         drawCenteredText(tm, def.unit, Offset(size.width / 2, size.height * 0.86f),

@@ -38,7 +38,7 @@ import com.obdmeter.session.ConnectionState
 import com.obdmeter.ui.gauges.GaugeColors
 
 @Composable
-fun SettingsScreen(vm: MainViewModel, onBack: () -> Unit) {
+fun SettingsScreen(vm: MainViewModel, onBack: () -> Unit, onOpenCustomPids: () -> Unit) {
     val s by vm.settings.collectAsStateWithLifecycle()
     val connection by vm.connection.collectAsStateWithLifecycle()
 
@@ -53,6 +53,20 @@ fun SettingsScreen(vm: MainViewModel, onBack: () -> Unit) {
                     FilledTonalButton(onClick = vm::connect) { Text("再接続") }
                 }
                 Spacer(Modifier.height(8.dp))
+            }
+
+            Section("表示項目")
+            val customCount = vm.customPids.collectAsStateWithLifecycle().value.size
+            Row(
+                Modifier.fillMaxWidth().clickable(onClick = onOpenCustomPids).padding(vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column(Modifier.weight(1f)) {
+                    Text("カスタム PID")
+                    Text("標準にない値を、モード・PID と換算式で登録 (登録済み $customCount 件)",
+                        color = GaugeColors.SubText, fontSize = 12.sp)
+                }
+                Text("›", fontSize = 22.sp, color = GaugeColors.SubText)
             }
 
             Section("接続方式")

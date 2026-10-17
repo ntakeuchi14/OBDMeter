@@ -26,8 +26,12 @@ data class PidDef(
     val decode: (IntArray) -> Double = { 0.0 },
     val deps: List<String> = emptyList(),
     val derive: (Map<String, Double>) -> Double? = { null },
+    /** CUSTOM のときの問い合わせ内容 */
+    val request: PidRequest? = null,
 ) {
-    enum class Kind { MODE01, ADAPTER_VOLTAGE, DERIVED }
+    enum class Kind { MODE01, ADAPTER_VOLTAGE, DERIVED, CUSTOM }
+
+    val isCustom: Boolean get() = kind == Kind.CUSTOM
 
     fun format(value: Double?): String =
         if (value == null) "---" else "%.${decimals}f".format(value)
@@ -97,6 +101,37 @@ object Pids {
     private val byKey = ALL.associateBy { it.key }
 
     fun get(key: String): PidDef? = byKey[key]
+
+    /**
+     * カスタム PID の定義を作る。式が不正な場合は [ExpressionException]、
+     * モード / PID / ヘッダーが不正な場合は [IllegalArgumentException] を投げる。
+     */
+    fun custom(
+        key: String, name: String, shortName: String, unit: String,
+        mode: String, pid: String, header: String, canExtAddress: String,
+        formula: String, min: Double, max: Double, decimals: Int,
+        warnAbove: Double?, warnBelow: Double?, slow: Boolean,
+    ): PidDef {
+        val expr = Expression.compile(formula)
+        val req = PidRequest.parse(mode, pid, header, canExtAddress)
+        require(max > min) { "最大値は最小値より大きくしてください" }
+        return PidDef(
+            key = key, name = name.ifBlank { "カスタム PID" }, shortName = shortName.ifBlank { name.take(6) },
+            unit = unit, min = min, max = max, decimals = decimals.coerceIn(0, 3),
+            warnAbove = warnAbove, warnBelow = warnBelow, kind = PidDef.Kind.CUSTOM,
+            pid = if (req.mode == 0x01 && req.pid.size == 1) req.pid[0] else -1,
+            minBytes = expr.requiredBytes, slow = slow, decode = expr::evaluate, request = req,
+        )
+    }
+}
+
+/**
+ * 標準項目とカスタム PID をまとめた一覧。キーで引ける。
+ */
+class PidCatalog(val custom: List<PidDef> = emptyList()) {
+    private val customByKey = custom.associateBy { it.key }
+    val all: List<PidDef> get() = Pids.ALL + custom
+    fun get(key: String): PidDef? = customByKey[key] ?: Pids.get(key)
 }
 
 /**
@@ -135,6 +170,7 @@ class ObdReader(
         PidDef.Kind.MODE01 -> supported?.contains(def.pid) ?: true
         PidDef.Kind.ADAPTER_VOLTAGE -> adapterVoltageSupported
         PidDef.Kind.DERIVED -> def.deps.mapNotNull { Pids.get(it) }.all { isAvailable(it) }
+        PidDef.Kind.CUSTOM -> true
     }
 
     /**
@@ -175,6 +211,12 @@ class ObdReader(
                 PidDef.Kind.ADAPTER_VOLTAGE -> protocol.readAdapterVoltage().also {
                     if (it == null && values["BATTERY"] == null && streak >= 2) adapterVoltageSupported = false
                 }
+                PidDef.Kind.CUSTOM -> protocol.query(d.request!!)
+                    ?.let { data ->
+                        runCatching { d.decode(data) }
+                            .onFailure { e -> if (d.key !in failing) logger.log(CommLogger.Direction.ERROR, "${d.shortName}: ${e.message}") }
+                            .getOrNull()
+                    }
                 PidDef.Kind.DERIVED -> null
             }
             if (v != null) {
@@ -191,7 +233,11 @@ class ObdReader(
                 // 一時的な失敗では直前の値を残す
                 if (streak + 1 >= HOLD_FAILS) values.remove(d.key)
                 if (failing.add(d.key)) {
-                    val pidText = if (d.kind == PidDef.Kind.MODE01) " (PID %02X)".format(d.pid) else ""
+                    val pidText = when (d.kind) {
+                        PidDef.Kind.MODE01 -> " (PID %02X)".format(d.pid)
+                        PidDef.Kind.CUSTOM -> " (${d.request})"
+                        else -> ""
+                    }
                     logger.log(CommLogger.Direction.ERROR,
                         "${d.shortName}$pidText 読み出し失敗: ${protocol.lastFailure ?: "応答なし"}")
                 }

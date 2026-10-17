@@ -228,6 +228,102 @@ class ProtocolTest {
         assertNull(Elm327Protocol.parseVoltage(listOf("410C0B40")))
     }
 
+    // ---- カスタム PID ----
+
+    @Test
+    fun expressionBasics() {
+        val d = intArrayOf(0x1A, 0xF8, 0x80, 0xFF)
+        assertEquals(1726.0, Expression.compile("(A*256+B)/4").evaluate(d), 1e-9)
+        assertEquals(-14.0, Expression.compile("a - 40").evaluate(d), 1e-9) // 小文字も可
+        assertEquals(-128.0, Expression.compile("signed(C)").evaluate(d), 1e-9)
+        assertEquals(-1.0, Expression.compile("signed16(C*256+D) / 0x7F80 * 0 + signed(D)").evaluate(d), 1e-9)
+        assertEquals(1.0, Expression.compile("bit(B, 3)").evaluate(d), 1e-9)
+        assertEquals(26.0, Expression.compile("max(A, 3, -2)").evaluate(d), 1e-9)
+        assertEquals(-26.0, Expression.compile("-A").evaluate(d), 1e-9)
+        assertEquals(4, Expression.compile("D").requiredBytes)
+    }
+
+    @Test
+    fun expressionErrors() {
+        for (bad in listOf("", "A+", "(A", "AB", "foo(A)", "A $ B", "bit(A)")) {
+            try {
+                Expression.compile(bad)
+                throw AssertionError("should fail: $bad")
+            } catch (e: ExpressionException) { /* ok */ }
+        }
+        try {
+            Expression.compile("A*B").evaluate(intArrayOf(1))
+            throw AssertionError("should fail: short data")
+        } catch (e: ExpressionException) { /* ok */ }
+    }
+
+    @Test
+    fun pidRequestParse() {
+        val r = PidRequest.parse("22", "4205", "7e0", "")
+        assertEquals(0x22, r.mode)
+        assertArrayEquals(intArrayOf(0x42, 0x05), r.pid)
+        assertEquals("7E0", r.header)
+        assertTrue(PidRequest.parse("01", "0C").isPlainMode01)
+        for ((m, p) in listOf("ZZ" to "0C", "22" to "123", "22" to "XYZW")) {
+            try { PidRequest.parse(m, p); throw AssertionError("should fail $m $p") } catch (e: IllegalArgumentException) { }
+        }
+    }
+
+    @Test
+    fun elmMultiFrameResponse() {
+        // ISO-TP 複数フレーム (10 バイト): 62 F1 90 + 7 バイト、最後のフレームは埋め草付き
+        val lines = listOf("00A", "0:62F19057424130", "1:31323334AAAAAA")
+        val data = Elm327Protocol.parseResponseAll(lines, 0x22, intArrayOf(0xF1, 0x90)).single()
+        assertArrayEquals(intArrayOf(0x57, 0x42, 0x41, 0x30, 0x31, 0x32, 0x33), data)
+        // 単一フレーム
+        assertArrayEquals(intArrayOf(0x00, 0x7B),
+            Elm327Protocol.parseResponseAll(listOf("62420500 7B"), 0x22, intArrayOf(0x42, 0x05)).single())
+        assertTrue(Elm327Protocol.negativeResponse(listOf("7F2231"), 0x22)!!.contains("31"))
+    }
+
+    @Test
+    fun elmCustomQuerySwitchesHeaderAndRestores() {
+        val fake = FakeElm(mapOf(
+            "0100" to "4100BE3EB811",
+            "ATDPN" to "6",
+            "224205" to "6242050C80",
+            "010C 1" to "410C0FA0",
+        ))
+        val p = Elm327Protocol(fake, Elm327Protocol.Options(protocol = "6"))
+        p.initialize()
+        val data = p.query(PidRequest.parse("22", "4205", "7E0"))
+        assertArrayEquals(intArrayOf(0x0C, 0x80), data)
+        p.readPid(0x0C)
+        val sent = fake.sent.map { String(it).trim() }
+        val i = sent.indexOf("ATSH7E0")
+        assertTrue(i >= 0 && sent[i + 1] == "224205")
+        // 標準 PID の前に既定ヘッダーへ戻す
+        assertTrue(sent.indexOf("ATSH7DF") in (i + 2) until sent.indexOf("010C 1"))
+    }
+
+    @Test
+    fun bmwFastCustomQueryToOtherEcu() {
+        val fake = FakeDcan(mapOf("22 42 05" to intArrayOf(0x62, 0x42, 0x05, 0x0C, 0x80)))
+        val p = BmwFastProtocol(fake)
+        assertArrayEquals(intArrayOf(0x0C, 0x80), p.query(PidRequest.parse("22", "4205", "12")))
+        assertNull(p.query(PidRequest.parse("22", "9999")))
+        assertTrue(p.lastFailure!!.contains("7F"))
+    }
+
+    @Test
+    fun readerReadsCustomPid() {
+        val def = Pids.custom("CUSTOM_1", "油温 (DME)", "油温", "°C", "22", "4402", "", "",
+            "A*0.75-48", 0.0, 150.0, 0, null, null, false)
+        val reader = ObdReader(SimulatorProtocol(responseDelayMs = 0))
+        val values = mutableMapOf<String, Double>()
+        reader.poll(listOf(def), values)
+        // シミュレーターは DID 4402 → 44 02 ... を返すので A = 0x44
+        assertEquals(0x44 * 0.75 - 48, values["CUSTOM_1"]!!, 1e-9)
+        val catalog = PidCatalog(listOf(def))
+        assertEquals("油温", catalog.get("CUSTOM_1")!!.shortName)
+        assertEquals("回転数", catalog.get("RPM")!!.shortName)
+    }
+
     @Test
     fun pidFormulas() {
         assertEquals(90.0, Pids.get("COOLANT")!!.decode(intArrayOf(130)), 0.001)

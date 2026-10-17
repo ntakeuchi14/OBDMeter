@@ -7,12 +7,14 @@ import com.obdmeter.core.Elm327Protocol
 import com.obdmeter.core.ObdProtocol
 import com.obdmeter.core.ObdReader
 import com.obdmeter.core.PidDef
+import com.obdmeter.core.PidRequest
 import com.obdmeter.core.SimulatorProtocol
 import com.obdmeter.data.AppSettings
 import com.obdmeter.data.ConnectionType
 import com.obdmeter.data.UsbAdapter
 import com.obdmeter.usb.UsbSerialTransport
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -25,6 +27,8 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
+import java.util.concurrent.ConcurrentLinkedQueue
 
 sealed interface ConnectionState {
     data object Disconnected : ConnectionState
@@ -61,6 +65,29 @@ class ObdSession(
     var activePids: List<PidDef> = emptyList()
 
     private var job: Job? = null
+
+    /** カスタム PID 編集画面の「車両から読む」用。ポーリングの合間に 1 件ずつ処理する */
+    private val testQueue = ConcurrentLinkedQueue<Pair<PidRequest, CompletableDeferred<TestResult>>>()
+
+    data class TestResult(val data: IntArray?, val error: String?)
+
+    suspend fun testQuery(request: PidRequest): TestResult {
+        if (_state.value !is ConnectionState.Connected) {
+            return TestResult(null, "未接続です。先にダッシュボードで「接続」してください")
+        }
+        val d = CompletableDeferred<TestResult>()
+        testQueue.add(request to d)
+        return withTimeoutOrNull(8000) { d.await() } ?: TestResult(null, "タイムアウトしました")
+    }
+
+    private fun drainTests(p: ObdProtocol) {
+        while (true) {
+            val (req, d) = testQueue.poll() ?: return
+            log.log(CommLogger.Direction.INFO, "テスト読み出し: $req")
+            val data = runCatching { p.query(req) }.getOrNull()
+            d.complete(TestResult(data, if (data == null) p.lastFailure ?: "応答なし" else null))
+        }
+    }
 
     fun connect(settings: AppSettings) {
         val old = job
@@ -111,6 +138,7 @@ class ObdSession(
             var windowStart = System.currentTimeMillis()
             var lastPublish = 0L
             while (currentCoroutineContext().isActive) {
+                drainTests(p)
                 val defs = activePids
                 if (defs.isEmpty()) { delay(100); continue }
                 val r = reader.poll(defs, values)

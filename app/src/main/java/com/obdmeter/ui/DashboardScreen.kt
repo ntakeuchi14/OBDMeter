@@ -1,15 +1,20 @@
 package com.obdmeter.ui
 
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -19,8 +24,12 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.List
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -29,40 +38,65 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.obdmeter.core.PidCatalog
 import com.obdmeter.core.PidDef
 import com.obdmeter.core.Pids
 import com.obdmeter.data.ConnectionType
 import com.obdmeter.data.Dashboard
+import com.obdmeter.data.GaugeConfig
+import com.obdmeter.data.GaugeStyle
+import com.obdmeter.data.Layout
 import com.obdmeter.session.ConnectionState
 import com.obdmeter.ui.gauges.GaugeCard
 import com.obdmeter.ui.gauges.GaugeColors
 import kotlinx.coroutines.launch
+import kotlin.math.roundToInt
 
 @Composable
-fun DashboardScreen(vm: MainViewModel, onNavigate: (Screen) -> Unit) {
+fun DashboardScreen(vm: MainViewModel, onNavigate: (Screen) -> Unit, onCreateCustomPid: () -> Unit) {
     val dashboards by vm.dashboards.collectAsStateWithLifecycle()
     val connection by vm.connection.collectAsStateWithLifecycle()
     val values by vm.values.collectAsStateWithLifecycle()
     val rate by vm.rate.collectAsStateWithLifecycle()
     val supported by vm.supported.collectAsStateWithLifecycle()
     val settings by vm.settings.collectAsStateWithLifecycle()
+    val catalog by vm.catalog.collectAsStateWithLifecycle()
 
     val pager = rememberPagerState { dashboards.size }
     val scope = rememberCoroutineScope()
 
+    /** レイアウト編集モード (メーターをドラッグで移動・サイズ変更) */
+    var editing by rememberSaveable { mutableStateOf(false) }
+    /** 設定ダイアログを開いているメーターの id */
+    var settingsFor by remember { mutableStateOf<Long?>(null) }
+    /** 項目選択ダイアログ: null = 閉じる、0 = 新規追加、それ以外 = そのメーターの項目変更 */
+    var pickerFor by remember { mutableStateOf<Long?>(null) }
+    var arrangeMenu by remember { mutableStateOf(false) }
+
+    val current = dashboards.getOrNull(pager.currentPage)
+
     // 表示中のページの項目だけを読み出す
-    LaunchedEffect(pager.currentPage, dashboards) {
-        vm.setActiveDashboard(dashboards.getOrNull(pager.currentPage))
+    LaunchedEffect(pager.currentPage, dashboards, catalog) {
+        vm.setActiveDashboard(current, catalog)
     }
 
     Column(Modifier.fillMaxSize()) {
@@ -71,26 +105,70 @@ fun DashboardScreen(vm: MainViewModel, onNavigate: (Screen) -> Unit) {
             Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            StatusIndicator(connection, rate, Modifier.weight(1f))
-            val mode = if (settings.connectionType == ConnectionType.SIMULATOR) "SIM" else settings.usbAdapter.name
-            Text(mode, color = GaugeColors.SubText, fontSize = 12.sp, modifier = Modifier.padding(end = 8.dp))
-            if (connection is ConnectionState.Disconnected) {
-                FilledTonalButton(onClick = vm::connect) { Text("接続") }
+            if (editing) {
+                Text("レイアウト編集中: ドラッグで移動、右下の ◢ でサイズ変更、タップで設定",
+                    color = GaugeColors.Accent, fontSize = 13.sp, modifier = Modifier.weight(1f),
+                    maxLines = 2, overflow = TextOverflow.Ellipsis)
+                FilledTonalButton(onClick = { editing = false }) {
+                    Icon(Icons.Default.Check, null); Spacer(Modifier.width(4.dp)); Text("完了")
+                }
             } else {
-                OutlinedButton(onClick = vm::disconnect) { Text("切断") }
+                StatusIndicator(connection, rate, Modifier.weight(1f))
+                val mode = if (settings.connectionType == ConnectionType.SIMULATOR) "SIM" else settings.usbAdapter.name
+                Text(mode, color = GaugeColors.SubText, fontSize = 12.sp, modifier = Modifier.padding(end = 8.dp))
+                if (connection is ConnectionState.Disconnected) {
+                    FilledTonalButton(onClick = vm::connect) { Text("接続") }
+                } else {
+                    OutlinedButton(onClick = vm::disconnect) { Text("切断") }
+                }
+                IconButton(onClick = { editing = true }) { Icon(Icons.Default.Edit, "レイアウト編集") }
+                IconButton(onClick = { onNavigate(Screen.LOG) }) { Icon(Icons.AutoMirrored.Filled.List, "通信ログ") }
+                IconButton(onClick = { onNavigate(Screen.SETTINGS) }) { Icon(Icons.Default.Settings, "設定") }
             }
-            IconButton(onClick = { onNavigate(Screen.EDIT) }) { Icon(Icons.Default.Edit, "メーター編集") }
-            IconButton(onClick = { onNavigate(Screen.LOG) }) { Icon(Icons.AutoMirrored.Filled.List, "通信ログ") }
-            IconButton(onClick = { onNavigate(Screen.SETTINGS) }) { Icon(Icons.Default.Settings, "設定") }
         }
 
-        // ---- ダッシュボード (左右スワイプで切替) ----
-        HorizontalPager(pager, Modifier.weight(1f).fillMaxWidth()) { page ->
-            dashboards.getOrNull(page)?.let { GaugeGrid(it, values, supported) }
+        // ---- ダッシュボード (左右スワイプで切替。編集中はスワイプしない) ----
+        HorizontalPager(pager, Modifier.weight(1f).fillMaxWidth(), userScrollEnabled = !editing) { page ->
+            dashboards.getOrNull(page)?.let { d ->
+                DashboardCanvas(
+                    dashboard = d,
+                    values = values,
+                    supported = supported,
+                    catalog = catalog,
+                    editing = editing,
+                    onCommit = { g, x, y, w, h ->
+                        vm.updateGauge(d.id, g.id) { it.copy(x = x, y = y, w = w, h = h) }
+                    },
+                    onTap = { g -> if (editing) settingsFor = g.id },
+                )
+            }
         }
 
-        // ---- ページ名タブ ----
-        if (dashboards.size > 1) {
+        // ---- 下部: 編集ツールバー / ページ名タブ ----
+        if (editing) {
+            Row(
+                Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(current?.name ?: "", fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+                FilledTonalButton(onClick = { pickerFor = 0L }, enabled = current != null) {
+                    Icon(Icons.Default.Add, null); Spacer(Modifier.width(4.dp)); Text("メーター追加")
+                }
+                Box {
+                    OutlinedButton(onClick = { arrangeMenu = true }, enabled = current != null) { Text("並べ直す") }
+                    DropdownMenu(expanded = arrangeMenu, onDismissRequest = { arrangeMenu = false }) {
+                        (1..4).forEach { c ->
+                            DropdownMenuItem(
+                                text = { Text("$c 列で均等に並べる") },
+                                onClick = { current?.let { vm.arrangeInGrid(it.id, c) }; arrangeMenu = false },
+                            )
+                        }
+                    }
+                }
+                OutlinedButton(onClick = { onNavigate(Screen.EDIT) }) { Text("ページ管理") }
+            }
+        } else if (dashboards.size > 1) {
             Row(
                 Modifier.fillMaxWidth().padding(vertical = 6.dp),
                 horizontalArrangement = Arrangement.Center,
@@ -113,6 +191,54 @@ fun DashboardScreen(vm: MainViewModel, onNavigate: (Screen) -> Unit) {
             }
         }
     }
+
+    // ---- メーター設定ダイアログ ----
+    val gaugeInSettings = current?.gauges?.firstOrNull { it.id == settingsFor }
+    if (current != null && gaugeInSettings != null) {
+        GaugeSettingsDialog(
+            gauge = gaugeInSettings,
+            catalog = catalog,
+            onChange = { updated -> vm.updateGauge(current.id, updated.id) { updated } },
+            onChangeItem = { pickerFor = gaugeInSettings.id },
+            onBringToFront = { vm.bringToFront(current.id, gaugeInSettings.id) },
+            onDelete = { vm.removeGauge(current.id, gaugeInSettings.id); settingsFor = null },
+            onDismiss = { settingsFor = null },
+        )
+    } else if (settingsFor != null && current?.gauges?.none { it.id == settingsFor } == true) {
+        settingsFor = null
+    }
+
+    // ---- 項目選択ダイアログ ----
+    val target = pickerFor
+    if (current != null && target != null) {
+        ItemPickerDialog(
+            catalog = catalog,
+            supported = supported,
+            onPick = { def ->
+                if (target == 0L) {
+                    // 空いている場所に置く。位置と大きさはドラッグで調整してもらう
+                    vm.addGauge(current.id, def.key, defaultStyleFor(def))
+                    if (!editing) editing = true
+                    settingsFor = null
+                    pickerFor = null
+                } else {
+                    // 項目を変えたら、前の項目用の範囲・表示名などはリセットする
+                    vm.updateGauge(current.id, target) { it.copy(pidKey = def.key, design = it.design.copy(
+                        label = null, min = null, max = null, decimals = null, useDefaultWarn = true,
+                        warnAbove = null, warnBelow = null)) }
+                    pickerFor = null
+                }
+            },
+            onCreateCustom = { pickerFor = null; onCreateCustomPid() },
+            onDismiss = { pickerFor = null },
+        )
+    }
+}
+
+fun defaultStyleFor(def: PidDef): GaugeStyle = when (def.key) {
+    "RPM", "SPEED", "LOAD", "THROTTLE", "PEDAL", "BOOST", "TIMING" -> GaugeStyle.ANALOG
+    "STFT1", "STFT2", "LTFT1", "LTFT2", "FUEL_LEVEL", "COOLANT", "OIL_TEMP" -> GaugeStyle.BAR
+    else -> GaugeStyle.DIGITAL
 }
 
 @Composable
@@ -130,32 +256,170 @@ private fun StatusIndicator(state: ConnectionState, rate: Double, modifier: Modi
     }
 }
 
-/** 列数に合わせて画面いっぱいにメーターを並べる */
+/**
+ * メーターを [Layout.COLS] × [Layout.ROWS] のマス目に配置して描く。
+ * 編集モードでは、ドラッグで移動、右下のつまみでサイズ変更 (マス目に吸着)、タップで設定。
+ */
 @Composable
-private fun GaugeGrid(dashboard: Dashboard, values: Map<String, Double>, supported: Set<Int>?) {
-    val items = dashboard.gauges.mapNotNull { g -> Pids.get(g.pidKey)?.let { it to g } }
-    if (items.isEmpty()) {
-        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-            Text("メーターがありません。右上の編集ボタンから追加してください", color = GaugeColors.SubText)
-        }
-        return
-    }
-    val cols = dashboard.columns.coerceIn(1, 4)
-    val rows = items.chunked(cols)
-    Column(Modifier.fillMaxSize().padding(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        rows.forEach { row ->
-            Row(Modifier.weight(1f).fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                row.forEach { (def, cfg) ->
-                    GaugeCard(
-                        def = def,
-                        value = values[def.key],
-                        style = cfg.style,
-                        unsupported = isUnsupported(def, supported),
-                        modifier = Modifier.weight(1f).fillMaxSize(),
-                    )
+private fun DashboardCanvas(
+    dashboard: Dashboard,
+    values: Map<String, Double>,
+    supported: Set<Int>?,
+    catalog: PidCatalog,
+    editing: Boolean,
+    onCommit: (GaugeConfig, Int, Int, Int, Int) -> Unit,
+    onTap: (GaugeConfig) -> Unit,
+) {
+    BoxWithConstraints(Modifier.fillMaxSize().padding(4.dp)) {
+        val cellW = maxWidth / Layout.COLS
+        val cellH = maxHeight / Layout.ROWS
+        val density = LocalDensity.current
+        val cellWPx = with(density) { cellW.toPx() }
+        val cellHPx = with(density) { cellH.toPx() }
+
+        if (editing) {
+            // マス目のガイド
+            Canvas(Modifier.fillMaxSize()) {
+                for (x in 0..Layout.COLS) for (y in 0..Layout.ROWS) {
+                    drawCircle(GaugeColors.CardBorder, 2f, Offset(x * cellWPx, y * cellHPx))
                 }
-                // 最終行が埋まらない場合は空きで揃える
-                repeat(cols - row.size) { Spacer(Modifier.weight(1f).height(1.dp)) }
+            }
+        }
+
+        if (dashboard.gauges.isEmpty()) {
+            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                Text(
+                    if (editing) "下の「メーター追加」から追加してください"
+                    else "メーターがありません。右上の鉛筆ボタンから追加してください",
+                    color = GaugeColors.SubText,
+                )
+            }
+        }
+
+        dashboard.gauges.forEach { g ->
+            key(g.id) {
+                val def = g.resolvedDef(catalog)
+                GaugeOnGrid(
+                    gauge = g,
+                    cellWPx = cellWPx,
+                    cellHPx = cellHPx,
+                    editing = editing,
+                    onCommit = onCommit,
+                    onTap = onTap,
+                ) {
+                    if (def != null) {
+                        GaugeCard(
+                            def = def,
+                            value = values[def.key],
+                            style = g.style,
+                            unsupported = isUnsupported(def, supported),
+                            accent = g.accentColor(),
+                            customColor = g.hasCustomColor,
+                            modifier = Modifier.fillMaxSize(),
+                        )
+                    } else {
+                        // 削除されたカスタム PID など
+                        Box(
+                            Modifier.fillMaxSize().background(GaugeColors.Card, RoundedCornerShape(14.dp)),
+                            contentAlignment = Alignment.Center,
+                        ) { Text("項目が見つかりません\n(${g.pidKey})", color = GaugeColors.SubText, fontSize = 12.sp) }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun GaugeOnGrid(
+    gauge: GaugeConfig,
+    cellWPx: Float,
+    cellHPx: Float,
+    editing: Boolean,
+    onCommit: (GaugeConfig, Int, Int, Int, Int) -> Unit,
+    onTap: (GaugeConfig) -> Unit,
+    content: @Composable () -> Unit,
+) {
+    val g by rememberUpdatedState(gauge)
+    // ドラッグ中の累積移動量 (px)
+    var move by remember { mutableStateOf(Offset.Zero) }
+    var resize by remember { mutableStateOf(Offset.Zero) }
+    // 指を離してから保存が反映されるまでの間、元の位置に戻って見えないよう保持する
+    var pending by remember { mutableStateOf<IntArray?>(null) }
+    LaunchedEffect(gauge.x, gauge.y, gauge.w, gauge.h) { pending = null }
+
+    fun preview(): IntArray {
+        pending?.let { return it }
+        val dx = (move.x / cellWPx).roundToInt()
+        val dy = (move.y / cellHPx).roundToInt()
+        val w = (g.w + (resize.x / cellWPx).roundToInt()).coerceIn(2, Layout.COLS)
+        val h = (g.h + (resize.y / cellHPx).roundToInt()).coerceIn(2, Layout.ROWS)
+        val x = (g.x + dx).coerceIn(0, Layout.COLS - minOf(w, Layout.COLS))
+        val y = (g.y + dy).coerceIn(0, Layout.ROWS - minOf(h, Layout.ROWS))
+        return intArrayOf(x, y, minOf(w, Layout.COLS - x), minOf(h, Layout.ROWS - y))
+    }
+
+    val r = preview()
+    val density = LocalDensity.current
+    val dragging = move != Offset.Zero || resize != Offset.Zero
+
+    Box(
+        Modifier
+            .offset(with(density) { (r[0] * cellWPx).toDp() }, with(density) { (r[1] * cellHPx).toDp() })
+            .size(with(density) { (r[2] * cellWPx).toDp() }, with(density) { (r[3] * cellHPx).toDp() })
+            .padding(3.dp)
+            .then(
+                if (editing) Modifier
+                    .border(2.dp, if (dragging) GaugeColors.Warn else GaugeColors.Accent, RoundedCornerShape(14.dp))
+                    .pointerInput(gauge.id) {
+                        detectTapGestures(onTap = { onTap(g) })
+                    }
+                    .pointerInput(gauge.id) {
+                        detectDragGestures(
+                            onDragEnd = {
+                                val p = preview()
+                                pending = p
+                                move = Offset.Zero
+                                if (p[0] != g.x || p[1] != g.y) onCommit(g, p[0], p[1], p[2], p[3]) else pending = null
+                            },
+                            onDragCancel = { move = Offset.Zero },
+                        ) { change, amount ->
+                            change.consume()
+                            move += amount
+                        }
+                    }
+                else Modifier
+            )
+    ) {
+        content()
+        if (editing) {
+            // サイズ変更のつまみ (右下)
+            Box(
+                Modifier
+                    .align(Alignment.BottomEnd)
+                    .size(36.dp)
+                    .pointerInput(gauge.id) {
+                        detectDragGestures(
+                            onDragEnd = {
+                                val p = preview()
+                                pending = p
+                                resize = Offset.Zero
+                                if (p[2] != g.w || p[3] != g.h) onCommit(g, p[0], p[1], p[2], p[3]) else pending = null
+                            },
+                            onDragCancel = { resize = Offset.Zero },
+                        ) { change, amount ->
+                            change.consume()
+                            resize += amount
+                        }
+                    },
+                contentAlignment = Alignment.BottomEnd,
+            ) {
+                Canvas(Modifier.size(22.dp).padding(4.dp)) {
+                    val path = androidx.compose.ui.graphics.Path().apply {
+                        moveTo(size.width, 0f); lineTo(size.width, size.height); lineTo(0f, size.height); close()
+                    }
+                    drawPath(path, GaugeColors.Accent)
+                }
             }
         }
     }
@@ -165,7 +429,16 @@ fun isUnsupported(def: PidDef, supported: Set<Int>?): Boolean {
     if (supported == null) return false
     return when (def.kind) {
         PidDef.Kind.MODE01 -> def.pid !in supported
-        PidDef.Kind.ADAPTER_VOLTAGE -> false
+        PidDef.Kind.ADAPTER_VOLTAGE, PidDef.Kind.CUSTOM -> false
         PidDef.Kind.DERIVED -> def.deps.mapNotNull { Pids.get(it) }.any { isUnsupported(it, supported) }
     }
 }
+
+/** 一覧などで使う短い説明 ("カスタム 22 4205" / "PID 0C") */
+fun PidDef.sourceLabel(): String = when (kind) {
+    PidDef.Kind.MODE01 -> "PID %02X".format(pid)
+    PidDef.Kind.CUSTOM -> "カスタム $request"
+    PidDef.Kind.ADAPTER_VOLTAGE -> "アダプター測定"
+    PidDef.Kind.DERIVED -> "計算値"
+}
+

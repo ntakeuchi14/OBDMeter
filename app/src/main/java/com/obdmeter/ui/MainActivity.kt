@@ -24,7 +24,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.obdmeter.session.ConnectionState
 import com.obdmeter.ui.gauges.GaugeColors
 
-enum class Screen { DASHBOARD, EDIT, SETTINGS, LOG }
+enum class Screen { DASHBOARD, EDIT, SETTINGS, LOG, CUSTOM_PIDS }
 
 class MainActivity : ComponentActivity() {
     private val vm: MainViewModel by viewModels()
@@ -61,6 +61,10 @@ private val AppColors = darkColorScheme(
 @Composable
 fun App(vm: MainViewModel, onKeepScreenOn: (Boolean) -> Unit) {
     var screen by rememberSaveable { mutableStateOf(Screen.DASHBOARD) }
+    /** カスタム PID 画面を「新規作成」で開くか (項目選択から来たとき) */
+    var customStartNew by rememberSaveable { mutableStateOf(false) }
+    /** カスタム PID 画面から戻る先 */
+    var customReturnTo by rememberSaveable { mutableStateOf(Screen.SETTINGS) }
     val settings by vm.settings.collectAsStateWithLifecycle()
     val connection by vm.connection.collectAsStateWithLifecycle()
 
@@ -69,7 +73,10 @@ fun App(vm: MainViewModel, onKeepScreenOn: (Boolean) -> Unit) {
         onKeepScreenOn(settings.keepScreenOn && connection !is ConnectionState.Disconnected)
     }
 
-    BackHandler(enabled = screen != Screen.DASHBOARD) { screen = Screen.DASHBOARD }
+    val back: () -> Unit = {
+        screen = if (screen == Screen.CUSTOM_PIDS) customReturnTo else Screen.DASHBOARD
+    }
+    BackHandler(enabled = screen != Screen.DASHBOARD) { back() }
 
     Box(
         Modifier
@@ -78,10 +85,27 @@ fun App(vm: MainViewModel, onKeepScreenOn: (Boolean) -> Unit) {
             .safeDrawingPadding()
     ) {
         when (screen) {
-            Screen.DASHBOARD -> DashboardScreen(vm, onNavigate = { screen = it })
-            Screen.EDIT -> EditScreen(vm, onBack = { screen = Screen.DASHBOARD })
-            Screen.SETTINGS -> SettingsScreen(vm, onBack = { screen = Screen.DASHBOARD })
-            Screen.LOG -> LogScreen(vm, onBack = { screen = Screen.DASHBOARD })
+            Screen.DASHBOARD -> DashboardScreen(
+                vm,
+                onNavigate = { screen = it },
+                onCreateCustomPid = {
+                    customStartNew = true
+                    customReturnTo = Screen.DASHBOARD
+                    screen = Screen.CUSTOM_PIDS
+                },
+            )
+            Screen.EDIT -> EditScreen(vm, onBack = back)
+            Screen.SETTINGS -> SettingsScreen(
+                vm,
+                onBack = back,
+                onOpenCustomPids = {
+                    customStartNew = false
+                    customReturnTo = Screen.SETTINGS
+                    screen = Screen.CUSTOM_PIDS
+                },
+            )
+            Screen.LOG -> LogScreen(vm, onBack = back)
+            Screen.CUSTOM_PIDS -> CustomPidScreen(vm, startNew = customStartNew, onBack = back)
         }
     }
 }

@@ -46,14 +46,58 @@ class Elm327Protocol(
             throw ProtocolException("0100 への応答を解釈できません: $first")
         }
         val dp = command("ATDPN").lastOrNull()?.trim() ?: "?"
+        protocolNumber = dp.removePrefix("A")
         val desc = command("ATDP").lastOrNull()?.trim() ?: "?"
         return "$id / $desc (ATDPN=$dp)"
+    }
+
+    /** ATDPN の結果 ("6" など。自動判別時の先頭 "A" は除く) */
+    private var protocolNumber = options.protocol
+
+    /** いま設定しているヘッダー / 拡張アドレス ("" = 既定) */
+    private var currentHeader = ""
+    private var currentCea = ""
+
+    /** プロトコルごとの既定ヘッダー (機能アドレス)。ATSH を戻すときに使う。 */
+    private fun defaultHeader(): String = when (protocolNumber) {
+        "6", "8" -> "7DF"
+        "7", "9" -> "18DB33F1"
+        "3" -> "686AF1"
+        "4", "5" -> "C133F1"
+        else -> "7DF"
+    }
+
+    private fun applyAddressing(header: String, cea: String) {
+        if (header != currentHeader) {
+            command("ATSH" + header.ifEmpty { defaultHeader() })
+            currentHeader = header
+        }
+        if (cea != currentCea) {
+            command(if (cea.isEmpty()) "ATCEA" else "ATCEA$cea")
+            currentCea = cea
+        }
+    }
+
+    override fun query(request: PidRequest): IntArray? {
+        if (request.isPlainMode01 && currentHeader.isEmpty() && currentCea.isEmpty()) return readPid(request.pid[0])
+        applyAddressing(request.header, request.canExtAddress)
+        val cmd = buildString {
+            append("%02X".format(request.mode))
+            request.pid.forEach { append("%02X".format(it)) }
+        }
+        val lines = command(cmd, options.commandTimeoutMs)
+        val data = parseResponseAll(lines, request.mode, request.pid).firstOrNull()
+        if (data != null) { lastFailure = null; return data }
+        lastFailure = negativeResponse(lines, request.mode) ?: checkError(lines) ?: lines.joinToString("|").ifEmpty { "応答なし" }
+        return null
     }
 
     override var lastFailure: String? = null
         private set
 
     override fun readPid(pid: Int): IntArray? {
+        // 直前にカスタム PID でヘッダーを変えていたら、既定 (機能アドレス) に戻す
+        if (currentHeader.isNotEmpty() || currentCea.isNotEmpty()) applyAddressing("", "")
         val base = "01%02X".format(pid)
         if (hintSupported) {
             val lines = command("$base 1")
@@ -157,10 +201,6 @@ class Elm327Protocol(
         internal fun checkError(lines: List<String>): String? =
             lines.firstOrNull { l -> ERRORS.any { l.uppercase().contains(it) } }
 
-        /**
-         * ヘッダー OFF・スペース OFF の応答行から "41 <pid> A B ..." を探し、データ部を返す。
-         * 複数 ECU が応答した場合は最初の 1 件を使う。
-         */
         private val VOLTAGE = Regex("""(\d{1,2}\.\d)\s*V""", RegexOption.IGNORE_CASE)
 
         /**
@@ -173,6 +213,76 @@ class Elm327Protocol(
 
         internal fun parseMode01(lines: List<String>, pid: Int): IntArray? =
             parseMode01All(lines, pid).firstOrNull()
+
+        private val FRAME_INDEX = Regex("^([0-9A-F]):")
+
+        /** "7F 22 31" のような否定応答を説明付きの文字列にする。 */
+        internal fun negativeResponse(lines: List<String>, mode: Int): String? {
+            for (line in lines) {
+                val c = line.replace(" ", "").uppercase()
+                val idx = c.indexOf("7F%02X".format(mode))
+                if (idx in listOf(0, 3, 5, 8, 10) && c.length >= idx + 6) {
+                    val nrc = c.substring(idx + 4, idx + 6).toInt(16)
+                    val reason = when (nrc) {
+                        0x11 -> "サービス非対応"
+                        0x12 -> "サブ機能非対応"
+                        0x13 -> "長さ・形式が不正"
+                        0x22 -> "条件が整っていない"
+                        0x31 -> "この PID / DID は範囲外 (非対応)"
+                        0x33 -> "セキュリティ拒否"
+                        0x7F -> "このセッションでは非対応"
+                        else -> "NRC %02X".format(nrc)
+                    }
+                    return "否定応答 7F %02X %02X: %s".format(mode, nrc, reason)
+                }
+            }
+            return null
+        }
+
+        /**
+         * 任意モードの応答を解析し、[mode]+0x40 と [pid] のエコーの後ろのデータ部を返す (ECU ごとに 1 件)。
+         * ELM327 が ISO-TP の複数フレームを組み立てて出す形式
+         *   "00A" / "0:62123401..." / "1:0203..."
+         * にも対応する。
+         */
+        internal fun parseResponseAll(lines: List<String>, mode: Int, pid: IntArray): List<IntArray> {
+            val prefix = buildString {
+                append("%02X".format(mode + 0x40))
+                pid.forEach { append("%02X".format(it)) }
+            }
+            val compact = lines.map { it.replace(" ", "").uppercase() }
+            val messages = mutableListOf<String>()
+            if (compact.any { FRAME_INDEX.containsMatchIn(it) }) {
+                // 複数フレーム: 先頭の長さ行 ("00A") を読み、"n:" 行をつなげる
+                var total = -1
+                val sb = StringBuilder()
+                for (line in compact) {
+                    val m = FRAME_INDEX.find(line)
+                    if (m != null) {
+                        sb.append(line.substring(m.range.last + 1))
+                    } else if (line.length == 3 && line.all { it.isDigit() || it in 'A'..'F' }) {
+                        if (sb.isNotEmpty()) { messages += trimTo(sb.toString(), total); sb.clear() }
+                        total = line.toInt(16)
+                    }
+                }
+                if (sb.isNotEmpty()) messages += trimTo(sb.toString(), total)
+            } else {
+                messages += compact.filter { l -> l.isNotEmpty() && l.all { it.isDigit() || it in 'A'..'F' } }
+            }
+            val result = mutableListOf<IntArray>()
+            for (msg in messages) {
+                val idx = listOf(0, 3, 5, 8, 10).firstOrNull { msg.startsWith(prefix, it) } ?: continue
+                val bytes = Hex.parse(msg.substring(idx))
+                val skip = 1 + pid.size
+                if (bytes.size < skip) continue
+                result += bytes.copyOfRange(skip, bytes.size)
+            }
+            return result
+        }
+
+        /** 複数フレームの末尾にある埋め草を、長さ行で示されたバイト数に切り詰める。 */
+        private fun trimTo(hex: String, bytes: Int): String =
+            if (bytes > 0 && hex.length > bytes * 2) hex.substring(0, bytes * 2) else hex
 
         /**
          * 全 ECU 分の応答を返す。ヘッダー表示が有効なままの場合

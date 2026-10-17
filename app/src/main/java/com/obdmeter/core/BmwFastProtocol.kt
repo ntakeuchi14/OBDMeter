@@ -61,6 +61,28 @@ class BmwFastProtocol(
         return null
     }
 
+    /**
+     * カスタム PID。ヘッダー欄は送信先 ECU アドレス (16 進、例 "12" = DME、"18" = EGS) として扱う。
+     * BMW 独自の値は Mode 22 (ReadDataByIdentifier) や Mode 21 で読めることが多い。
+     */
+    override fun query(request: PidRequest): IntArray? {
+        val target = request.header.takeIf { it.isNotEmpty() }?.toIntOrNull(16)?.takeIf { it in 0..0xFF }
+            ?: options.targetAddress
+        val resp = request(intArrayOf(request.mode) + request.pid, target)
+            ?: run { lastFailure = "応答なし"; return null }
+        val echo = intArrayOf(request.mode + 0x40) + request.pid
+        if (resp.size >= echo.size && echo.indices.all { resp[it] == echo[it] }) {
+            lastFailure = null
+            return resp.copyOfRange(echo.size, resp.size)
+        }
+        lastFailure = if (resp.isNotEmpty() && resp[0] == 0x7F) {
+            "否定応答 ${Hex.of(resp)} (NRC=%02X)".format(resp.getOrElse(2) { 0 })
+        } else {
+            "想定外の応答 ${Hex.of(resp)}"
+        }
+        return null
+    }
+
     override fun close() {
         runCatching { transport.close() }
     }
@@ -69,8 +91,8 @@ class BmwFastProtocol(
      * サービスデータ (例: 01 0C) を送り、応答のサービスデータ部を返す。
      * 応答待ち (7F xx 78) は自動で待機する。
      */
-    fun request(service: IntArray): IntArray? {
-        val tel = buildTelegram(options.targetAddress, options.sourceAddress, service)
+    fun request(service: IntArray, target: Int = options.targetAddress): IntArray? {
+        val tel = buildTelegram(target, options.sourceAddress, service)
         transport.purge()
         logger.log(CommLogger.Direction.TX, Hex.of(tel))
         transport.write(tel)
@@ -111,7 +133,7 @@ class BmwFastProtocol(
                 deadline = System.currentTimeMillis() + options.pendingTimeoutMs
                 continue
             }
-            if (parsed.source != options.targetAddress) {
+            if (parsed.source != target) {
                 // 他 ECU からのテレグラムは無視して待ち続ける
                 continue
             }
