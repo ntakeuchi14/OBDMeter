@@ -45,6 +45,22 @@ object GaugeImages {
         name
     }
 
+    /** 保存済み画像のファイル (エクスポート用) */
+    fun file(context: Context, name: String): File = File(dir(context), name)
+
+    /**
+     * バックアップから取り出した画像を保存し、新しいファイル名を返す。
+     * 画像として読めないデータなら null。
+     */
+    suspend fun saveBytes(context: Context, bytes: ByteArray): String? = withContext(Dispatchers.IO) {
+        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
+        if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return@withContext null
+        val name = "bg_" + UUID.randomUUID().toString().take(12) + ".png"
+        File(dir(context), name).writeBytes(bytes)
+        name
+    }
+
     /** 保存済みの画像を読む (キャッシュ付き)。無ければ null。 */
     suspend fun load(context: Context, name: String): ImageBitmap? {
         cache.get(name)?.let { return it }

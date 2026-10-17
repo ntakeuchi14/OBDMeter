@@ -1,6 +1,16 @@
 package com.obdmeter.ui
 
 import android.app.Application
+import android.net.Uri
+import com.obdmeter.data.BackupFiles
+import com.obdmeter.data.BackupLogic
+import com.obdmeter.data.BackupManifest
+import com.obdmeter.data.ImportMode
+import com.obdmeter.data.LoadedBackup
+import kotlinx.coroutines.flow.MutableStateFlow
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.obdmeter.core.Pids
@@ -55,6 +65,88 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch {
             val used = repo.dashboards.first().flatMap { it.gauges }.mapNotNull { it.design.backgroundImage }.toSet()
             runCatching { GaugeImages.cleanup(app, used) }
+        }
+    }
+
+    // ---- バックアップ (エクスポート / インポート) ----
+
+    /** 結果の通知 (画面でスナックバー表示などに使う) */
+    private val _backupMessage = MutableStateFlow<String?>(null)
+    val backupMessage: StateFlow<String?> = _backupMessage
+
+    /** 読み込み済みで、適用方法の選択待ちのバックアップ */
+    private val _pendingImport = MutableStateFlow<LoadedBackup?>(null)
+    val pendingImport: StateFlow<LoadedBackup?> = _pendingImport
+
+    private val _backupBusy = MutableStateFlow(false)
+    val backupBusy: StateFlow<Boolean> = _backupBusy
+
+    fun clearBackupMessage() { _backupMessage.value = null }
+
+    fun exportBackup(uri: Uri) {
+        viewModelScope.launch {
+            _backupBusy.value = true
+            runCatching {
+                val app = getApplication<Application>()
+                val version = runCatching { app.packageManager.getPackageInfo(app.packageName, 0).versionName }.getOrNull()
+                val manifest = BackupManifest(
+                    appVersion = version ?: "",
+                    exportedAt = SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.JAPAN).format(Date()),
+                    dashboards = repo.dashboards.first(),
+                    customPids = repo.customPids.first(),
+                )
+                val images = BackupFiles.export(app, uri, manifest)
+                "エクスポートしました (ページ ${manifest.dashboards.size}、カスタム PID ${manifest.customPids.size}、画像 $images)"
+            }.onSuccess { _backupMessage.value = it }
+                .onFailure { _backupMessage.value = "エクスポートに失敗しました: ${it.message}" }
+            _backupBusy.value = false
+        }
+    }
+
+    fun loadBackup(uri: Uri) {
+        viewModelScope.launch {
+            _backupBusy.value = true
+            runCatching { BackupFiles.read(getApplication(), uri) }
+                .onSuccess { _pendingImport.value = it }
+                .onFailure { _backupMessage.value = "読み込めませんでした: ${it.message}" }
+            _backupBusy.value = false
+        }
+    }
+
+    fun cancelImport() { _pendingImport.value = null }
+
+    fun applyImport(mode: ImportMode) {
+        val backup = _pendingImport.value ?: return
+        _pendingImport.value = null
+        viewModelScope.launch {
+            _backupBusy.value = true
+            runCatching {
+                val rename = BackupFiles.saveImages(getApplication(), backup)
+                var seq = System.currentTimeMillis()
+                // 編集中の保存と競合しないよう、両方のロックを取ってから書く
+                editLock.withLock {
+                    customLock.withLock {
+                        val result = BackupLogic.apply(
+                            current = repo.dashboards.first(),
+                            currentPids = repo.customPids.first(),
+                            incoming = backup.manifest,
+                            imageRename = rename,
+                            mode = mode,
+                            newId = { seq++ },
+                        )
+                        repo.saveCustomPids(result.customPids)
+                        repo.saveDashboards(result.dashboards)
+                    }
+                }
+                val missing = BackupLogic.referencedImages(backup.manifest.dashboards).size - rename.size
+                buildString {
+                    append(if (mode == ImportMode.REPLACE) "置き換えました" else "追加しました")
+                    append(" (ページ ${backup.pageCount}、カスタム PID ${backup.customPidCount}、画像 ${rename.size})")
+                    if (missing > 0) append("。画像 $missing 枚はファイルに含まれていなかったため外しました")
+                }
+            }.onSuccess { _backupMessage.value = it }
+                .onFailure { _backupMessage.value = "インポートに失敗しました: ${it.message}" }
+            _backupBusy.value = false
         }
     }
 

@@ -1,5 +1,16 @@
 package com.obdmeter.ui
 
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.layout.size
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.TextButton
+import com.obdmeter.data.ImportMode
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -134,6 +145,9 @@ fun SettingsScreen(vm: MainViewModel, onBack: () -> Unit, onOpenCustomPids: () -
                 }
             }
 
+            Section("バックアップ")
+            BackupSection(vm)
+
             Section("その他")
             SwitchRow("自動再接続", "通信が切れたら 3 秒後に再接続", s.autoReconnect) { v ->
                 vm.updateSettings { it.copy(autoReconnect = v) }
@@ -190,5 +204,84 @@ private fun SwitchRow(label: String, detail: String?, checked: Boolean, onChange
             if (detail != null) Text(detail, color = GaugeColors.SubText, fontSize = 12.sp)
         }
         Switch(checked = checked, onCheckedChange = onChange)
+    }
+}
+
+
+/**
+ * 設定のエクスポート / インポート。
+ * ダッシュボード (メーターの配置・色・角度・背景画像などすべて) とカスタム PID を 1 つの zip にまとめる。
+ */
+@Composable
+private fun BackupSection(vm: MainViewModel) {
+    val busy by vm.backupBusy.collectAsStateWithLifecycle()
+    val message by vm.backupMessage.collectAsStateWithLifecycle()
+    val pending by vm.pendingImport.collectAsStateWithLifecycle()
+
+    val exportLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/zip")) { uri ->
+        if (uri != null) vm.exportBackup(uri)
+    }
+    val importLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) vm.loadBackup(uri)
+    }
+
+    Text(
+        "ダッシュボード (メーターの配置・色・角度・背景画像など) とカスタム PID を 1 つのファイル (zip) に保存します。" +
+            "機種変更や再インストールのときに、画像も含めてそのまま戻せます。",
+        color = GaugeColors.SubText, fontSize = 12.sp,
+    )
+    Row(Modifier.padding(vertical = 8.dp)) {
+        FilledTonalButton(
+            enabled = !busy,
+            onClick = {
+                val stamp = SimpleDateFormat("yyyyMMdd_HHmm", Locale.JAPAN).format(Date())
+                exportLauncher.launch("OBDMeter_$stamp.zip")
+            },
+        ) { Text("エクスポート") }
+        Spacer(Modifier.width(8.dp))
+        OutlinedButton(
+            enabled = !busy,
+            onClick = { importLauncher.launch(arrayOf("application/zip", "application/x-zip-compressed", "application/octet-stream")) },
+        ) { Text("インポート") }
+        if (busy) {
+            Spacer(Modifier.width(12.dp))
+            CircularProgressIndicator(Modifier.size(24.dp).align(Alignment.CenterVertically), strokeWidth = 2.dp)
+        }
+    }
+
+    pending?.let { b ->
+        AlertDialog(
+            onDismissRequest = vm::cancelImport,
+            title = { Text("設定ファイルを読み込みます") },
+            text = {
+                Column {
+                    Text(
+                        "ページ ${b.pageCount} (メーター ${b.gaugeCount})\n" +
+                            "カスタム PID ${b.customPidCount}\n" +
+                            "背景画像 ${b.imageCount}" +
+                            (if (b.manifest.exportedAt.isNotBlank()) "\n作成日時 ${b.manifest.exportedAt}" else "") +
+                            (if (b.manifest.appVersion.isNotBlank()) "  (バージョン ${b.manifest.appVersion})" else ""),
+                    )
+                    Spacer(Modifier.height(12.dp))
+                    Text("置き換え: 今のページとカスタム PID を消して、ファイルの内容にします。", fontSize = 13.sp, color = GaugeColors.SubText)
+                    Text("追加: 今の内容は残したまま、ファイルのページとカスタム PID を追加します。", fontSize = 13.sp, color = GaugeColors.SubText)
+                }
+            },
+            confirmButton = {
+                Row {
+                    TextButton(onClick = { vm.applyImport(ImportMode.MERGE) }) { Text("追加") }
+                    TextButton(onClick = { vm.applyImport(ImportMode.REPLACE) }) { Text("置き換え", color = GaugeColors.Warn) }
+                }
+            },
+            dismissButton = { TextButton(onClick = vm::cancelImport) { Text("キャンセル") } },
+        )
+    }
+
+    message?.let { m ->
+        AlertDialog(
+            onDismissRequest = vm::clearBackupMessage,
+            text = { Text(m) },
+            confirmButton = { TextButton(onClick = vm::clearBackupMessage) { Text("OK") } },
+        )
     }
 }
