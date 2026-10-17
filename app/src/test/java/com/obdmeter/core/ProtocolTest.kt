@@ -174,6 +174,11 @@ class ProtocolTest {
         ObdReader(p).poll(listOf(cyl1, cyl2), values)
         assertEquals(3.0, values["MISFIRE_1"]!!, 0.0)   // TID 0C (今回のサイクル) を使う
         assertNull(values["MISFIRE_2"])                  // 非対応 (7F 06 12)
+        // CAN の形式: 2 件目の前に MID が付く (46 A2 0B ... A2 0C ...)
+        val fake2 = FakeElm(mapOf("06A2" to "013\r0:46A20B24000A\r1:0000FFFFA20C24\r2:00050000FFFF00"))
+        val v2 = mutableMapOf<String, Double>()
+        ObdReader(Elm327Protocol(fake2)).poll(listOf(cyl1), v2)
+        assertEquals(5.0, v2["MISFIRE_1"]!!, 0.0)
         // TID 0C が無ければ 0B (平均) を使う
         assertEquals(10.0, Pids.decodeMisfire(intArrayOf(0x0B, 0x24, 0x00, 0x0A, 0, 0, 0xFF, 0xFF)), 0.0)
     }

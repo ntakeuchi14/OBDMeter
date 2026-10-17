@@ -177,6 +177,16 @@ class ConnectionTest(private val context: Context, private val log: CommLogger) 
                 cmd("ATDPN")
             }
 
+            line("--- 2b. 失火カウンタ (OBD Mode 06。イグニッション ON、できればエンジン始動中) ---")
+            cmd("ATSP6")
+            cmd("ATSH7DF")
+            // 06 00/20/…/A0 = 対応している MID の一覧。A1 = 全体、A2〜A7 = 1〜6 番の気筒
+            for (mid in listOf("00", "20", "40", "60", "80", "A0", "A1", "A2", "A3")) cmd("06$mid", 5000)
+            // エンジン ECU (7E0) だけに直接聞く
+            cmd("ATSH7E0")
+            cmd("06A0", 5000)
+            cmd("06A2", 5000)
+
             line("--- 3. BMW 方式 (6F1 + 拡張アドレス、BimmerLink などが使う方式) ---")
             cmd("ATSP6")
             cmd("ATSH6F1")
@@ -195,6 +205,7 @@ class ConnectionTest(private val context: Context, private val log: CommLogger) 
             line("--- 見かた ---")
             line("・2 で 41 00 … が返れば、標準の OBD で読めます (イグニッション ON が必要)")
             line("・3 で 5A 80 / 62 F1 90 / 61 01 … が返れば、イグニッション OFF でも BMW 方式で ECU と通信できます")
+            line("・2b で 46 A0 … の応答に A2〜A7 が含まれていれば、気筒ごとの失火カウンタに対応しています")
         } finally {
             t.close()
         }

@@ -46,7 +46,8 @@ object Pids {
 
     /**
      * OBD Mode 06 (SAE J1979) の失火モニター。MID A1 = 全体、A2〜AD = 気筒 1〜12。
-     * 応答は「TID・単位 ID・値(2)・下限(2)・上限(2)」の 8 バイト単位で並ぶ。
+     * 応答は「TID・単位 ID・値(2)・下限(2)・上限(2)」の 8 バイトが並ぶ。CAN の ECU は 2 件目以降の
+     * 前に MID をもう一度付ける (46 A2 [0B ...] A2 [0C ...]) ので、それも読み飛ばす。
      * TID 0C = 今回の運転サイクルの失火回数、0B = 直近 10 サイクルの平均 (EWMA)。
      */
     private fun misfire(key: String, name: String, short: String, mid: Int) = PidDef(
@@ -65,6 +66,8 @@ object Pids {
                 0x0B -> ewma = value
             }
             i += 8
+            // 次の件の前に付いた MID (A1〜AD) を飛ばす
+            if (i < d.size && d[i] in 0xA1..0xAD && d.size - i >= 9) i++
         }
         return ewma ?: throw IllegalArgumentException("失火カウンタの応答に該当するテストがありません")
     }
