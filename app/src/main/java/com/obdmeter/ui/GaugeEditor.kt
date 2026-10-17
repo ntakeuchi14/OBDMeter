@@ -100,6 +100,7 @@ fun GaugeSettingsDialog(
 
     var tab by remember { mutableIntStateOf(0) }
     var showPicker by remember { mutableStateOf(false) }
+    var showFallbackPicker by remember { mutableStateOf(false) }
     var confirmDelete by remember { mutableStateOf(false) }
 
     val def = draft.resolvedDef(catalog)
@@ -154,7 +155,8 @@ fun GaugeSettingsDialog(
                         }
                         Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = 16.dp)) {
                             when (tab) {
-                                0 -> BasicTab(draft, catalog, ::update, { draft = it }, { showPicker = true }, onBringToFront) { confirmDelete = true }
+                                0 -> BasicTab(draft, catalog, ::update, { draft = it }, { showPicker = true },
+                                    { showFallbackPicker = true }, onBringToFront) { confirmDelete = true }
                                 1 -> AngleTab(draft, ::update)
                                 2 -> ColorTab(draft, ::update)
                                 3 -> ImageTab(draft, ::update)
@@ -183,6 +185,18 @@ fun GaugeSettingsDialog(
             }
         }
 
+        if (showFallbackPicker) {
+            ItemPickerDialog(
+                catalog = catalog,
+                supported = supported,
+                onPick = { picked ->
+                    draft = draft.copy(fallbackKey = picked.key.takeIf { it != draft.pidKey })
+                    showFallbackPicker = false
+                },
+                onCreateCustom = { showFallbackPicker = false; close(); onCreateCustomPid() },
+                onDismiss = { showFallbackPicker = false },
+            )
+        }
         if (showPicker) {
             ItemPickerDialog(
                 catalog = catalog,
@@ -227,6 +241,7 @@ private fun BasicTab(
     update: ((GaugeDesign) -> GaugeDesign) -> Unit,
     replace: (GaugeConfig) -> Unit,
     onChangeItem: () -> Unit,
+    onPickFallback: () -> Unit,
     onBringToFront: () -> Unit,
     onDelete: () -> Unit,
 ) {
@@ -239,6 +254,32 @@ private fun BasicTab(
             if (base != null) Text("${base.sourceLabel()}  ${base.unit}", color = GaugeColors.SubText, fontSize = 12.sp)
         }
         OutlinedButton(onClick = onChangeItem) { Text("変更") }
+    }
+
+    Head("代替項目 (イグニッション OFF 時など)")
+    Hint(
+        "上の項目が読めないときに、代わりに表示する項目です。BMW ではイグニッション OFF の間、" +
+            "標準の項目 (水温・電圧など) はエンジン ECU が応答を拒否します。" +
+            "同じ値を読むカスタム PID を指定しておくと、OFF の間はそちらの値を表示します。" +
+            "単位と範囲は上の項目に合わせてください。"
+    )
+    val fb = g.fallbackKey?.let { catalog.get(it) }
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Column(Modifier.weight(1f)) {
+            when {
+                g.fallbackKey == null -> Text("なし", color = GaugeColors.SubText)
+                fb == null -> Text("(見つかりません: ${g.fallbackKey})", color = GaugeColors.Warn)
+                else -> {
+                    Text(fb.name, fontWeight = FontWeight.Medium)
+                    Text("${fb.sourceLabel()}  ${fb.unit}", color = GaugeColors.SubText, fontSize = 12.sp)
+                }
+            }
+        }
+        OutlinedButton(onClick = onPickFallback) { Text(if (g.fallbackKey == null) "設定" else "変更") }
+        if (g.fallbackKey != null) {
+            Spacer(Modifier.width(6.dp))
+            OutlinedButton(onClick = { replace(g.copy(fallbackKey = null)) }) { Text("外す") }
+        }
     }
 
     Head("表示形式")

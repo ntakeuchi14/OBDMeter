@@ -129,7 +129,12 @@ object BackupLogic {
             }
             existingNames += name
             val fixed = fixImages(d).let { x ->
-                x.copy(gauges = x.gauges.map { g -> keyRename[g.pidKey]?.let { g.copy(pidKey = it) } ?: g })
+                x.copy(gauges = x.gauges.map { g ->
+                    g.copy(
+                        pidKey = keyRename[g.pidKey] ?: g.pidKey,
+                        fallbackKey = g.fallbackKey?.let { keyRename[it] ?: it },
+                    )
+                })
             }
             Layout.normalize(fixed.copy(id = newId(), name = name))
         }

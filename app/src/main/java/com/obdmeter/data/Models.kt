@@ -152,6 +152,11 @@ data class GaugeConfig(
     val w: Int = 0,
     val h: Int = 0,
     val design: GaugeDesign = GaugeDesign(),
+    /**
+     * 代替項目のキー。メイン項目が読めないとき (イグニッション OFF で標準 PID が拒否されるときなど)
+     * に、代わりにこの項目の値を表示する。カスタム PID を指定することを想定。
+     */
+    val fallbackKey: String? = null,
 )
 
 @Serializable

@@ -191,6 +191,9 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     /** 表示中のダッシュボードが変わったら、読み出す項目を切り替える */
     fun setActiveDashboard(dashboard: Dashboard?, catalog: PidCatalog) {
         session.activePids = dashboard?.gauges?.mapNotNull { catalog.get(it.pidKey) }?.distinctBy { it.key }.orEmpty()
+        session.activeFallbacks = dashboard?.gauges.orEmpty()
+            .mapNotNull { g -> g.fallbackKey?.let { fb -> catalog.get(fb)?.let { g.pidKey to it } } }
+            .toMap()
     }
 
     // ---- カスタム PID ----
@@ -210,7 +213,12 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     fun deleteCustomPid(id: Long) {
         val key = CustomPid.KEY_PREFIX + id
         editCustomPids { list -> list.filterNot { it.id == id } }
-        editDashboards { list -> list.map { d -> d.copy(gauges = d.gauges.filterNot { it.pidKey == key }) } }
+        editDashboards { list ->
+            list.map { d ->
+                d.copy(gauges = d.gauges.filterNot { it.pidKey == key }
+                    .map { if (it.fallbackKey == key) it.copy(fallbackKey = null) else it })
+            }
+        }
     }
 
     /** 編集中のカスタム PID を、接続中の車両から 1 回だけ読んでみる */

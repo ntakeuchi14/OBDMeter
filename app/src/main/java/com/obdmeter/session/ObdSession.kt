@@ -70,6 +70,10 @@ class ObdSession(
     @Volatile
     var activePids: List<PidDef> = emptyList()
 
+    /** 表示中のメーターの代替項目 (メイン項目のキー → 代替項目)。メインが読めないときだけ読む */
+    @Volatile
+    var activeFallbacks: Map<String, PidDef> = emptyMap()
+
     private var job: Job? = null
 
     /** カスタム PID 編集画面の「車両から読む」用。ポーリングの合間に 1 件ずつ処理する */
@@ -237,7 +241,7 @@ class ObdSession(
             drainTests(p)
             val defs = activePids
             if (defs.isEmpty()) { delay(100); continue }
-            val r = reader.poll(defs, values)
+            val r = reader.poll(defs, values, activeFallbacks)
             // 画面への反映は 10 回/秒まで (それ以上は描画負荷が増えるだけ)
             val t = System.currentTimeMillis()
             if (t - lastPublish >= 100) {
@@ -255,8 +259,9 @@ class ObdSession(
                 return
             }
             // イグニッション OFF (ECU は応答するが値を返さない) の判定
-            val nowOff = r.ok == 0 && r.refused > 0
-            val anyMode01Ok = r.ok > 0
+            // 判定は標準 PID だけで行う (カスタム PID はイグニッション OFF でも読めるため)
+            val nowOff = r.ignitionOff
+            val anyMode01Ok = r.stdOk > 0
             if (nowOff != ignitionOff && (nowOff || anyMode01Ok)) {
                 ignitionOff = nowOff
                 log.log(CommLogger.Direction.INFO,

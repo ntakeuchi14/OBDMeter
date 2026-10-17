@@ -94,6 +94,19 @@ class BackupTest {
     }
 
     @Test
+    fun mergeRemapsFallbackKeys() {
+        val g = GaugeConfig(pidKey = "COOLANT", id = 1, x = 0, y = 0, w = 6, h = 6, fallbackKey = oilTemp.key)
+        var seq = 5000L
+        val r = BackupLogic.apply(
+            current = emptyList(), currentPids = listOf(boost.copy(id = 100)),
+            incoming = BackupManifest(dashboards = listOf(page(1, "P", g)), customPids = listOf(oilTemp)),
+            imageRename = emptyMap(), mode = ImportMode.MERGE, newId = { seq++ },
+        )
+        val imported = r.customPids.single { it.name == "油温" }
+        assertEquals(imported.key, r.dashboards.single().gauges.single().fallbackKey)
+    }
+
+    @Test
     fun mergeReusesIdenticalCustomPid() {
         val incoming = BackupManifest(
             dashboards = listOf(page(1, "追加ページ", designed)),

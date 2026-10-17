@@ -310,9 +310,10 @@ private fun DashboardCanvas(
                     if (def != null) {
                         GaugeCard(
                             def = def,
-                            value = values[def.key],
+                            // メインの値が無いときは代替項目の値を出す (イグニッション OFF 時など)
+                            value = values[def.key] ?: g.fallbackKey?.let { values[it] },
                             style = g.style,
-                            unsupported = isUnsupported(def, supported),
+                            unsupported = isUnsupported(def, supported) && g.fallbackKey == null,
                             look = g.look(def),
                             modifier = Modifier.fillMaxSize(),
                         )

@@ -121,6 +121,46 @@ class ProtocolTest {
     }
 
     @Test
+    fun fallbackIsReadOnlyWhenPrimaryMissing() {
+        var ignitionOn = false
+        var customReads = 0
+        val proto = object : ObdProtocol {
+            override fun initAdapter() = ""
+            override fun connectVehicle() = ""
+            override var lastResponded = false
+            override fun readPid(pid: Int): IntArray? {
+                lastResponded = !ignitionOn
+                return if (ignitionOn) intArrayOf(130) else null   // 水温 90℃ / OFF は 7F 01 22
+            }
+            override fun query(request: PidRequest): IntArray? { customReads++; lastResponded = false; return intArrayOf(128) }
+            override fun close() {}
+        }
+        val coolant = Pids.get("COOLANT")!!
+        val customCoolant = Pids.custom("CUSTOM_9", "水温 (DME)", "水温", "°C", "22", "4300", "", "",
+            "A-40", 0.0, 150.0, 0, null, null, false)
+        val reader = ObdReader(proto)
+        val values = mutableMapOf<String, Double>()
+        val fallbacks = mapOf("COOLANT" to customCoolant)
+
+        // イグニッション OFF: 標準は拒否 → 代替 (カスタム) を読む。判定は「イグニッション OFF」
+        var r = ObdReader.Result(0, 0)
+        repeat(3) { r = reader.poll(listOf(coolant), values, fallbacks) }
+        assertNull(values["COOLANT"])
+        assertEquals(88.0, values["CUSTOM_9"]!!, 0.01)
+        assertTrue(r.ignitionOff)
+        assertTrue(r.vehicleAlive)
+
+        // イグニッション ON: 標準が読める → 代替は読まず値も消える
+        ignitionOn = true
+        val before = customReads
+        r = reader.poll(listOf(coolant), values, fallbacks) // 拒否された項目は毎回試すので、次の 1 回で戻る
+        assertEquals(90.0, values["COOLANT"]!!, 0.01)
+        assertNull(values["CUSTOM_9"])
+        assertTrue(!r.ignitionOff)
+        assertEquals(before, customReads)
+    }
+
+    @Test
     fun elmNoDataIsNotAlive() {
         val fake = FakeElm(mapOf("0100" to "4100BE3EB811", "010C 1" to "NO DATA"))
         val p = Elm327Protocol(fake)

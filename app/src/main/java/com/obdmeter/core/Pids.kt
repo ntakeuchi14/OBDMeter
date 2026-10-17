@@ -152,6 +152,8 @@ class ObdReader(
 
     private val failStreak = mutableMapOf<String, Int>()
     private val failing = mutableSetOf<String>()
+    /** 直近の失敗が「ECU の拒否」だった項目 */
+    private val refusedKeys = mutableSetOf<String>()
     private var cycle = 0L
     private var adapterVoltageSupported = true
 
@@ -175,10 +177,15 @@ class ObdReader(
 
     /**
      * [defs] の値を読み、[values] を更新する。
+     * [fallbacks] は「メイン項目のキー → 代替項目」。メイン項目の値が無いとき (イグニッション OFF で
+     * 標準 PID が拒否されるときなど) だけ代替項目を読む。メインが読めている間は代替は読まない。
      * @return 実際に通信して成功した件数と失敗した件数
      */
-    fun poll(defs: Collection<PidDef>, values: MutableMap<String, Double>): Result {
-        var refused = 0
+    fun poll(
+        defs: Collection<PidDef>,
+        values: MutableMap<String, Double>,
+        fallbacks: Map<String, PidDef> = emptyMap(),
+    ): Result {
         cycle++
         // 派生項目の依存先も読む
         val direct = LinkedHashMap<String, PidDef>()
@@ -189,79 +196,123 @@ class ObdReader(
                 direct[d.key] = d
             }
         }
-        var ok = 0
-        var failed = 0
-        for (d in direct.values) {
-            val streak = failStreak[d.key] ?: 0
-            if (!isAvailable(d)) {
-                // 非対応扱いでも、最初と 50 サイクルごとに一度だけ試す
-                if (d.kind != PidDef.Kind.MODE01 || (cycle != 1L && cycle % 50 != 0L)) {
-                    values.remove(d.key); continue
-                }
-            } else {
-                // 遅い項目は 8 サイクルに 1 回 (値が無いうちは毎回)
-                if (d.slow && values.containsKey(d.key) && cycle % 8 != 0L) continue
-                // 連続 3 回失敗した項目は 20 サイクルに 1 回だけ再試行
-                if (streak >= HOLD_FAILS && cycle % 20 != 0L) continue
-            }
-
-            val v: Double? = when (d.kind) {
-                PidDef.Kind.MODE01 -> protocol.readPid(d.pid)
-                    ?.takeIf { it.size >= d.minBytes }
-                    ?.let { runCatching { d.decode(it) }.getOrNull() }
-                PidDef.Kind.ADAPTER_VOLTAGE -> protocol.readAdapterVoltage().also {
-                    if (it == null && values["BATTERY"] == null && streak >= 2) adapterVoltageSupported = false
-                }
-                PidDef.Kind.CUSTOM -> protocol.query(d.request!!)
-                    ?.let { data ->
-                        runCatching { d.decode(data) }
-                            .onFailure { e -> if (d.key !in failing) logger.log(CommLogger.Direction.ERROR, "${d.shortName}: ${e.message}") }
-                            .getOrNull()
-                    }
-                PidDef.Kind.DERIVED -> null
-            }
-            if (v != null) {
-                values[d.key] = v
-                failStreak[d.key] = 0
-                if (d.kind == PidDef.Kind.MODE01 && supported?.contains(d.pid) == false) {
-                    supported = supported.orEmpty() + d.pid
-                    logger.log(CommLogger.Direction.INFO, "${d.shortName} (PID %02X) は読めたので対応扱いにします".format(d.pid))
-                }
-                if (failing.remove(d.key)) logger.log(CommLogger.Direction.INFO, "${d.shortName}: 復帰")
-                ok++
-            } else {
-                if ((d.kind == PidDef.Kind.MODE01 || d.kind == PidDef.Kind.CUSTOM) && protocol.lastResponded) refused++
-                failStreak[d.key] = streak + 1
-                // 一時的な失敗では直前の値を残す
-                if (streak + 1 >= HOLD_FAILS) values.remove(d.key)
-                if (failing.add(d.key)) {
-                    val pidText = when (d.kind) {
-                        PidDef.Kind.MODE01 -> " (PID %02X)".format(d.pid)
-                        PidDef.Kind.CUSTOM -> " (${d.request})"
-                        else -> ""
-                    }
-                    logger.log(CommLogger.Direction.ERROR,
-                        "${d.shortName}$pidText 読み出し失敗: ${protocol.lastFailure ?: "応答なし"}")
-                }
-                failed++
-            }
-        }
+        val c = Counter()
+        for (d in direct.values) readItem(d, values, c)
         for (d in defs) {
             if (d.kind == PidDef.Kind.DERIVED) {
                 val v = d.derive(values)
                 if (v != null) values[d.key] = v else values.remove(d.key)
             }
         }
-        return Result(ok, failed, refused)
+        // 代替項目: メインの値が無いときだけ読む
+        var fallbackOk = 0
+        for ((primary, fb) in fallbacks) {
+            if (values.containsKey(primary)) {
+                values.remove(fb.key)
+                continue
+            }
+            val fc = Counter()
+            readItem(fb, values, fc)
+            fallbackOk += fc.ok
+            c.failed += fc.failed
+            c.refused += fc.refused
+        }
+        return Result(c.ok + fallbackOk, c.failed, c.refused, c.stdOk, c.stdRefused)
+    }
+
+    private class Counter {
+        var ok = 0
+        var failed = 0
+        var refused = 0
+        /** 標準 PID (Mode 01) だけの集計。イグニッション OFF の判定に使う */
+        var stdOk = 0
+        var stdRefused = 0
+    }
+
+    private fun readItem(d: PidDef, values: MutableMap<String, Double>, c: Counter) {
+        val streak = failStreak[d.key] ?: 0
+        if (!isAvailable(d)) {
+            // 非対応扱いでも、最初と 50 サイクルごとに一度だけ試す
+            if (d.kind != PidDef.Kind.MODE01 || (cycle != 1L && cycle % 50 != 0L)) {
+                values.remove(d.key); return
+            }
+        } else {
+            // 遅い項目は 8 サイクルに 1 回 (値が無いうちは毎回)
+            if (d.slow && values.containsKey(d.key) && cycle % 8 != 0L) return
+            // 連続 3 回失敗した項目は 20 サイクルに 1 回だけ再試行。
+            // ただし ECU が拒否しただけ (イグニッション OFF の 7F 01 22) なら毎回試す。
+            // そうしないとイグニッション ON にしても値が戻るまで時間がかかる
+            if (streak >= HOLD_FAILS && d.key !in refusedKeys && cycle % 20 != 0L) return
+        }
+
+        val v: Double? = when (d.kind) {
+            PidDef.Kind.MODE01 -> protocol.readPid(d.pid)
+                ?.takeIf { it.size >= d.minBytes }
+                ?.let { runCatching { d.decode(it) }.getOrNull() }
+            PidDef.Kind.ADAPTER_VOLTAGE -> protocol.readAdapterVoltage().also {
+                if (it == null && values["BATTERY"] == null && streak >= 2) adapterVoltageSupported = false
+            }
+            PidDef.Kind.CUSTOM -> protocol.query(d.request!!)
+                ?.let { data ->
+                    runCatching { d.decode(data) }
+                        .onFailure { e -> if (d.key !in failing) logger.log(CommLogger.Direction.ERROR, "${d.shortName}: ${e.message}") }
+                        .getOrNull()
+                }
+            PidDef.Kind.DERIVED -> null
+        }
+        val std = d.kind == PidDef.Kind.MODE01
+        if (v != null) {
+            values[d.key] = v
+            failStreak[d.key] = 0
+            refusedKeys.remove(d.key)
+            if (std && supported?.contains(d.pid) == false) {
+                supported = supported.orEmpty() + d.pid
+                logger.log(CommLogger.Direction.INFO, "${d.shortName} (PID %02X) は読めたので対応扱いにします".format(d.pid))
+            }
+            if (failing.remove(d.key)) logger.log(CommLogger.Direction.INFO, "${d.shortName}: 復帰")
+            c.ok++
+            if (std) c.stdOk++
+        } else {
+            if ((std || d.kind == PidDef.Kind.CUSTOM) && protocol.lastResponded) {
+                c.refused++
+                if (std) c.stdRefused++
+                refusedKeys.add(d.key)
+            } else {
+                refusedKeys.remove(d.key)
+            }
+            failStreak[d.key] = streak + 1
+            // 一時的な失敗では直前の値を残す
+            if (streak + 1 >= HOLD_FAILS) values.remove(d.key)
+            if (failing.add(d.key)) {
+                val pidText = when (d.kind) {
+                    PidDef.Kind.MODE01 -> " (PID %02X)".format(d.pid)
+                    PidDef.Kind.CUSTOM -> " (${d.request})"
+                    else -> ""
+                }
+                logger.log(CommLogger.Direction.ERROR,
+                    "${d.shortName}$pidText 読み出し失敗: ${protocol.lastFailure ?: "応答なし"}")
+            }
+            c.failed++
+        }
     }
 
     /**
      * 1 サイクルの結果。
      * @param refused 失敗のうち、ECU が応答して拒否したもの (イグニッション OFF の 7F 01 22 など)
+     * @param stdOk / stdRefused 標準 PID だけの成功数・拒否数 (イグニッション OFF の判定用)
      */
-    data class Result(val ok: Int, val failed: Int, val refused: Int = 0) {
+    data class Result(
+        val ok: Int,
+        val failed: Int,
+        val refused: Int = 0,
+        val stdOk: Int = 0,
+        val stdRefused: Int = 0,
+    ) {
         /** ECU から何らかの応答があった (= 車両とはつながっている) */
         val vehicleAlive: Boolean get() = ok > 0 || refused > 0
+
+        /** 標準 PID がすべて拒否されている (= イグニッション OFF)。カスタム PID は読めていてもよい */
+        val ignitionOff: Boolean get() = stdOk == 0 && stdRefused > 0
     }
 
     companion object {
