@@ -7,35 +7,58 @@ import android.database.sqlite.SQLiteOpenHelper
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.io.InputStream
+import java.io.OutputStream
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 /** 記録した値 1 つ (時刻はミリ秒) */
 class Sample(val t: Long, val v: Float)
 
 /**
- * 折れ線グラフ用の値の記録。
- * - 項目ごとに指定の間隔 ([intervals]) で記録する
- * - 直近 [MEMORY_MS] はメモリにも持ち、ライブ表示に使う
- * - データベースにも同じ間隔で保存し、さかのぼって表示するときに読む
- * - 保存期間 ([retentionDays]) を過ぎた記録は 1 時間ごとに消す
- * 記録するのは [keys] の項目 (どこかの折れ線グラフで使われている項目) だけ。
+ * 折れ線グラフ用の値の記録。項目ごとに「時刻 (秒単位)・値」を端末のデータベースに保存する。
+ * - 記録するのは [intervals] の項目 (どこかの折れ線グラフで使われている項目)。間隔の管理は呼び出し側
+ * - 保存期間 ([retentionMonths]) を過ぎた記録は自動で消す
+ * - CSV (項目キー, 年月日時分秒, 値) で書き出し・読み込みができる
  */
 class HistoryStore(context: Context, private val scope: CoroutineScope) {
 
     companion object {
-        const val MEMORY_MS = 10 * 60_000L
-        /** 記録間隔の最短 (値の更新が最大 10 回/秒のため) */
-        const val MIN_INTERVAL_MS = 200L
-        const val MAX_DAYS = 30
+        const val MIN_INTERVAL_SEC = 10
+        const val MAX_INTERVAL_SEC = 600
+        const val MAX_MONTHS = 24
+        private const val MONTH_MS = 2_629_746_000L // 1 か月 (平均 30.44 日)
+        const val CSV_HEADER = "key,datetime,value"
+
+        /** CSV の時刻の書式 (端末のタイムゾーン) */
+        fun dateFormat() = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US)
+
+        /** CSV 1 行を (キー, 時刻ミリ秒, 値) にする。読めなければ null */
+        fun parseCsvLine(line: String, formats: List<SimpleDateFormat>): Triple<String, Long, Double>? {
+            val cols = line.split(',').map { it.trim().trim('"') }
+            if (cols.size < 3) return null
+            val key = cols[0].takeIf { it.isNotEmpty() } ?: return null
+            val t = formats.firstNotNullOfOrNull { f -> runCatching { f.parse(cols[1])?.time }.getOrNull() } ?: return null
+            val v = cols[2].toDoubleOrNull()?.takeIf { !it.isNaN() && !it.isInfinite() } ?: return null
+            return Triple(key, t, v)
+        }
     }
 
-    private class Helper(context: Context) : SQLiteOpenHelper(context, "history.db", null, 1) {
+    private class Helper(context: Context) : SQLiteOpenHelper(context, "history.db", null, 2) {
         override fun onCreate(db: SQLiteDatabase) {
-            db.execSQL("CREATE TABLE samples (k TEXT NOT NULL, t INTEGER NOT NULL, v REAL NOT NULL)")
-            db.execSQL("CREATE INDEX samples_kt ON samples (k, t)")
+            // 同じ項目・同じ時刻の記録は 1 つだけ (読み込みで重ねても増えない)
+            db.execSQL("CREATE TABLE samples (k TEXT NOT NULL, t INTEGER NOT NULL, v REAL NOT NULL, PRIMARY KEY (k, t)) WITHOUT ROWID")
         }
-        override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {}
+        override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
+            // 旧形式 (1 秒ごとの細かい記録) は引き継がない
+            db.execSQL("DROP TABLE IF EXISTS samples")
+            onCreate(db)
+        }
     }
 
     private val helper = Helper(context.applicationContext)
@@ -43,133 +66,166 @@ class HistoryStore(context: Context, private val scope: CoroutineScope) {
 
     /** 記録する項目のキーと記録間隔 (ミリ秒) */
     @Volatile var intervals: Map<String, Long> = emptyMap()
-    /** 保存期間 (日) */
-    @Volatile var retentionDays: Int = 1
+    /** 保存期間 (か月) */
+    @Volatile var retentionMonths: Int = 3
 
-    private val lock = Any()
-    private val recent = HashMap<String, ArrayDeque<Sample>>()
-    private val lastMem = HashMap<String, Long>()
-    private val pending = ArrayList<Triple<String, Long, Float>>()
+    private val _revision = MutableStateFlow(0L)
+    /** 記録が増えるたびに変わる (グラフの読み直しに使う) */
+    val revision: StateFlow<Long> = _revision
 
     init {
         scope.launch(Dispatchers.IO) {
-            var lastCleanup = 0L
+            // 保存期間の設定が読み込まれるのを待ってから消す
+            delay(60_000L)
             while (true) {
-                delay(5_000)
-                runCatching { flush() }
-                val now = System.currentTimeMillis()
-                if (now - lastCleanup > 3_600_000L) {
-                    lastCleanup = now
-                    runCatching { cleanup(now) }
+                runCatching { cleanup(System.currentTimeMillis()) }
+                delay(3_600_000L)
+            }
+        }
+    }
+
+    /** 値を記録する。時刻は秒単位に丸める */
+    suspend fun store(values: Map<String, Double>, time: Long) = withContext(Dispatchers.IO) {
+        if (values.isEmpty()) return@withContext
+        val t = time / 1000 * 1000
+        runCatching {
+            db.beginTransaction()
+            try {
+                val cv = ContentValues()
+                for ((k, v) in values) {
+                    if (v.isNaN() || v.isInfinite()) continue
+                    cv.clear()
+                    cv.put("k", k); cv.put("t", t); cv.put("v", v)
+                    db.insertWithOnConflict("samples", null, cv, SQLiteDatabase.CONFLICT_REPLACE)
                 }
+                db.setTransactionSuccessful()
+            } finally {
+                db.endTransaction()
             }
         }
+        _revision.value++
     }
-
-    /** 最新の値を記録する (値が届くたびに呼ぶ。間引きはここで行う) */
-    fun record(values: Map<String, Double>, now: Long = System.currentTimeMillis()) {
-        val ks = intervals
-        if (ks.isEmpty()) return
-        synchronized(lock) {
-            for ((k, step) in ks) {
-                val v = values[k] ?: continue
-                if (v.isNaN() || v.isInfinite()) continue
-                // 少し早めでも記録する (値の届く間隔のゆらぎで 1 回分飛ばさないように)
-                if (now - (lastMem[k] ?: 0L) < step.coerceAtLeast(MIN_INTERVAL_MS) - 50) continue
-                lastMem[k] = now
-                val q = recent.getOrPut(k) { ArrayDeque() }
-                q.addLast(Sample(now, v.toFloat()))
-                while (q.isNotEmpty() && q.first().t < now - MEMORY_MS) q.removeFirst()
-                pending += Triple(k, now, v.toFloat())
-            }
-        }
-    }
-
-    /** メモリにある、[from] 以降の記録 */
-    fun recent(key: String, from: Long): List<Sample> = synchronized(lock) {
-        val q = recent[key] ?: return emptyList()
-        // 古い順に並んでいるので、from 以降の位置を二分探索で探す
-        var lo = 0
-        var hi = q.size
-        while (lo < hi) {
-            val mid = (lo + hi) ushr 1
-            if (q[mid].t < from) lo = mid + 1 else hi = mid
-        }
-        ArrayList(q.subList(lo, q.size))
-    }
-
-    /** メモリに持っている一番古い時刻 (無ければ Long.MAX_VALUE) */
-    fun memoryStart(key: String): Long = synchronized(lock) { recent[key]?.firstOrNull()?.t ?: Long.MAX_VALUE }
 
     /**
-     * データベースから [from]〜[to] の記録を読む。点が多いときは [maxPoints] 程度に間引く
+     * [from]〜[to] の記録を読む。点が多いときは [maxPoints] 程度にまとめる
      * (区間ごとの最小と最大を残すので、山や谷は消えない)
      */
     suspend fun load(key: String, from: Long, to: Long, maxPoints: Int): List<Sample> = withContext(Dispatchers.IO) {
-        runCatching { flush() }
         val out = ArrayList<Sample>()
+        val bucket = ((to - from) / (maxPoints / 2).coerceAtLeast(1)).coerceAtLeast(1000L)
         runCatching {
             db.rawQuery(
-                "SELECT t, v FROM samples WHERE k = ? AND t >= ? AND t <= ? ORDER BY t",
-                arrayOf(key, from.toString(), to.toString()),
-            ).use { c -> while (c.moveToNext()) out += Sample(c.getLong(0), c.getFloat(1)) }
+                "SELECT (t - ?) / ? AS b, MIN(v), MAX(v), MIN(t), MAX(t), COUNT(*) FROM samples " +
+                    "WHERE k = ? AND t >= ? AND t <= ? GROUP BY b ORDER BY b",
+                arrayOf(from.toString(), bucket.toString(), key, from.toString(), to.toString()),
+            ).use { c ->
+                while (c.moveToNext()) {
+                    val lo = c.getFloat(1)
+                    val hi = c.getFloat(2)
+                    val t0 = c.getLong(3)
+                    val t1 = c.getLong(4)
+                    if (c.getInt(5) == 1 || lo == hi) out += Sample(t0, lo)
+                    else { out += Sample(t0, lo); out += Sample(t1, hi) }
+                }
+            }
         }
-        decimate(out, from, to, maxPoints)
+        out
     }
 
-    private fun decimate(points: List<Sample>, from: Long, to: Long, maxPoints: Int): List<Sample> {
-        if (points.size <= maxPoints || maxPoints < 4) return points
-        val buckets = maxPoints / 2
-        val width = ((to - from).toDouble() / buckets).coerceAtLeast(1.0)
-        val out = ArrayList<Sample>(maxPoints + 2)
-        var i = 0
-        while (i < points.size) {
-            val b = ((points[i].t - from) / width).toLong()
-            var lo = points[i]
-            var hi = points[i]
-            var j = i
-            while (j < points.size && ((points[j].t - from) / width).toLong() == b) {
-                if (points[j].v < lo.v) lo = points[j]
-                if (points[j].v > hi.v) hi = points[j]
-                j++
-            }
-            if (lo === hi) out += lo
-            else if (lo.t <= hi.t) { out += lo; out += hi } else { out += hi; out += lo }
-            i = j
-        }
-        return out
+    /** 直前と直後の記録 (表示範囲の外とも線をつなぐため) */
+    suspend fun neighbors(key: String, from: Long, to: Long): Pair<Sample?, Sample?> = withContext(Dispatchers.IO) {
+        fun one(sql: String, arg: Long): Sample? = runCatching {
+            db.rawQuery(sql, arrayOf(key, arg.toString())).use { c -> if (c.moveToFirst()) Sample(c.getLong(0), c.getFloat(1)) else null }
+        }.getOrNull()
+        one("SELECT t, v FROM samples WHERE k = ? AND t < ? ORDER BY t DESC LIMIT 1", from) to
+            one("SELECT t, v FROM samples WHERE k = ? AND t > ? ORDER BY t ASC LIMIT 1", to)
     }
 
-    private fun flush() {
-        val batch = synchronized(lock) {
-            if (pending.isEmpty()) return
-            ArrayList(pending).also { pending.clear() }
-        }
-        db.beginTransaction()
-        try {
-            val cv = ContentValues()
-            for ((k, t, v) in batch) {
-                cv.clear()
-                cv.put("k", k); cv.put("t", t); cv.put("v", v)
-                db.insert("samples", null, cv)
-            }
-            db.setTransactionSuccessful()
-        } finally {
-            db.endTransaction()
-        }
+    /** [keys] の記録の一番古い時刻 (無ければ null) */
+    suspend fun earliest(keys: Collection<String>): Long? = withContext(Dispatchers.IO) {
+        if (keys.isEmpty()) return@withContext null
+        runCatching {
+            db.rawQuery(
+                "SELECT MIN(t) FROM samples WHERE k IN (${keys.joinToString(",") { "?" }})",
+                keys.toTypedArray(),
+            ).use { c -> if (c.moveToFirst() && !c.isNull(0)) c.getLong(0) else null }
+        }.getOrNull()
     }
+
+    /** [keys] の記録を CSV (key,datetime,value) で書き出す。書き出した行数を返す */
+    suspend fun exportCsv(keys: Collection<String>, out: OutputStream): Int = withContext(Dispatchers.IO) {
+        val fmt = dateFormat()
+        var n = 0
+        out.bufferedWriter(Charsets.UTF_8).use { w ->
+            w.write(CSV_HEADER); w.write("\n")
+            if (keys.isNotEmpty()) {
+                db.rawQuery(
+                    "SELECT k, t, v FROM samples WHERE k IN (${keys.joinToString(",") { "?" }}) ORDER BY k, t",
+                    keys.toTypedArray(),
+                ).use { c ->
+                    while (c.moveToNext()) {
+                        w.write(c.getString(0)); w.write(",")
+                        w.write(fmt.format(Date(c.getLong(1)))); w.write(",")
+                        w.write(formatValue(c.getDouble(2))); w.write("\n")
+                        n++
+                    }
+                }
+            }
+        }
+        n
+    }
+
+    /**
+     * CSV (key,datetime,value) を読み込む。同じ項目・同じ時刻の記録は上書きする。
+     * @return 読み込んだ行数と、読めなかった行数
+     */
+    suspend fun importCsv(input: InputStream): Pair<Int, Int> = withContext(Dispatchers.IO) {
+        val formats = listOf(
+            dateFormat(),
+            SimpleDateFormat("yyyy/MM/dd HH:mm:ss", Locale.US),
+            SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", Locale.US),
+        ).onEach { it.isLenient = false }
+        var ok = 0
+        var bad = 0
+        input.bufferedReader(Charsets.UTF_8).useLines { lines ->
+            val batch = ArrayList<Triple<String, Long, Double>>()
+            fun flush() {
+                if (batch.isEmpty()) return
+                db.beginTransaction()
+                try {
+                    val cv = ContentValues()
+                    for ((k, t, v) in batch) {
+                        cv.clear()
+                        cv.put("k", k); cv.put("t", t / 1000 * 1000); cv.put("v", v)
+                        db.insertWithOnConflict("samples", null, cv, SQLiteDatabase.CONFLICT_REPLACE)
+                    }
+                    db.setTransactionSuccessful()
+                } finally {
+                    db.endTransaction()
+                }
+                batch.clear()
+            }
+            for ((i, raw) in lines.withIndex()) {
+                val line = raw.removePrefix("﻿").trim()
+                if (line.isEmpty()) continue
+                if (i == 0 && line.lowercase().startsWith("key")) continue // 見出し行
+                val row = parseCsvLine(line, formats)
+                if (row == null) { bad++; continue }
+                batch += row
+                ok++
+                if (batch.size >= 2000) flush()
+            }
+            flush()
+        }
+        _revision.value++
+        ok to bad
+    }
+
+    private fun formatValue(v: Double): String =
+        if (v == Math.rint(v) && kotlin.math.abs(v) < 1e15) v.toLong().toString() else v.toString()
 
     private fun cleanup(now: Long) {
-        val days = retentionDays.coerceIn(1, MAX_DAYS)
-        db.delete("samples", "t < ?", arrayOf((now - days * 86_400_000L).toString()))
-    }
-
-    /** 記録をすべて消す */
-    suspend fun clear() = withContext(Dispatchers.IO) {
-        synchronized(lock) {
-            recent.clear(); lastMem.clear(); pending.clear()
-        }
-        runCatching { db.delete("samples", null, null) }
-        Unit
+        val months = retentionMonths.coerceIn(1, MAX_MONTHS)
+        db.delete("samples", "t < ?", arrayOf((now - months * MONTH_MS).toString()))
     }
 }

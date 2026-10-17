@@ -3,7 +3,6 @@ package com.obdmeter.ui
 import androidx.compose.ui.graphics.Color
 import com.obdmeter.core.Condition
 import com.obdmeter.core.PidCatalog
-import com.obdmeter.data.HistoryStore
 import com.obdmeter.core.PidDef
 import com.obdmeter.data.GaugeConfig
 import com.obdmeter.data.GaugeDesign
@@ -96,8 +95,7 @@ fun GaugeDesign.toLook(def: PidDef, style: GaugeStyle): GaugeLook {
         lampCondition = lampCondition.takeIf { it.isNotBlank() }?.let { runCatching { Condition.compile(it) }.getOrNull() },
         lampOnColor = lampOnColor.color(GaugeColors.Warn),
         lampOffColor = lampOffColor.color(Color(0xFF2A2F36)),
-        chartSpanMs = chartSpanSec.coerceIn(5, 86_400) * 1000L,
-        historyDays = historyDays.coerceIn(1, HistoryStore.MAX_DAYS),
+        chartSpanMs = chartSpanSec.coerceIn(60, 31 * 86_400) * 1000L,
         chartColors = chartColors.map { c -> c?.let { Color(it) } },
         showPeak = showPeak,
         peakColor = peakColor.color(GaugeColors.Peak),

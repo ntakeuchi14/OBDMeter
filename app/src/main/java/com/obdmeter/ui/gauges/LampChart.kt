@@ -1,5 +1,15 @@
 package com.obdmeter.ui.gauges
 
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.MutableStateFlow
+import androidx.compose.ui.graphics.drawscope.clipRect
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.collectAsState
+import androidx.compose.foundation.clickable
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.activity.compose.rememberLauncherForActivityResult
+import android.widget.Toast
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectTapGestures
@@ -146,15 +156,16 @@ internal fun LampGauge(
 
 /** 目盛りの間隔の候補 (ミリ秒) */
 private val TIME_STEPS = listOf(
-    1_000L, 2_000L, 5_000L, 10_000L, 15_000L, 30_000L,
     60_000L, 120_000L, 300_000L, 600_000L, 900_000L, 1_800_000L,
-    3_600_000L, 7_200_000L, 10_800_000L, 21_600_000L, 43_200_000L, 86_400_000L,
+    3_600_000L, 7_200_000L, 10_800_000L, 21_600_000L, 43_200_000L,
+    86_400_000L, 172_800_000L, 604_800_000L, 1_209_600_000L, 2_592_000_000L,
 )
 
 /**
- * 複数項目の折れ線グラフ。項目ごとに自分の範囲 (最小〜最大) で縦方向を合わせて重ねて描く。
- * 上に各項目の現在値。左右にドラッグで過去へスクロール、2 本指で時間の幅を拡大縮小、
- * ダブルタップで現在の表示に戻る。
+ * 複数項目の折れ線グラフ。記録 ([HistoryStore]) を読み、項目ごとに記録のある時刻を線でつなぐ。
+ * 縦方向は項目ごとに自分の範囲 (最小〜最大) で合わせて重ねる。上に各項目の現在値。
+ * 左右にドラッグで記録の全期間をスクロール、2 本指で 1 画面の期間を拡大縮小、ダブルタップで現在に戻る。
+ * [interactive] のときは CSV の書き出し・読み込みボタンも出す。
  */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
@@ -167,53 +178,60 @@ internal fun ChartGauge(
 ) {
     val history = LocalHistory.current
     val tm = rememberTextMeasurer()
-    val maxBack = look.historyDays * 86_400_000L
+    val keys = series.map { it.def.key }
+    val revision by (history?.revision ?: remember { MutableStateFlow(0L) }).collectAsState()
     var span by remember(look.chartSpanMs) { mutableLongStateOf(look.chartSpanMs) }
     /** 表示の右端の時刻 (null = 現在に追従) */
     var endAt by remember { mutableStateOf<Long?>(null) }
     var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
     LaunchedEffect(Unit) {
         while (true) {
+            delay(5_000)
             now = System.currentTimeMillis()
-            delay(if (endAt == null) 250 else 1000)
         }
     }
+    // 記録の一番古い時刻 (ここまでさかのぼれる)
+    val earliest by produceState<Long?>(null, keys, revision) { value = history?.earliest(keys) }
 
     val end = endAt ?: now
     val start = end - span
-    val keys = series.map { it.def.key }
-
-    // メモリに無い範囲はデータベースから読む (範囲を丸めて、動かすたびに読み直さないようにする)
-    val needDb = history != null && keys.any { start < history.memoryStart(it) }
-    val q = (span / 40).coerceAtLeast(1_000L)
+    // 範囲を丸めて、動かすたびに読み直さないようにする
+    val q = (span / 50).coerceAtLeast(1000L)
     val qStart = start / q * q - q
     val qEnd = (end / q + 1) * q
-    val fromDb by produceState(emptyMap<String, List<Sample>>(), keys, qStart, qEnd, needDb) {
-        if (needDb && history != null) value = keys.associateWith { history.load(it, qStart, qEnd, 800) }
+    val data by produceState(emptyMap<String, List<Sample>>(), keys, qStart, qEnd, revision) {
+        if (history != null) value = keys.associateWith { k ->
+            // 表示範囲の外の直前・直後の点も入れて、端まで線がつながるようにする
+            val (before, after) = history.neighbors(k, qStart, qEnd)
+            listOfNotNull(before) + history.load(k, qStart, qEnd, 800) + listOfNotNull(after)
+        }
     }
 
     Column(modifier.padding(4.dp)) {
-        // 各項目の現在値
-        FlowRow(
-            Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(10.dp),
-        ) {
-            series.forEachIndexed { i, s ->
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Box(Modifier.size(8.dp).clip(CircleShape).background(chartColor(look, i)))
-                    Spacer(Modifier.width(4.dp))
-                    Text(
-                        s.def.shortName + " ",
-                        color = look.labelColor, fontFamily = fonts.label,
-                        fontSize = (11 * look.labelSize).sp, maxLines = 1, overflow = TextOverflow.Ellipsis,
-                    )
-                    Text(
-                        s.def.format(s.value) + if (look.showUnit) " ${s.def.unit}" else "",
-                        color = chartColor(look, i), fontFamily = fonts.value, fontWeight = FontWeight.Bold,
-                        fontSize = (13 * look.valueSize).sp, maxLines = 1,
-                    )
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Top) {
+            // 各項目の現在値
+            FlowRow(
+                Modifier.weight(1f),
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                series.forEachIndexed { i, s ->
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Box(Modifier.size(8.dp).clip(CircleShape).background(chartColor(look, i)))
+                        Spacer(Modifier.width(4.dp))
+                        Text(
+                            s.def.shortName + " ",
+                            color = look.labelColor, fontFamily = fonts.label,
+                            fontSize = (11 * look.labelSize).sp, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                        )
+                        Text(
+                            s.def.format(s.value) + if (look.showUnit) " ${s.def.unit}" else "",
+                            color = chartColor(look, i), fontFamily = fonts.value, fontWeight = FontWeight.Bold,
+                            fontSize = (13 * look.valueSize).sp, maxLines = 1,
+                        )
+                    }
                 }
             }
+            if (interactive && history != null) ChartCsvButtons(history, keys)
         }
 
         BoxWithConstraints(
@@ -223,15 +241,18 @@ internal fun ChartGauge(
                 .then(
                     if (!interactive) Modifier
                     else Modifier
-                        .pointerInput(look.chartSpanMs, maxBack) {
+                        .pointerInput(look.chartSpanMs) {
                             detectTransformGestures { _, pan, zoom, _ ->
                                 val t = System.currentTimeMillis()
-                                if (zoom != 1f) span = (span / zoom).toLong().coerceIn(5_000L, maxBack)
+                                val oldest = earliest ?: t
+                                val maxSpan = max(31 * 86_400_000L, t - oldest)
+                                if (zoom != 1f) span = (span / zoom).toLong().coerceIn(60_000L, maxSpan)
                                 if (pan.x != 0f && size.width > 0) {
                                     val base = endAt ?: t
-                                    val next = (base - (pan.x / size.width * span).toLong())
-                                        .coerceIn(t - maxBack + span, t)
-                                    endAt = if (next >= t - 500) null else next
+                                    // 一番古い記録が左端に来るところまでさかのぼれる
+                                    val minEnd = min(t, oldest + span)
+                                    val next = (base - (pan.x / size.width * span).toLong()).coerceIn(minEnd, t)
+                                    endAt = if (next >= t - span / 100) null else next
                                 }
                             }
                         }
@@ -253,67 +274,101 @@ internal fun ChartGauge(
                     drawLine(GaugeColors.Track.copy(alpha = if (i == 0 || i == 4) 0.9f else 0.5f), Offset(0f, y), Offset(w, y), 1f)
                 }
                 // 時刻の目盛り
-                val step = TIME_STEPS.firstOrNull { it * 6 >= span } ?: TIME_STEPS.last()
-                val fmt = SimpleDateFormat(
-                    when {
-                        step >= 21_600_000L -> "M/d HH:mm"
-                        step >= 60_000L -> "HH:mm"
-                        else -> "HH:mm:ss"
-                    },
-                    Locale.getDefault(),
-                )
+                val step = TIME_STEPS.firstOrNull { it * 5 >= span } ?: TIME_STEPS.last()
+                val fmt = SimpleDateFormat(if (step >= 21_600_000L) "M/d HH:mm" else "HH:mm", Locale.getDefault())
                 val tz = java.util.TimeZone.getDefault()
                 var t = start - Math.floorMod(start + tz.getOffset(start), step) + step
                 while (t <= end) {
                     val x = (t - start).toFloat() / span * w
                     drawLine(GaugeColors.Track.copy(alpha = 0.5f), Offset(x, 0f), Offset(x, plotH), 1f)
                     val lay = tm.measure(fmt.format(Date(t)), labelStyle)
-                    val lx = (x - lay.size.width / 2f).coerceIn(0f, w - lay.size.width)
+                    val lx = (x - lay.size.width / 2f).coerceIn(0f, max(0f, w - lay.size.width))
                     drawText(lay, topLeft = Offset(lx, plotH + 2f))
                     t += step
                 }
 
-                // 線
-                val gap = max(30_000L, span / 20)
+                // 項目ごとに、記録のある時刻を線でつなぐ
                 var any = false
                 series.forEachIndexed { i, s ->
-                    val k = s.def.key
-                    val mem = history?.recent(k, start - q) ?: emptyList()
-                    val memStart = mem.firstOrNull()?.t ?: Long.MAX_VALUE
-                    val pts = (fromDb[k].orEmpty().filter { it.t < memStart } + mem)
-                        .filter { it.t in (start - q)..(end + q) }
-                    if (pts.size < 2) return@forEachIndexed
+                    val pts = data[s.def.key].orEmpty()
+                    if (pts.isEmpty()) return@forEachIndexed
                     any = true
+                    val color = chartColor(look, i)
                     val lo = s.def.min
                     val range = (s.def.max - s.def.min).takeIf { it > 0 } ?: 1.0
+                    fun x(p: Sample) = (p.t - start).toFloat() / span * w
+                    fun y(p: Sample) = plotH - ((p.v - lo) / range).toFloat().coerceIn(-0.02f, 1.02f) * plotH
                     val path = Path()
-                    var prevT = Long.MIN_VALUE
-                    // 点が多すぎるときは間引く (画面の幅の 2 倍程度)
-                    val stride = max(1, pts.size / (w.toInt() * 2).coerceAtLeast(1))
-                    var idx = 0
-                    while (idx < pts.size) {
-                        val p = pts[idx]
-                        val x = (p.t - start).toFloat() / span * w
-                        val norm = ((p.v - lo) / range).toFloat().coerceIn(-0.02f, 1.02f)
-                        val y = plotH - norm * plotH
-                        if (prevT == Long.MIN_VALUE || p.t - prevT > gap) path.moveTo(x, y) else path.lineTo(x, y)
-                        prevT = p.t
-                        idx += stride
+                    pts.forEachIndexed { idx, p -> if (idx == 0) path.moveTo(x(p), y(p)) else path.lineTo(x(p), y(p)) }
+                    clipRect(0f, 0f, w, plotH) {
+                        drawPath(path, color, style = Stroke(2.dp.toPx(), cap = StrokeCap.Round, join = StrokeJoin.Round))
+                        // 点がまばらなときは記録した位置に点を打つ
+                        val visible = pts.count { it.t in start..end }
+                        if (visible in 1..(w / 8).toInt()) {
+                            pts.forEach { p -> if (p.t in start..end) drawCircle(color, 2.5.dp.toPx(), Offset(x(p), y(p))) }
+                        }
                     }
-                    drawPath(path, chartColor(look, i), style = Stroke(2.dp.toPx(), cap = StrokeCap.Round, join = StrokeJoin.Round))
                 }
                 if (!any) {
-                    drawCenteredText(tm, if (history == null) "" else "記録がありません", Offset(w / 2, plotH / 2), labelStyle)
+                    drawCenteredText(tm, if (history == null) "" else "この期間の記録はありません", Offset(w / 2, plotH / 2), labelStyle)
                 }
             }
             if (endAt != null) {
                 Text(
                     "過去を表示中 (ダブルタップで現在へ)",
-                    Modifier.align(Alignment.TopEnd).background(Color.Black.copy(alpha = 0.5f), RoundedCornerShape(4.dp))
+                    Modifier.align(Alignment.TopStart).background(Color.Black.copy(alpha = 0.5f), RoundedCornerShape(4.dp))
                         .padding(horizontal = 4.dp, vertical = 1.dp),
                     color = GaugeColors.Text, fontSize = 10.sp,
                 )
             }
         }
     }
+}
+
+/** グラフの記録の CSV 書き出し・読み込みボタン (アプリの画面でだけ出す) */
+@Composable
+private fun ChartCsvButtons(history: HistoryStore, keys: List<String>) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val exporter = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("text/csv")) { uri ->
+        if (uri == null) return@rememberLauncherForActivityResult
+        scope.launch {
+            val msg = runCatching {
+                val n = context.contentResolver.openOutputStream(uri)?.use { history.exportCsv(keys, it) }
+                    ?: error("ファイルを開けませんでした")
+                "$n 件を書き出しました"
+            }.getOrElse { "書き出しに失敗しました: ${it.message}" }
+            Toast.makeText(context, msg, Toast.LENGTH_LONG).show()
+        }
+    }
+    val importer = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri == null) return@rememberLauncherForActivityResult
+        scope.launch {
+            val msg = runCatching {
+                val (ok, bad) = context.contentResolver.openInputStream(uri)?.use { history.importCsv(it) }
+                    ?: error("ファイルを開けませんでした")
+                "$ok 件を読み込みました" + if (bad > 0) " (読めない行 $bad 件)" else ""
+            }.getOrElse { "読み込みに失敗しました: ${it.message}" }
+            Toast.makeText(context, msg, Toast.LENGTH_LONG).show()
+        }
+    }
+    Row {
+        CsvButton("書出") {
+            val stamp = SimpleDateFormat("yyyyMMdd_HHmm", Locale.US).format(Date())
+            exporter.launch("obdmeter_chart_$stamp.csv")
+        }
+        Spacer(Modifier.width(4.dp))
+        CsvButton("読込") { importer.launch(arrayOf("text/*", "application/csv", "application/vnd.ms-excel", "*/*")) }
+    }
+}
+
+@Composable
+private fun CsvButton(text: String, onClick: () -> Unit) {
+    Box(
+        Modifier
+            .clip(RoundedCornerShape(6.dp))
+            .background(GaugeColors.Card.copy(alpha = 0.9f))
+            .clickable(onClick = onClick)
+            .padding(horizontal = 8.dp, vertical = 3.dp),
+    ) { Text(text, fontSize = 11.sp, color = GaugeColors.Text) }
 }

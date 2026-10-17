@@ -205,12 +205,14 @@ data class GaugeDesign(
     val lampOnColor: Long? = null,
     val lampOffColor: Long? = null,
     // --- 折れ線グラフ ---
-    /** 1 画面に表示する時間 (秒) */
-    val chartSpanSec: Int = 60,
-    /** 記録を残す日数 (この日数分までさかのぼって見られる) */
+    /** 1 画面に表示する期間 (秒)。左右のスクロールで記録の全期間を見られる */
+    val chartSpanSec: Int = 3600,
+    /** (旧設定・未使用) */
     val historyDays: Int = 1,
-    /** 記録する間隔 (秒) */
-    val recordIntervalSec: Float = 1f,
+    /** 記録を残す期間 (か月) */
+    val historyMonths: Int = 3,
+    /** 記録する間隔 (秒、10〜600)。接続した直後に 1 回記録し、その後この間隔で記録する */
+    val recordIntervalSec: Float = 60f,
     /** 項目ごとの線の色 (並びは「表示する項目」→ 追加した項目の順。null = 自動) */
     val chartColors: List<Long?> = emptyList(),
 )

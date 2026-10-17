@@ -123,9 +123,8 @@ data class GaugeLook(
     val lampCondition: Condition? = null,
     val lampOnColor: Color = GaugeColors.Warn,
     val lampOffColor: Color = Color(0xFF2A2F36),
-    /** 折れ線グラフの 1 画面の時間 (ミリ秒) と保存日数 */
-    val chartSpanMs: Long = 60_000L,
-    val historyDays: Int = 1,
+    /** 折れ線グラフの 1 画面の期間 (ミリ秒) */
+    val chartSpanMs: Long = 3_600_000L,
     /** 折れ線グラフの線の色 (項目の順。足りない分は自動) */
     val chartColors: List<Color?> = emptyList(),
     val showPeak: Boolean = false,

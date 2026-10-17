@@ -1,5 +1,6 @@
 package com.obdmeter.ui
 
+import com.obdmeter.data.HistoryStore
 import android.widget.Toast
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
@@ -761,37 +762,49 @@ private fun ChartSettings(
         OutlinedButton(onClick = onAddItem) { Text("項目を追加") }
     }
 
-    Head("1 画面に表示する時間")
+    Head("1 画面に表示する期間")
     Row(Modifier.horizontalScroll(rememberScrollState())) {
-        listOf(30 to "30秒", 60 to "1分", 300 to "5分", 900 to "15分", 3600 to "1時間", 21600 to "6時間", 86400 to "1日")
-            .forEach { (sec, label) ->
-                FilterChip(d.chartSpanSec == sec, { update { it.copy(chartSpanSec = sec) } }, { Text(label) },
-                    Modifier.padding(end = 6.dp))
-            }
-    }
-    Hint("表示中は、左右にドラッグで過去へさかのぼり、2 本指で時間の幅を拡大縮小、ダブルタップで現在の表示に戻ります。")
-
-    Head("記録を残す期間")
-    Row(Modifier.horizontalScroll(rememberScrollState())) {
-        listOf(1, 3, 7, 14, 30).forEach { n ->
-            FilterChip(d.historyDays == n, { update { it.copy(historyDays = n) } }, { Text("${n}日") },
+        listOf(
+            600 to "10分", 1800 to "30分", 3600 to "1時間", 10800 to "3時間", 21600 to "6時間", 43200 to "12時間",
+            86400 to "1日", 259200 to "3日", 604800 to "1週間", 2592000 to "1か月",
+        ).forEach { (sec, label) ->
+            FilterChip(d.chartSpanSec == sec, { update { it.copy(chartSpanSec = sec) } }, { Text(label) },
                 Modifier.padding(end = 6.dp))
         }
     }
-    Hint("接続中の値を端末に記録します。期間を過ぎた記録は自動で消えます。")
+    Hint("記録の全期間を表示できます。左右にドラッグでスクロール、2 本指で期間を拡大縮小、ダブルタップで現在の表示に戻ります。")
 
     Head("記録する間隔")
-    Row(Modifier.horizontalScroll(rememberScrollState())) {
-        listOf(0.2f to "0.2秒", 0.5f to "0.5秒", 1f to "1秒", 2f to "2秒", 5f to "5秒", 10f to "10秒", 30f to "30秒", 60f to "1分")
-            .forEach { (sec, label) ->
-                FilterChip(d.recordIntervalSec == sec, { update { it.copy(recordIntervalSec = sec) } }, { Text(label) },
-                    Modifier.padding(end = 6.dp))
-            }
-    }
-    val perDay = 86_400f / d.recordIntervalSec * g.chartAllKeys.size * 50 / 1_000_000f
+    val interval = d.recordIntervalSec.toInt().coerceIn(HistoryStore.MIN_INTERVAL_SEC, HistoryStore.MAX_INTERVAL_SEC)
+    SliderLine("間隔 (秒)", interval.toFloat(), HistoryStore.MIN_INTERVAL_SEC.toFloat()..HistoryStore.MAX_INTERVAL_SEC.toFloat(),
+        "%.0f 秒") { v -> update { it.copy(recordIntervalSec = snap(v, 10f).coerceAtLeast(10f)) } }
     Hint(
-        "短いほど細かく記録できますが、端末の容量を使います (この設定で 1 日あたり約 ${"%.0f".format(perDay.coerceAtLeast(1f))} MB)。" +
-            "実際の値の更新間隔は、表示している項目の数によって遅くなることがあります。"
+        "接続した直後にすべての項目を 1 回記録し、その後はこの間隔で記録します " +
+            "(グラフのページを表示していなくても記録します)。"
+    )
+
+    Head("記録を残す期間")
+    Row(Modifier.horizontalScroll(rememberScrollState())) {
+        listOf(1, 2, 3, 6, 12, 24).forEach { n ->
+            FilterChip(d.historyMonths == n, { update { it.copy(historyMonths = n) } }, { Text("${n}か月") },
+                Modifier.padding(end = 6.dp))
+        }
+    }
+    val mbPerMonth = 30 * 86_400f / interval * g.chartAllKeys.size * 40 / 1_000_000f
+    Hint(
+        "期間を過ぎた記録は自動で消えます (複数のグラフがあるときは一番長い期間)。" +
+            "この設定で 1 か月あたり約 ${"%.1f".format(mbPerMonth)} MB を使います。"
+    )
+
+    Head("記録の CSV")
+    Hint(
+        "ダッシュボードのグラフ内の「書出」「読込」ボタンで、このグラフの項目の記録を CSV で書き出し・読み込みできます。" +
+            "形式は 1 行に「項目キー, 年月日時分秒, 値」(例: COOLANT,2026-10-18 00:46:00,88)。" +
+            "読み込みでは、同じ項目・同じ時刻の記録は上書きされます。"
+    )
+    Text(
+        g.chartAllKeys.joinToString("  ") { k -> "${catalog.get(k)?.shortName ?: k} = $k" },
+        color = GaugeColors.SubText, fontSize = 12.sp,
     )
 
     Head("線の色")

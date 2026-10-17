@@ -91,6 +91,29 @@ class ObdSession(
         return withTimeoutOrNull(8000) { d.await() } ?: TestResult(null, "タイムアウトしました")
     }
 
+    /** グラフの記録用の読み出し。ポーリングの合間にまとめて処理する */
+    private val sampleQueue = ConcurrentLinkedQueue<Pair<List<PidDef>, CompletableDeferred<Map<String, Double>>>>()
+
+    /**
+     * [defs] の値を 1 回だけ読む (表示中のページに無い項目も読める)。
+     * 接続していなければ null。読めなかった項目は結果に含まれない
+     */
+    suspend fun sample(defs: List<PidDef>): Map<String, Double>? {
+        if (_state.value !is ConnectionState.Connected || defs.isEmpty()) return null
+        val d = CompletableDeferred<Map<String, Double>>()
+        sampleQueue.add(defs to d)
+        return withTimeoutOrNull(20_000) { d.await() }
+    }
+
+    private fun drainSamples(reader: ObdReader) {
+        while (true) {
+            val (defs, d) = sampleQueue.poll() ?: return
+            val got = HashMap<String, Double>()
+            runCatching { reader.poll(defs, got) }
+            d.complete(got)
+        }
+    }
+
     private fun drainTests(p: ObdProtocol) {
         while (true) {
             val (req, d) = testQueue.poll() ?: return
@@ -239,6 +262,7 @@ class ObdSession(
         var lastPublish = 0L
         while (currentCoroutineContext().isActive) {
             drainTests(p)
+            drainSamples(reader)
             val defs = activePids
             if (defs.isEmpty()) { delay(100); continue }
             val r = reader.poll(defs, values, activeFallbacks)
@@ -276,7 +300,7 @@ class ObdSession(
             if (ignitionOff) {
                 // 値が出ない間は問い合わせを 1 秒に 1 回に抑える (車両のネットワークへの負担とバッテリー対策)
                 _rate.value = 0.0
-                repeat(5) { delay(200); drainTests(p) }
+                repeat(5) { delay(200); drainTests(p); drainSamples(reader) }
                 continue
             }
             val now = System.currentTimeMillis()

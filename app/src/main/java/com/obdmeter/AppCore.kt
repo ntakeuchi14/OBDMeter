@@ -1,5 +1,7 @@
 package com.obdmeter
 
+import kotlinx.coroutines.delay
+import com.obdmeter.session.ConnectionState
 import android.content.Context
 import com.obdmeter.core.PidCatalog
 import com.obdmeter.data.AppSettings
@@ -92,22 +94,38 @@ class AppCore private constructor(context: Context) {
                 session.activeFallbacks = fallbacks
             }
         }
-        // 折れ線グラフで使っている項目を記録する (保存日数はグラフの設定の最大)
+        // 折れ線グラフで使っている項目と記録間隔・保存期間 (同じ項目を複数のグラフで使うときは短いほうの間隔)
         scope.launch {
             dashboards.collect { pages ->
                 val charts = pages.flatMap { it.gauges }.filter { it.style == GaugeStyle.CHART }
-                // 同じ項目を複数のグラフで使うときは、短いほうの間隔で記録する
                 val iv = HashMap<String, Long>()
                 charts.forEach { g ->
-                    val ms = (g.design.recordIntervalSec * 1000).toLong().coerceAtLeast(HistoryStore.MIN_INTERVAL_MS)
-                    g.chartAllKeys.forEach { k -> iv[k] = minOf(iv[k] ?: Long.MAX_VALUE, ms) }
+                    val sec = g.design.recordIntervalSec.toInt()
+                        .coerceIn(HistoryStore.MIN_INTERVAL_SEC, HistoryStore.MAX_INTERVAL_SEC)
+                    g.chartAllKeys.forEach { k -> iv[k] = minOf(iv[k] ?: Long.MAX_VALUE, sec * 1000L) }
                 }
                 history.intervals = iv
-                history.retentionDays = charts.maxOfOrNull { it.design.historyDays } ?: 1
+                history.retentionMonths = charts.maxOfOrNull { it.design.historyMonths } ?: 3
             }
         }
+        // 記録: 接続した直後に全項目を 1 回読み、その後は項目ごとの間隔で読む
+        // (表示中のページに無い項目も読む)
         scope.launch {
-            session.values.collect { v -> if (v.isNotEmpty()) history.record(v) }
+            val nextDue = HashMap<String, Long>()
+            var wasConnected = false
+            while (true) {
+                delay(1000)
+                val connected = session.state.value is ConnectionState.Connected
+                if (!connected) { wasConnected = false; continue }
+                if (!wasConnected) { nextDue.clear(); wasConnected = true }
+                val now = System.currentTimeMillis()
+                val due = history.intervals.filter { (k, _) -> (nextDue[k] ?: 0L) <= now }
+                if (due.isEmpty()) continue
+                val defs = due.keys.mapNotNull { catalog.value.get(it) }
+                val got = session.sample(defs) ?: continue
+                history.store(got.filterKeys { it in due }, System.currentTimeMillis())
+                due.forEach { (k, ms) -> nextDue[k] = now + ms }
+            }
         }
     }
 
