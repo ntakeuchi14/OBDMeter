@@ -115,6 +115,7 @@ fun GaugeSettingsDialog(
         Box(Modifier.fillMaxSize().background(GaugeColors.Background).safeDrawingPadding()) {
             BoxWithConstraints(Modifier.fillMaxSize()) {
                 val wide = maxWidth > maxHeight
+                val previewHeight = maxHeight * 0.38f
                 val preview: @Composable (Modifier) -> Unit = { m ->
                     Column(m.padding(12.dp), horizontalAlignment = Alignment.CenterHorizontally) {
                         Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
@@ -175,7 +176,7 @@ fun GaugeSettingsDialog(
                             settings(Modifier.weight(1.1f).fillMaxHeight())
                         }
                     } else {
-                        preview(Modifier.fillMaxWidth().height(maxHeight * 0.38f))
+                        preview(Modifier.fillMaxWidth().height(previewHeight))
                         settings(Modifier.fillMaxWidth().weight(1f))
                     }
                 }
@@ -522,11 +523,11 @@ private fun ColorLine(
     }
 }
 
-private val EXTRA_COLORS = listOf(
+private val EXTRA_COLORS: List<Pair<String, Long>> = listOf(
     "黒" to 0xFF000000,
     "濃いグレー" to 0xFF3A3F47,
     "グレー" to 0xFF8A93A0,
     "シルバー" to 0xFFC8CDD3,
     "赤みのオレンジ" to 0xFFFF5A36,
-    "半透明の赤" to 0x66FF5A36,
+    "半透明の赤" to 0x66FF5A36L,
 )
