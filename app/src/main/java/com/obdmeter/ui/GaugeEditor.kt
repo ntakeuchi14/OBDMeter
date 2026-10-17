@@ -318,6 +318,19 @@ private fun BasicTab(
         }
     }
 
+    Head("フロート表示のグループ")
+    Hint(
+        "同じページで同じグループにしたメーターは、フロート表示のとき 1 つのウィンドウにまとめて、" +
+            "ダッシュボードと同じ並びで表示します。「なし」のメーターは 1 つずつ表示します。"
+    )
+    Row(Modifier.horizontalScroll(rememberScrollState())) {
+        FilterChip(g.floatGroup == null, { replace(g.copy(floatGroup = null)) }, { Text("なし") }, Modifier.padding(end = 6.dp))
+        (1..GaugeConfig.FLOAT_GROUPS).forEach { n ->
+            FilterChip(g.floatGroup == n, { replace(g.copy(floatGroup = n)) }, { Text(GaugeConfig.groupLabel(n)) },
+                Modifier.padding(end = 6.dp))
+        }
+    }
+
     Head("表示名 (空欄で「${base?.shortName ?: ""}」)")
     var labelText by remember(g.id, g.pidKey) { mutableStateOf(d.label.orEmpty()) }
     OutlinedTextField(

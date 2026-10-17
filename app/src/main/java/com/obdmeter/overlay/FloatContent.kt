@@ -4,6 +4,8 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -17,6 +19,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -33,13 +36,13 @@ import com.obdmeter.ui.resolvedDef
 import com.obdmeter.ui.statusColor
 
 /**
- * フロート表示のメーター 1 つ。アプリと同じデザインで描く。
+ * フロート表示のウィンドウ 1 つ (単独のメーター、またはグループのメーターをまとめたもの)。アプリと同じデザインで描く。
  * タップで操作ボタン (アプリを開く・閉じる)、ダブルタップでアプリを開く。
  */
 @Composable
 fun FloatGauge(
     core: AppCore,
-    gaugeId: Long,
+    unitKey: Long,
     showControls: Boolean,
     onToggleControls: () -> Unit,
     onOpenApp: () -> Unit,
@@ -52,7 +55,8 @@ fun FloatGauge(
     val supported by core.session.supported.collectAsState()
     val state by core.session.state.collectAsState()
     val fonts by core.fonts.collectAsState()
-    val gauge = pages.firstNotNullOfOrNull { d -> d.gauges.firstOrNull { it.id == gaugeId } }
+    // このウィンドウに出すメーター (単独なら 1 つ、グループなら複数)
+    val members = pages.firstNotNullOfOrNull { it.floatUnits()[unitKey] }.orEmpty()
 
     CompositionLocalProvider(
         LocalContentColor provides GaugeColors.Text,
@@ -68,9 +72,22 @@ fun FloatGauge(
                     detectTapGestures(onTap = { onToggleControls() }, onDoubleTap = { onOpenApp() })
                 }
         ) {
-            if (gauge != null) {
-                Box(Modifier.fillMaxSize().padding(2.dp)) {
-                    GaugeView(gauge, gauge.resolvedDef(catalog), values, supported, noCard = true)
+            if (members.isNotEmpty()) {
+                // ダッシュボードと同じ並びで、囲む範囲をウィンドウいっぱいに広げて描く
+                val b = members.cellBounds()
+                BoxWithConstraints(Modifier.fillMaxSize()) {
+                    val cw = maxWidth / b[2]
+                    val ch = maxHeight / b[3]
+                    members.forEach { g ->
+                        key(g.id) {
+                            Box(
+                                Modifier
+                                    .offset(cw * (g.x - b[0]), ch * (g.y - b[1]))
+                                    .size(cw * g.w, ch * g.h)
+                                    .padding(2.dp)
+                            ) { GaugeView(g, g.resolvedDef(catalog), values, supported, noCard = true) }
+                        }
+                    }
                 }
             }
 

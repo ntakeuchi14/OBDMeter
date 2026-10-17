@@ -484,6 +484,14 @@ private fun GaugeOnGrid(
             )
     ) {
         content()
+        if (editing && gauge.floatGroup != null) {
+            // フロート表示のグループ (左上)
+            Box(
+                Modifier.align(Alignment.TopStart).padding(4.dp).size(22.dp).clip(CircleShape)
+                    .background(GaugeColors.Accent),
+                contentAlignment = Alignment.Center,
+            ) { Text(GaugeConfig.groupLabel(gauge.floatGroup), color = GaugeColors.Background, fontSize = 12.sp, fontWeight = FontWeight.Bold) }
+        }
         if (editing) {
             // サイズ変更のつまみ (右下)
             Box(

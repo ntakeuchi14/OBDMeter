@@ -212,7 +212,17 @@ data class GaugeConfig(
      * に、代わりにこの項目の値を表示する。カスタム PID を指定することを想定。
      */
     val fallbackKey: String? = null,
-)
+    /**
+     * フロート表示のグループ (1〜[FLOAT_GROUPS])。同じページで同じグループのメーターは、
+     * フロート表示で 1 つのウィンドウにまとめて、ダッシュボードと同じ並びで表示する。null = 単独
+     */
+    val floatGroup: Int? = null,
+) {
+    companion object {
+        const val FLOAT_GROUPS = 6
+        fun groupLabel(group: Int): String = ('A' + (group - 1)).toString()
+    }
+}
 
 /** フロート表示したメーター 1 つの位置 (画面左上からの px) と幅 (dp)。高さはメーターの形で決まる */
 @Serializable
