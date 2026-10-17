@@ -54,6 +54,8 @@ data class AppSettings(
     val floatOnLeave: Boolean = false,
     /** アプリを起動したら、すぐにホーム画面に戻ってフロート表示で始める (フロート表示が ON のときだけ) */
     val startInFloat: Boolean = false,
+    /** 最後に表示していたダッシュボードのページ (次の起動時にこのページから始める) */
+    val lastPageId: Long? = null,
 ) {
     /** 起動時に自動接続するか (フロート表示が ON なら常に接続する) */
     val autoConnectEffective: Boolean get() = autoConnect || floatOnLeave

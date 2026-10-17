@@ -37,6 +37,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 
@@ -274,7 +275,22 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     /** 表示中のページが変わったら、読み出す項目を切り替える */
-    fun setActivePage(id: Long?) { core.appPage.value = id }
+    fun setActivePage(id: Long?) {
+        core.appPage.value = id
+        // 次の起動時にこのページから始められるように覚えておく
+        if (id != null) viewModelScope.launch {
+            if (repo.settings.first().lastPageId != id) repo.updateSettings { it.copy(lastPageId = id) }
+        }
+    }
+
+    /**
+     * ダッシュボードを開いたときに表示するページ: このプロセスで表示中だったページ、
+     * 無ければ前回の起動で最後に表示していたページ。ページの一覧が読み込まれるまで待つ
+     */
+    suspend fun pageToRestore(): Long? {
+        val id = core.appPage.value ?: repo.settings.first().lastPageId ?: return null
+        return withTimeoutOrNull(3000) { dashboards.first { list -> list.any { it.id == id } } }?.let { id }
+    }
 
     /** アプリのダッシュボードの 1 マスの縦横比を覚えておく (フロート表示の形に使う) */
     fun reportCellAspect(aspect: Float) { if (aspect.isFinite() && aspect > 0f) core.cellAspect.value = aspect }

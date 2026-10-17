@@ -1,5 +1,8 @@
 package com.obdmeter.ui
 
+import kotlinx.coroutines.withTimeoutOrNull
+import kotlinx.coroutines.flow.first
+import androidx.compose.runtime.snapshotFlow
 import com.obdmeter.ui.gauges.ChartSeries
 import androidx.compose.foundation.Canvas
 import kotlinx.coroutines.delay
@@ -100,8 +103,21 @@ fun DashboardScreen(vm: MainViewModel, onNavigate: (Screen) -> Unit, onCreateCus
     val current = dashboards.getOrNull(pager.currentPage)
 
     // 表示中のページの項目だけを読み出す
-    LaunchedEffect(current?.id) {
-        vm.setActivePage(current?.id)
+    // 最後に表示していたページから始める (戻すまでは表示中のページを記録しない)
+    var pageRestored by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) {
+        vm.pageToRestore()?.let { id ->
+            val idx = vm.dashboards.value.indexOfFirst { it.id == id }
+            if (idx >= 0 && idx != pager.currentPage) {
+                // 画面側のページ数が追いつくのを待ってから移動する
+                withTimeoutOrNull(2000) { snapshotFlow { pager.pageCount }.first { it > idx } }
+                pager.scrollToPage(idx)
+            }
+        }
+        pageRestored = true
+    }
+    LaunchedEffect(current?.id, pageRestored) {
+        if (pageRestored) vm.setActivePage(current?.id)
     }
 
     // ---- 上部バー (接続状態・接続ボタン・編集・ログ・設定) ----
