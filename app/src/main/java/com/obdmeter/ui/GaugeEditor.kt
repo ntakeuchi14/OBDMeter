@@ -55,6 +55,7 @@ import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
@@ -104,6 +105,7 @@ fun GaugeSettingsDialog(
     onDismiss: () -> Unit,
 ) {
     var draft by remember(gauge.id) { mutableStateOf(gauge) }
+    val cellAspect by vm.cellAspect.collectAsState()
     val latestOnChange by rememberUpdatedState(onChange)
     // 下書きを 250ms 遅れで保存
     LaunchedEffect(draft) {
@@ -143,7 +145,8 @@ fun GaugeSettingsDialog(
                     Column(m.padding(12.dp), horizontalAlignment = Alignment.CenterHorizontally) {
                         Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
                             // メーターの縦横比 (マス目の比率) に合わせてプレビューする
-                            val ratio = (draft.w.coerceAtLeast(1) * 2f / draft.h.coerceAtLeast(1)).coerceIn(0.3f, 4f)
+                            // ダッシュボードの実際のマスの縦横比を使う (プレビューと実物の形を合わせる)
+                            val ratio = (draft.w.coerceAtLeast(1) * cellAspect / draft.h.coerceAtLeast(1)).coerceIn(0.2f, 6f)
                             if (def != null) {
                                 GaugeCard(
                                     def = def,
@@ -151,7 +154,7 @@ fun GaugeSettingsDialog(
                                     style = draft.style,
                                     unsupported = false,
                                     look = draft.look(def),
-                                    modifier = Modifier.aspectRatio(ratio).fillMaxHeight(),
+                                    modifier = Modifier.aspectRatio(ratio),
                                     series = if (draft.style == GaugeStyle.CHART) {
                                         chartSeries(draft, def, mapOf(def.key to (previewValue ?: 0.0)), catalog)
                                     } else emptyList(),
@@ -548,8 +551,28 @@ private fun ColorTab(g: GaugeConfig, update: ((GaugeDesign) -> GaugeDesign) -> U
         }
         SliderLine("数値の大きさ", d.valueSize * 100, 30f..300f, "%.0f%%") { v -> update { it.copy(valueSize = snap(v, 5f) / 100f) } }
     }
+    val labelDefault = d.labelColor?.let { Color(it) } ?: GaugeColors.SubText
     SwitchLine("名前を表示", null, d.showName) { v -> update { it.copy(showName = v) } }
+    if (d.showName) {
+        ColorLine("名前の色 (既定 = 文字の色)", d.nameColor, labelDefault) { c -> update { it.copy(nameColor = c) } }
+        SliderLine("名前の横位置 (右が +)", d.nameOffsetX * 100, -60f..60f, "%.0f") { v ->
+            update { it.copy(nameOffsetX = snap(v, 1f) / 100f) }
+        }
+        SliderLine("名前の縦位置 (下が +)", d.nameOffsetY * 100, -60f..60f, "%.0f") { v ->
+            update { it.copy(nameOffsetY = snap(v, 1f) / 100f) }
+        }
+    }
     SwitchLine("単位を表示", null, d.showUnit) { v -> update { it.copy(showUnit = v) } }
+    if (d.showUnit) {
+        ColorLine("単位の色 (既定 = 文字の色)", d.unitColor, labelDefault) { c -> update { it.copy(unitColor = c) } }
+        SliderLine("単位の横位置 (右が +)", d.unitOffsetX * 100, -60f..60f, "%.0f") { v ->
+            update { it.copy(unitOffsetX = snap(v, 1f) / 100f) }
+        }
+        SliderLine("単位の縦位置 (下が +)", d.unitOffsetY * 100, -60f..60f, "%.0f") { v ->
+            update { it.copy(unitOffsetY = snap(v, 1f) / 100f) }
+        }
+        Hint("単位の位置は数値の位置からのずれです (数値を動かすと一緒に動きます)")
+    }
     SwitchLine("四角いカードの背景を表示", "丸い背景画像を使うときは OFF にするときれいです", d.showCard) { v ->
         update { it.copy(showCard = v) }
     }

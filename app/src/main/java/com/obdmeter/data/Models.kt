@@ -184,6 +184,13 @@ data class GaugeDesign(
     val backgroundImage: String? = null,
     /** 背景画像の大きさ (1.0 = メーター枠いっぱい) */
     val imageScale: Float = 1f,
+    /** 名前・単位の位置のずれ (メーターの大きさに対する比率。右・下が正) と色 (null = 文字の色と同じ) */
+    val nameOffsetX: Float = 0f,
+    val nameOffsetY: Float = 0f,
+    val nameColor: Long? = null,
+    val unitOffsetX: Float = 0f,
+    val unitOffsetY: Float = 0f,
+    val unitColor: Long? = null,
     /** メーターの背景色 (文字盤の色)。背景画像を使わないときだけ塗る。null = 塗らない */
     val faceColor: Long? = null,
     /** 背景画像の位置のずれ (メーターの大きさに対する比率。右・下が正) */

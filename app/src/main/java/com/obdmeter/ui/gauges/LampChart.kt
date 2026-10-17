@@ -122,8 +122,9 @@ internal fun LampGauge(
 
         val unit = min(size.width, size.height)
         if (look.showName) {
-            drawCenteredText(tm, def.shortName, Offset(size.width / 2, nameH / 2),
-                TextStyle(color = look.labelColor, fontFamily = fonts.label, fontWeight = FontWeight.Medium,
+            drawCenteredText(tm, def.shortName,
+                Offset(size.width * (0.5f + look.nameOffsetX), nameH / 2 + size.height * look.nameOffsetY),
+                TextStyle(color = look.nameColor, fontFamily = fonts.label, fontWeight = FontWeight.Medium,
                     fontSize = (unit * 0.11f * look.labelSize).toSp()))
         }
         if (look.showValue) {

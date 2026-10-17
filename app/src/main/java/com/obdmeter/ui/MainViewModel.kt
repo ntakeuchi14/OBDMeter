@@ -60,6 +60,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     val rate: StateFlow<Double> = session.rate
     val supported: StateFlow<Set<Int>?> = session.supported
     val floatActive: StateFlow<Boolean> = core.floatActive
+    /** ダッシュボードの 1 マスの縦横比 (幅 / 高さ) */
+    val cellAspect: StateFlow<Float> = core.cellAspect
     /** 折れ線グラフ用の記録 */
     val history = core.history
 

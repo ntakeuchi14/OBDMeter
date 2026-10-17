@@ -112,6 +112,13 @@ data class GaugeLook(
     val imageOffsetY: Float = 0f,
     /** 文字盤の背景色 (背景画像が無いときだけ塗る) */
     val faceColor: Color? = null,
+    /** 名前・単位の位置のずれ (メーターの大きさに対する比率) と色 */
+    val nameOffsetX: Float = 0f,
+    val nameOffsetY: Float = 0f,
+    val nameColor: Color = GaugeColors.SubText,
+    val unitOffsetX: Float = 0f,
+    val unitOffsetY: Float = 0f,
+    val unitColor: Color = GaugeColors.SubText,
     /** ランプの点灯条件 (null = 警告値で点灯) */
     val lampCondition: Condition? = null,
     val lampOnColor: Color = GaugeColors.Warn,
@@ -421,8 +428,9 @@ fun AnalogGauge(
 
         // 名前・数値・単位
         if (look.showName) {
-            drawCenteredText(tm, def.shortName, Offset(center.x, center.y - gaugeR * 0.38f),
-                TextStyle(color = look.labelColor, fontFamily = fonts.label, fontSize = (d * 0.07f).toSp(), fontWeight = FontWeight.Medium))
+            drawCenteredText(tm, def.shortName,
+                Offset(center.x + d * look.nameOffsetX, center.y - gaugeR * 0.38f + d * look.nameOffsetY),
+                TextStyle(color = look.nameColor, fontFamily = fonts.label, fontSize = (d * 0.07f).toSp(), fontWeight = FontWeight.Medium))
         }
         val valueY = center.y + gaugeR * look.valuePosition
         val valueX = center.x + gaugeR * look.valueOffsetX
@@ -435,8 +443,8 @@ fun AnalogGauge(
         }
         if (look.showUnit) {
             drawCenteredText(tm, def.unit + scale.unitSuffix,
-                Offset(valueX, valueY + d * 0.1f * max(look.valueSize, 0.6f)),
-                TextStyle(color = look.labelColor, fontFamily = fonts.label, fontSize = (d * 0.055f).toSp()))
+                Offset(valueX + d * look.unitOffsetX, valueY + d * 0.1f * max(look.valueSize, 0.6f) + d * look.unitOffsetY),
+                TextStyle(color = look.unitColor, fontFamily = fonts.label, fontSize = (d * 0.055f).toSp()))
         }
         if (peak != null && look.showPeakValue) {
             drawCenteredText(tm, "MAX " + def.format(peak),
@@ -485,6 +493,15 @@ internal fun DrawScope.drawCenteredText(tm: TextMeasurer, text: String, center: 
     drawText(layout, topLeft = Offset(center.x - layout.size.width / 2f, center.y - layout.size.height / 2f))
 }
 
+/** [drawCenteredText] と同じだが、幅が [maxWidth] を超えるときは文字を縮める */
+internal fun DrawScope.drawCenteredTextFit(tm: TextMeasurer, text: String, center: Offset, style: TextStyle, maxWidth: Float) {
+    var layout = tm.measure(text, style)
+    if (layout.size.width > maxWidth && maxWidth > 0f) {
+        layout = tm.measure(text, style.copy(fontSize = style.fontSize * (maxWidth / layout.size.width)))
+    }
+    drawText(layout, topLeft = Offset(center.x - layout.size.width / 2f, center.y - layout.size.height / 2f))
+}
+
 // ---------------------------------------------------------------------------
 // バーメーター
 // ---------------------------------------------------------------------------
@@ -511,8 +528,8 @@ fun BarGauge(
         val unit = min(h, w * 0.5f)
         if (look.showName) {
             val name = tm.measure(def.shortName,
-                TextStyle(color = look.labelColor, fontFamily = fonts.label, fontSize = (unit * 0.16f).toSp(), fontWeight = FontWeight.Medium))
-            drawText(name, topLeft = Offset(4f, 0f))
+                TextStyle(color = look.nameColor, fontFamily = fonts.label, fontSize = (unit * 0.16f).toSp(), fontWeight = FontWeight.Medium))
+            drawText(name, topLeft = Offset(4f + w * look.nameOffsetX, h * look.nameOffsetY))
         }
 
         if (look.showValue) {
@@ -523,11 +540,14 @@ fun BarGauge(
             )
             val valueLayout = tm.measure(if (unsupported) "非対応" else def.format(value), valueStyle)
             val unitLayout = tm.measure(if (look.showUnit) def.unit else "",
-                TextStyle(color = look.labelColor, fontFamily = fonts.label, fontSize = (unit * 0.14f).toSp()))
+                TextStyle(color = look.unitColor, fontFamily = fonts.label, fontSize = (unit * 0.14f).toSp()))
             // 縦横の位置調整 (アナログと共通の設定。既定は右寄せ・中央)
             val valueY = h * (0.52f + (look.valuePosition - 0.42f) * 0.5f) - valueLayout.size.height / 2f
             val dx = w * look.valueOffsetX * 0.5f
-            drawText(unitLayout, topLeft = Offset(w - unitLayout.size.width - 4f + dx, valueY + valueLayout.size.height - unitLayout.size.height * 1.15f))
+            drawText(unitLayout, topLeft = Offset(
+                w - unitLayout.size.width - 4f + dx + w * look.unitOffsetX,
+                valueY + valueLayout.size.height - unitLayout.size.height * 1.15f + h * look.unitOffsetY,
+            ))
             drawText(valueLayout, topLeft = Offset(w - unitLayout.size.width - 10f - valueLayout.size.width + dx, valueY))
         }
 
@@ -591,22 +611,25 @@ fun DigitalGauge(
         val unit = min(size.height, size.width * 0.6f)
         if (look.showName) {
             val name = tm.measure(def.shortName,
-                TextStyle(color = look.labelColor, fontFamily = fonts.label, fontSize = (unit * 0.14f).toSp(), fontWeight = FontWeight.Medium))
-            drawText(name, topLeft = Offset(4f, 0f))
+                TextStyle(color = look.nameColor, fontFamily = fonts.label, fontSize = (unit * 0.14f).toSp(), fontWeight = FontWeight.Medium))
+            drawText(name, topLeft = Offset(4f + size.width * look.nameOffsetX, size.height * look.nameOffsetY))
         }
         // valuePosition は中心からのずれ (アナログと共通の値を流用。既定 0.42 → 中央やや下)
         val cy = size.height * (0.5f + (look.valuePosition - 0.42f) * 0.5f)
         val cx = size.width * (0.5f + look.valueOffsetX * 0.5f)
         if (look.showValue) {
-            drawCenteredText(tm, if (unsupported) "非対応" else def.format(value),
+            // 幅に収まらないときは縮める (メーターの形によってはみ出さないように)
+            drawCenteredTextFit(tm, if (unsupported) "非対応" else def.format(value),
                 Offset(cx, cy),
                 TextStyle(color = if (warn) GaugeColors.Warn else look.valueColor,
                     fontSize = (unit * (if (unsupported) 0.2f else 0.38f) * look.valueSize).toSp(),
-                    fontWeight = FontWeight.Bold, fontFamily = fonts.value))
+                    fontWeight = FontWeight.Bold, fontFamily = fonts.value),
+                maxWidth = size.width * 0.96f)
         }
         if (look.showUnit) {
-            drawCenteredText(tm, def.unit, Offset(cx, cy + unit * 0.3f * max(look.valueSize, 0.6f)),
-                TextStyle(color = look.labelColor, fontFamily = fonts.label, fontSize = (unit * 0.13f).toSp()))
+            drawCenteredText(tm, def.unit,
+                Offset(cx + size.width * look.unitOffsetX, cy + unit * 0.3f * max(look.valueSize, 0.6f) + size.height * look.unitOffsetY),
+                TextStyle(color = look.unitColor, fontFamily = fonts.label, fontSize = (unit * 0.13f).toSp()))
         }
         if (peak != null) {
             val t = tm.measure("MAX " + def.format(peak),
