@@ -32,10 +32,22 @@ jobs:
         run: chmod +x gradlew
 
       - name: Unit tests
-        run: ./gradlew --no-daemon testDebugUnitTest
+        run: |
+          set -o pipefail
+          ./gradlew --no-daemon testDebugUnitTest 2>&1 | tee build.log
 
       - name: Build debug APK
-        run: ./gradlew --no-daemon assembleDebug
+        run: |
+          set -o pipefail
+          ./gradlew --no-daemon assembleDebug 2>&1 | tee -a build.log
+
+      # コンパイルエラーをアノテーションとして出す (Actions の画面や API から原因を読めるように)
+      - name: Report compile errors
+        if: failure()
+        run: |
+          grep -E "^e: |^> |What went wrong|FAILED" build.log | head -40 | while IFS= read -r line; do
+            echo "::error::${line}"
+          done
 
       - name: Upload test report
         if: failure()
