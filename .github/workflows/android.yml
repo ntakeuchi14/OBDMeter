@@ -45,9 +45,10 @@ jobs:
       - name: Report compile errors
         if: failure()
         run: |
-          grep -E "^e: |^> |What went wrong|FAILED" build.log | head -40 | while IFS= read -r line; do
-            echo "::error::${line}"
-          done
+          # 1 つのアノテーションに改行 (%0A) でまとめる (件数制限があるため)
+          msg=$( (grep -E "^e: " build.log; grep -A4 "What went wrong" build.log) | head -40 \
+            | sed -e 's/%/%25/g' | awk '{printf "%s%%0A", $0}')
+          echo "::error title=Build errors::${msg}"
 
       - name: Upload test report
         if: failure()
