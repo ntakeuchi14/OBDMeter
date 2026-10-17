@@ -115,7 +115,8 @@ fun GaugeSettingsDialog(
         }
     }
     val close = {
-        if (draft != gauge) onChange(draft)
+        // 変更が無くても保存する (今の形を「デザインしたときの縦横比」として覚え直すため)
+        onChange(draft)
         onDismiss()
     }
 
@@ -576,6 +577,12 @@ private fun ColorTab(g: GaugeConfig, update: ((GaugeDesign) -> GaugeDesign) -> U
     SwitchLine("四角いカードの背景を表示", "丸い背景画像を使うときは OFF にするときれいです", d.showCard) { v ->
         update { it.copy(showCard = v) }
     }
+    SwitchLine(
+        "レイアウトで大きさを変えても形を保つ",
+        "ON: 今の形 (縦横比) のまま全体を拡大縮小します。文字・画像の大きさと位置の関係が崩れません。" +
+            "形を変えたいときは、レイアウトで大きさを変えた後にこの画面を開き直すと、その形で覚え直します",
+        d.lockAspect,
+    ) { v -> update { it.copy(lockAspect = v) } }
 }
 
 // ---------------------------------------------------------------------------
