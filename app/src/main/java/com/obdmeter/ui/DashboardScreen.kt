@@ -1,5 +1,7 @@
 package com.obdmeter.ui
 
+import androidx.compose.ui.platform.LocalContext
+import android.widget.Toast
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.flow.first
 import androidx.compose.runtime.snapshotFlow
@@ -94,6 +96,8 @@ fun DashboardScreen(vm: MainViewModel, onNavigate: (Screen) -> Unit, onCreateCus
 
     /** レイアウト編集モード (メーターをドラッグで移動・サイズ変更) */
     var editing by rememberSaveable { mutableStateOf(false) }
+    val clipboard by vm.clipboard.collectAsStateWithLifecycle()
+    val context = LocalContext.current
     /** 設定ダイアログを開いているメーターの id */
     var settingsFor by remember { mutableStateOf<Long?>(null) }
     /** メーター追加の項目選択ダイアログ (null = 閉じる) */
@@ -127,7 +131,7 @@ fun DashboardScreen(vm: MainViewModel, onNavigate: (Screen) -> Unit, onCreateCus
             verticalAlignment = Alignment.CenterVertically,
         ) {
             if (editing) {
-                Text("レイアウト編集中: ドラッグで移動、右下の ◢ でサイズ変更、タップで設定",
+                Text("レイアウト編集中: ドラッグで移動、右下の ◢ でサイズ変更、タップで設定、長押しでコピー",
                     color = GaugeColors.Accent, fontSize = 13.sp, modifier = Modifier.weight(1f),
                     maxLines = 2, overflow = TextOverflow.Ellipsis)
                 FilledTonalButton(onClick = { editing = false }) {
@@ -163,6 +167,10 @@ fun DashboardScreen(vm: MainViewModel, onNavigate: (Screen) -> Unit, onCreateCus
                         vm.updateGauge(d.id, g.id) { it.copy(x = x, y = y, w = w, h = h) }
                     },
                     onTap = { g -> if (editing) settingsFor = g.id },
+                    onCopy = { g ->
+                        vm.copyGauge(g)
+                        Toast.makeText(context, "コピーしました。下の「貼り付け」で、このページや別のページに貼り付けられます", Toast.LENGTH_LONG).show()
+                    },
                     onCellAspect = vm::reportCellAspect,
                 )
             }
@@ -177,7 +185,26 @@ fun DashboardScreen(vm: MainViewModel, onNavigate: (Screen) -> Unit, onCreateCus
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Text(current?.name ?: "", fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+                // 編集中もページを切り替えられるように (別のページへの貼り付け用)
+                if (dashboards.size > 1) {
+                    IconButton(
+                        onClick = { scope.launch { pager.animateScrollToPage(pager.currentPage - 1) } },
+                        enabled = pager.currentPage > 0,
+                    ) { Text("◀") }
+                }
+                Text(current?.name ?: "", fontWeight = FontWeight.Bold, maxLines = 1)
+                if (dashboards.size > 1) {
+                    IconButton(
+                        onClick = { scope.launch { pager.animateScrollToPage(pager.currentPage + 1) } },
+                        enabled = pager.currentPage < dashboards.size - 1,
+                    ) { Text("▶") }
+                }
+                Spacer(Modifier.weight(1f))
+                if (clipboard != null) {
+                    FilledTonalButton(onClick = { current?.let { vm.pasteGauge(it.id) } }, enabled = current != null) {
+                        Text("貼り付け")
+                    }
+                }
                 FilledTonalButton(onClick = { pickerFor = 0L }, enabled = current != null) {
                     Icon(Icons.Default.Add, null); Spacer(Modifier.width(4.dp)); Text("メーター追加")
                 }
@@ -359,6 +386,7 @@ private fun DashboardCanvas(
     editing: Boolean,
     onCommit: (GaugeConfig, Int, Int, Int, Int) -> Unit,
     onTap: (GaugeConfig) -> Unit,
+    onCopy: (GaugeConfig) -> Unit = {},
     onCellAspect: (Float) -> Unit = {},
 ) {
     // メーターごとのピーク値リセット回数 (長押しで増やす)
@@ -401,6 +429,7 @@ private fun DashboardCanvas(
                     onCommit = onCommit,
                     onTap = onTap,
                     onLongPress = { peakResets[g.id] = (peakResets[g.id] ?: 0) + 1 },
+                    onCopy = onCopy,
                 ) {
                     GaugeView(g, def, values, supported, peakResets[g.id] ?: 0, catalog = catalog, interactive = !editing)
                 }
@@ -455,6 +484,7 @@ private fun GaugeOnGrid(
     onCommit: (GaugeConfig, Int, Int, Int, Int) -> Unit,
     onTap: (GaugeConfig) -> Unit,
     onLongPress: () -> Unit,
+    onCopy: (GaugeConfig) -> Unit = {},
     content: @Composable () -> Unit,
 ) {
     val g by rememberUpdatedState(gauge)
@@ -489,7 +519,7 @@ private fun GaugeOnGrid(
                 if (editing) Modifier
                     .border(2.dp, if (dragging) GaugeColors.Warn else GaugeColors.Accent, RoundedCornerShape(14.dp))
                     .pointerInput(gauge.id) {
-                        detectTapGestures(onTap = { onTap(g) })
+                        detectTapGestures(onTap = { onTap(g) }, onLongPress = { onCopy(g) })
                     }
                     .pointerInput(gauge.id) {
                         detectDragGestures(

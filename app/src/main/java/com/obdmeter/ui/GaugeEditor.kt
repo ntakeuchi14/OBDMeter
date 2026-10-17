@@ -1,5 +1,6 @@
 package com.obdmeter.ui
 
+import android.widget.Toast
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import com.obdmeter.ui.gauges.chartColor
@@ -105,6 +106,7 @@ fun GaugeSettingsDialog(
     onDismiss: () -> Unit,
 ) {
     var draft by remember(gauge.id) { mutableStateOf(gauge) }
+    val context = LocalContext.current
     val cellAspect by vm.cellAspect.collectAsState()
     val latestOnChange by rememberUpdatedState(onChange)
     // 下書きを 250ms 遅れで保存
@@ -184,7 +186,10 @@ fun GaugeSettingsDialog(
                         Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = 16.dp)) {
                             when (tab) {
                                 0 -> BasicTab(draft, catalog, ::update, { draft = it }, { showPicker = true },
-                                    { showFallbackPicker = true }, { showChartPicker = true }, onBringToFront) { confirmDelete = true }
+                                    { showFallbackPicker = true }, { showChartPicker = true }, {
+                                        vm.copyGauge(draft)
+                                        Toast.makeText(context, "コピーしました。下の「貼り付け」で、このページや別のページに貼り付けられます", Toast.LENGTH_LONG).show()
+                                    }, onBringToFront) { confirmDelete = true }
                                 1 -> AngleTab(draft, ::update)
                                 2 -> ColorTab(draft, ::update) { target -> fontPickerFor = target }
                                 3 -> ImageTab(draft, ::update)
@@ -295,6 +300,7 @@ private fun BasicTab(
     onChangeItem: () -> Unit,
     onPickFallback: () -> Unit,
     onAddChartItem: () -> Unit,
+    onCopy: () -> Unit,
     onBringToFront: () -> Unit,
     onDelete: () -> Unit,
 ) {
@@ -400,6 +406,7 @@ private fun BasicTab(
     Text("位置 (${g.x}, ${g.y})  大きさ ${g.w} × ${g.h} マス (全体 ${Layout.COLS} × ${Layout.ROWS})",
         color = GaugeColors.SubText, fontSize = 12.sp)
     Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(top = 4.dp)) {
+        OutlinedButton(onClick = onCopy) { Text("コピー") }
         OutlinedButton(onClick = onBringToFront) { Text("最前面へ") }
         OutlinedButton(onClick = onDelete) { Text("削除", color = GaugeColors.Warn) }
     }

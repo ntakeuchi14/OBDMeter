@@ -390,6 +390,39 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     /** 重なったときに手前に表示する (リストの最後が最前面) */
+    // ---- コピー・貼り付け (ページをまたいで使えるよう、画面ではなくここで持つ) ----
+
+    private val _clipboard = MutableStateFlow<GaugeConfig?>(null)
+    /** コピーしたメーター (null = なし) */
+    val clipboard: StateFlow<GaugeConfig?> = _clipboard
+
+    fun copyGauge(g: GaugeConfig) { _clipboard.value = g }
+
+    /**
+     * コピーしたメーターをページに貼り付ける。元と同じ位置が空いていればそこ、
+     * 空いていなければ空いている場所、どこも空いていなければ 1 マスずらして置く
+     */
+    fun pasteGauge(dashboardId: Long) {
+        val src = _clipboard.value ?: return
+        val newId = System.currentTimeMillis()
+        editDashboard(dashboardId) { d ->
+            fun free(x: Int, y: Int) = d.gauges.none { g ->
+                x < g.x + g.w && g.x < x + src.w && y < g.y + g.h && g.y < y + src.h
+            }
+            fun fits(x: Int, y: Int) = x + src.w <= Layout.COLS && y + src.h <= Layout.ROWS
+            val (x, y) = when {
+                free(src.x, src.y) -> src.x to src.y
+                else -> {
+                    val spot = Layout.findFreeSpot(d.gauges, src.w, src.h)
+                    if (free(spot.first, spot.second) && fits(spot.first, spot.second)) spot
+                    else (src.x + 1).coerceAtMost(Layout.COLS - src.w).coerceAtLeast(0) to
+                        (src.y + 1).coerceAtMost(Layout.ROWS - src.h).coerceAtLeast(0)
+                }
+            }
+            d.copy(gauges = d.gauges + src.copy(id = newId, x = x, y = y))
+        }
+    }
+
     fun bringToFront(dashboardId: Long, gaugeId: Long) = editDashboard(dashboardId) { d ->
         val g = d.gauges.firstOrNull { it.id == gaugeId } ?: return@editDashboard d
         d.copy(gauges = d.gauges.filterNot { it.id == gaugeId } + g)
