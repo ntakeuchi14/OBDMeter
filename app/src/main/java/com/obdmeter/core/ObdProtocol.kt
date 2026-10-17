@@ -6,8 +6,25 @@ package com.obdmeter.core
  * すべてブロッキング呼び出し。
  */
 interface ObdProtocol {
-    /** アダプターと車両の初期化を行い、接続先の説明文を返す。失敗時は例外。 */
-    fun initialize(): String
+    /**
+     * アダプター自体の初期化。車両が眠っていても (イグニッション OFF) 成功する。
+     * アダプターが応答しない場合は例外。説明文を返す。
+     */
+    fun initAdapter(): String
+
+    /**
+     * 車両 (エンジン ECU) と通信できるか確認する。
+     * 応答があれば説明文、無ければ null ([lastFailure] に理由)。アダプター自体の異常なら例外。
+     */
+    fun connectVehicle(): String?
+
+    /** アダプターと車両の両方を初期化する。車両が応答しなければ例外。 */
+    fun initialize(): String {
+        val adapter = initAdapter()
+        val vehicle = connectVehicle()
+            ?: throw ProtocolException("車両に接続できません: ${lastFailure ?: "応答なし"}")
+        return "$adapter / $vehicle"
+    }
 
     /**
      * Mode 01 の [pid] を問い合わせ、応答のデータ部 (A, B, C...) を返す。

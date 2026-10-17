@@ -1,5 +1,10 @@
 package com.obdmeter.ui
 
+import android.content.Intent
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontFamily
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.size
@@ -145,12 +150,39 @@ fun SettingsScreen(vm: MainViewModel, onBack: () -> Unit, onOpenCustomPids: () -
                 }
             }
 
+            Section("接続テスト")
+            ConnectionTestSection(vm)
+
             Section("バックアップ")
             BackupSection(vm)
 
             Section("その他")
             SwitchRow("自動再接続", "通信が切れたら 3 秒後に再接続", s.autoReconnect) { v ->
                 vm.updateSettings { it.copy(autoReconnect = v) }
+            }
+            SwitchRow(
+                "イグニッション OFF でも接続して待機",
+                "アダプターに接続したまま 5 秒ごとに車両を確認し、イグニッション ON で自動的に表示を始めます。" +
+                    "待機中もバッテリー電圧は表示されます",
+                s.waitForVehicle,
+            ) { v -> vm.updateSettings { it.copy(waitForVehicle = v) } }
+            if (s.waitForVehicle) {
+                Text("待機の上限", color = GaugeColors.SubText, fontSize = 13.sp, modifier = Modifier.padding(top = 4.dp))
+                Row {
+                    listOf(5, 15, 30, 60, 0).forEach { m ->
+                        FilterChip(
+                            selected = s.waitTimeoutMin == m,
+                            onClick = { vm.updateSettings { it.copy(waitTimeoutMin = m) } },
+                            label = { Text(if (m == 0) "無制限" else "${m}分") },
+                            modifier = Modifier.padding(end = 4.dp),
+                        )
+                    }
+                }
+                Text(
+                    "待機中は車両に問い合わせを送るため、車両側の機器が起きたままになることがあります。" +
+                        "長時間つないだまま放置すると、バッテリーが減る可能性があります。",
+                    color = GaugeColors.SubText, fontSize = 12.sp,
+                )
             }
             SwitchRow("接続中は画面を消灯しない", null, s.keepScreenOn) { v ->
                 vm.updateSettings { it.copy(keepScreenOn = v) }
@@ -282,6 +314,62 @@ private fun BackupSection(vm: MainViewModel) {
             onDismissRequest = vm::clearBackupMessage,
             text = { Text(m) },
             confirmButton = { TextButton(onClick = vm::clearBackupMessage) { Text("OK") } },
+        )
+    }
+}
+
+
+/** うまくつながらないときの接続テスト。結果は共有ボタンでテキストとして送れる */
+@Composable
+private fun ConnectionTestSection(vm: MainViewModel) {
+    val lines by vm.testLines.collectAsStateWithLifecycle()
+    val running by vm.testRunning.collectAsStateWithLifecycle()
+    val context = LocalContext.current
+
+    Text(
+        "アダプター・ケーブル・車両のどこで止まっているかを調べます。接続中の場合はいったん切断します。" +
+            "結果を共有して送ってもらえれば、原因を特定できます。",
+        color = GaugeColors.SubText, fontSize = 12.sp,
+    )
+    FilledTonalButton(onClick = vm::runConnectionTest, enabled = !running, modifier = Modifier.padding(vertical = 8.dp)) {
+        Text(if (running) "テスト中…" else "接続テストを実行")
+    }
+
+    lines?.let { list ->
+        AlertDialog(
+            onDismissRequest = vm::closeConnectionTest,
+            title = { Text(if (running) "接続テスト中…" else "接続テストの結果") },
+            text = {
+                val scroll = rememberScrollState()
+                LaunchedEffect(list.size) { scroll.animateScrollTo(scroll.maxValue) }
+                Column(Modifier.heightIn(max = 460.dp).verticalScroll(scroll)) {
+                    list.forEach { l ->
+                        Text(
+                            l, fontFamily = FontFamily.Monospace, fontSize = 11.sp,
+                            color = when {
+                                l.startsWith("✗") -> GaugeColors.Warn
+                                l.startsWith("○") -> Color(0xFF81C784)
+                                l.startsWith("---") || l.startsWith("==") -> GaugeColors.Accent
+                                else -> GaugeColors.Text
+                            },
+                        )
+                    }
+                    if (running) CircularProgressIndicator(Modifier.padding(8.dp).size(20.dp), strokeWidth = 2.dp)
+                }
+            },
+            confirmButton = {
+                Row {
+                    TextButton(enabled = !running, onClick = {
+                        val send = Intent(Intent.ACTION_SEND).apply {
+                            type = "text/plain"
+                            putExtra(Intent.EXTRA_SUBJECT, "OBD Meter 接続テスト")
+                            putExtra(Intent.EXTRA_TEXT, list.joinToString("\n"))
+                        }
+                        context.startActivity(Intent.createChooser(send, "結果を共有"))
+                    }) { Text("共有") }
+                    TextButton(enabled = !running, onClick = vm::closeConnectionTest) { Text("閉じる") }
+                }
+            },
         )
     }
 }

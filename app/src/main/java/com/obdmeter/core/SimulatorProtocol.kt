@@ -24,7 +24,9 @@ class SimulatorProtocol(
         0x1F, 0x20, 0x2F, 0x33, 0x3C, 0x40, 0x42, 0x49,
     )
 
-    override fun initialize(): String = "シミュレーター (疑似 E90 325i)"
+    override fun initAdapter(): String = "シミュレーター"
+
+    override fun connectVehicle(): String = "疑似 E90 325i"
 
     private data class State(
         val rpm: Double, val speed: Double, val throttle: Double, val map: Double,

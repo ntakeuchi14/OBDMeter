@@ -33,16 +33,26 @@ class BmwFastProtocol(
         val pendingTimeoutMs: Int = 5000,
     )
 
-    override fun initialize(): String {
+    override fun initAdapter(): String =
+        "K+DCAN (BMW-FAST, ECU 0x%02X)".format(options.targetAddress)
+
+    override fun connectVehicle(): String? {
         transport.purge()
-        // DME に対して Mode 01 PID 00 (対応 PID 一覧) を問い合わせて疎通確認
+        // DME に Mode 01 PID 00 (対応 PID 一覧) を問い合わせて疎通確認
         val data = readPid(0x00)
-            ?: throw ProtocolException(
-                "DME (0x%02X) から応答がありません。イグニッション ON、ケーブルのモード (D-CAN/K-Line) を確認してください"
-                    .format(options.targetAddress)
-            )
-        return "K+DCAN / BMW-FAST → ECU 0x%02X (PID00=%s)".format(options.targetAddress, Hex.of(data))
+        if (data == null) {
+            if (echoMissing) {
+                // ケーブル自体が反応していない (車両の状態とは無関係)
+                throw ProtocolException("ケーブルから応答 (エコー) がありません。ケーブルの接続と、設定の「エコー除去」を確認してください")
+            }
+            return null
+        }
+        return "ECU 0x%02X (PID00=%s)".format(options.targetAddress, Hex.of(data))
     }
+
+    /** 直前の送信でケーブルのエコーが返らなかったか */
+    var echoMissing = false
+        private set
 
     override var lastFailure: String? = null
         private set
@@ -97,9 +107,11 @@ class BmwFastProtocol(
         logger.log(CommLogger.Direction.TX, Hex.of(tel))
         transport.write(tel)
 
+        echoMissing = false
         if (options.adapterEcho) {
             val echo = transport.readExact(tel.size, 300)
             if (echo == null) {
+                echoMissing = true
                 logger.log(CommLogger.Direction.ERROR, "エコーが返りません (ケーブル未接続 / ボーレート違い?)")
                 return null
             }

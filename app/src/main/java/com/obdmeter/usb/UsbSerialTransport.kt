@@ -55,6 +55,13 @@ class UsbSerialTransport(
         port = p
     }
 
+    /** DTR / RTS 信号線を切り替える (接続テスト用。ケーブルによってはモード切替や給電に使われる) */
+    fun setLines(dtr: Boolean, rts: Boolean) {
+        val p = port ?: return
+        runCatching { p.setDTR(dtr) }
+        runCatching { p.setRTS(rts) }
+    }
+
     override fun write(data: ByteArray) {
         val p = port ?: throw TransportException("未接続です")
         try {

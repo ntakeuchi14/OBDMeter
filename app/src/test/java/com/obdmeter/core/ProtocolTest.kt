@@ -54,7 +54,70 @@ class FakeDcan(private val replies: Map<String, IntArray>, private val pending78
     }
 }
 
+/** 何も返さないアダプター (ボーレート違い・未接続) */
+class SilentTransport : FakeTransport() {
+    override fun respond(data: ByteArray) {}
+}
+
+/** K+DCAN ケーブルはエコーするが、車両 (DME) は眠っていて応答しない */
+class EchoOnlyDcan : FakeTransport() {
+    override fun respond(data: ByteArray) { push(data) }
+}
+
 class ProtocolTest {
+
+    @Test
+    fun elmConnectsToAdapterWhileVehicleSleeps() {
+        var ignitionOn = false
+        val fake = object : FakeTransport() {
+            private var echo = true
+            override fun respond(data: ByteArray) {
+                val cmd = String(data, Charsets.US_ASCII).trim()
+                if (echo) push("$cmd\r".toByteArray())
+                if (cmd == "ATE0") echo = false
+                val reply = when {
+                    cmd == "0100" -> if (ignitionOn) "4100BE3EB811" else "CAN ERROR"
+                    cmd == "ATRV" -> "12.4V"
+                    cmd.startsWith("AT") -> "OK"
+                    else -> ""
+                }
+                push("$reply\r\r>".toByteArray())
+            }
+        }
+        val p = Elm327Protocol(fake, Elm327Protocol.Options(protocol = "6"))
+        p.initAdapter()                       // イグニッション OFF でもアダプターは初期化できる
+        assertNull(p.connectVehicle())
+        assertTrue(p.lastFailure!!.contains("CAN ERROR"))
+        assertEquals(12.4, p.readAdapterVoltage()!!, 0.001) // 待機中もバッテリー電圧は読める
+        ignitionOn = true
+        assertNotNull(p.connectVehicle())
+    }
+
+    @Test
+    fun elmSilentAdapterFailsFast() {
+        val p = Elm327Protocol(SilentTransport(), Elm327Protocol.Options(commandTimeoutMs = 50))
+        try {
+            p.initAdapter()
+            throw AssertionError("should fail")
+        } catch (e: ProtocolException) { /* ok */ }
+    }
+
+    @Test
+    fun dcanEchoButNoEcuMeansVehicleAsleep() {
+        val p = BmwFastProtocol(EchoOnlyDcan(), BmwFastProtocol.Options(responseTimeoutMs = 100))
+        p.initAdapter()
+        assertNull(p.connectVehicle())
+        assertTrue(!p.echoMissing)
+    }
+
+    @Test
+    fun dcanNoEchoIsAdapterError() {
+        val p = BmwFastProtocol(SilentTransport(), BmwFastProtocol.Options(responseTimeoutMs = 100))
+        try {
+            p.connectVehicle()
+            throw AssertionError("should fail")
+        } catch (e: ProtocolException) { /* ok */ }
+    }
 
     @Test
     fun elmParseMode01() {
@@ -184,7 +247,8 @@ class ProtocolTest {
     fun readerHoldsValueOnTransientFailure() {
         var fail = false
         val proto = object : ObdProtocol {
-            override fun initialize() = ""
+            override fun initAdapter() = ""
+            override fun connectVehicle() = ""
             override fun readPid(pid: Int): IntArray? = if (fail) null else intArrayOf(0x0F, 0xA0)
             override fun close() {}
         }
@@ -203,7 +267,8 @@ class ProtocolTest {
     @Test
     fun readerRetriesPidMarkedUnsupported() {
         val proto = object : ObdProtocol {
-            override fun initialize() = ""
+            override fun initAdapter() = ""
+            override fun connectVehicle() = ""
             override fun readPid(pid: Int): IntArray? = when (pid) {
                 0x00 -> intArrayOf(0x00, 0x10, 0x00, 0x00) // 0C だけ対応と申告
                 0x0D -> intArrayOf(80)                      // でも実は車速も読める

@@ -27,6 +27,8 @@ class Repository(private val context: Context) {
         val DCAN_TARGET = intPreferencesKey("dcan_target")
         val DCAN_ECHO = booleanPreferencesKey("dcan_echo")
         val AUTO_RECONNECT = booleanPreferencesKey("auto_reconnect")
+        val WAIT_FOR_VEHICLE = booleanPreferencesKey("wait_for_vehicle")
+        val WAIT_TIMEOUT = intPreferencesKey("wait_timeout_min")
         val KEEP_SCREEN_ON = booleanPreferencesKey("keep_screen_on")
         val DASHBOARDS = stringPreferencesKey("dashboards_json")
         val CUSTOM_PIDS = stringPreferencesKey("custom_pids_json")
@@ -65,6 +67,8 @@ class Repository(private val context: Context) {
             p[Keys.DCAN_TARGET] = s.dcanTargetAddress
             p[Keys.DCAN_ECHO] = s.dcanEcho
             p[Keys.AUTO_RECONNECT] = s.autoReconnect
+            p[Keys.WAIT_FOR_VEHICLE] = s.waitForVehicle
+            p[Keys.WAIT_TIMEOUT] = s.waitTimeoutMin
             p[Keys.KEEP_SCREEN_ON] = s.keepScreenOn
         }
     }
@@ -86,6 +90,8 @@ class Repository(private val context: Context) {
             dcanTargetAddress = this[Keys.DCAN_TARGET] ?: d.dcanTargetAddress,
             dcanEcho = this[Keys.DCAN_ECHO] ?: d.dcanEcho,
             autoReconnect = this[Keys.AUTO_RECONNECT] ?: d.autoReconnect,
+            waitForVehicle = this[Keys.WAIT_FOR_VEHICLE] ?: d.waitForVehicle,
+            waitTimeoutMin = this[Keys.WAIT_TIMEOUT] ?: d.waitTimeoutMin,
             keepScreenOn = this[Keys.KEEP_SCREEN_ON] ?: d.keepScreenOn,
         )
     }

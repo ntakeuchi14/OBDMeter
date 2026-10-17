@@ -34,6 +34,8 @@ sealed interface ConnectionState {
     data object Disconnected : ConnectionState
     data class Connecting(val message: String) : ConnectionState
     data class Connected(val description: String) : ConnectionState
+    /** アダプターには接続済みで、車両 (エンジン ECU) の応答を待っている (イグニッション OFF など) */
+    data class WaitingForVehicle(val adapter: String, val voltage: Double?) : ConnectionState
     data class Error(val message: String, val retrying: Boolean) : ConnectionState
 }
 
@@ -72,7 +74,8 @@ class ObdSession(
     data class TestResult(val data: IntArray?, val error: String?)
 
     suspend fun testQuery(request: PidRequest): TestResult {
-        if (_state.value !is ConnectionState.Connected) {
+        val st = _state.value
+        if (st !is ConnectionState.Connected && st !is ConnectionState.WaitingForVehicle) {
             return TestResult(null, "未接続です。先にダッシュボードで「接続」してください")
         }
         val d = CompletableDeferred<TestResult>()
@@ -98,12 +101,19 @@ class ObdSession(
             var attempt = 0
             while (isActive) {
                 attempt++
-                val ok = runSession(settings)
-                if (!isActive) break
-                if (!settings.autoReconnect || !ok && attempt >= 50) break
+                val end = runSession(settings)
+                if (!isActive || end == SessionEnd.STOP) break
+                if (!settings.autoReconnect || end == SessionEnd.NO_ADAPTER && attempt >= 50) break
                 delay(3000)
             }
         }
+    }
+
+    /** 切断して、USB を閉じ終わるまで待つ (接続テストの前など) */
+    suspend fun disconnectAndWait() {
+        val j = job
+        disconnect()
+        j?.join()
     }
 
     fun disconnect() {
@@ -114,65 +124,137 @@ class ObdSession(
         _rate.value = 0.0
     }
 
-    /** 1 回分の接続〜切断。通信が成立していたら true。 */
-    private suspend fun runSession(settings: AppSettings): Boolean {
+    private enum class SessionEnd {
+        /** アダプターに接続できなかった (再試行回数に上限あり) */
+        NO_ADAPTER,
+        /** 接続できていたが途中で切れた (再接続する) */
+        LOST,
+        /** 再接続しない (待機時間切れなど) */
+        STOP,
+    }
+
+    /** 待機を打ち切り、再接続もしないための例外 */
+    private class StopSession(message: String) : Exception(message)
+
+    /** 1 回分の接続〜切断 */
+    private suspend fun runSession(settings: AppSettings): SessionEnd {
         var protocol: ObdProtocol? = null
-        var established = false
+        var adapterReady = false
         try {
             _state.value = ConnectionState.Connecting("アダプターを探しています…")
             val p = createProtocol(settings)
             protocol = p
-            _state.value = ConnectionState.Connecting("車両と通信を確立しています…")
-            val desc = p.initialize()
-            log.log(CommLogger.Direction.INFO, "接続: $desc")
-            val reader = ObdReader(p, log)
-            _state.value = ConnectionState.Connecting("対応項目を確認しています…")
-            reader.detectSupported()
-            _supported.value = reader.supported
-            _state.value = ConnectionState.Connected(desc)
-            established = true
+            _state.value = ConnectionState.Connecting("アダプターを初期化しています…")
+            val adapter = p.initAdapter()
+            adapterReady = true
+            log.log(CommLogger.Direction.INFO, "アダプター: $adapter")
 
-            val values = HashMap<String, Double>()
-            var deadCycles = 0
-            var count = 0
-            var windowStart = System.currentTimeMillis()
-            var lastPublish = 0L
             while (currentCoroutineContext().isActive) {
-                drainTests(p)
-                val defs = activePids
-                if (defs.isEmpty()) { delay(100); continue }
-                val r = reader.poll(defs, values)
-                // 画面への反映は 10 回/秒まで (それ以上は描画負荷が増えるだけ)
-                val t = System.currentTimeMillis()
-                if (t - lastPublish >= 100) {
-                    _values.value = HashMap(values)
-                    lastPublish = t
+                // ---- 車両 (エンジン ECU) が応答するまで待つ ----
+                val vehicle = waitForVehicle(p, adapter, settings)
+                log.log(CommLogger.Direction.INFO, "車両に接続: $vehicle")
+                // ---- メーター表示 (車両の応答が途絶えたら戻ってくる) ----
+                pollVehicle(p, "$adapter / $vehicle")
+                if (!settings.waitForVehicle) {
+                    throw IllegalStateException("車両からの応答が途絶えました (イグニッション OFF?)")
                 }
-                // 「非対応」から実際に読めた項目へ昇格した場合に画面へ反映
-                if (reader.supported != _supported.value) _supported.value = reader.supported
-                count += r.ok + r.failed
-                deadCycles = if (r.ok == 0 && r.failed > 0) deadCycles + 1 else 0
-                if (deadCycles >= 5) throw IllegalStateException("車両からの応答が途絶えました (イグニッション OFF?)")
-                val now = System.currentTimeMillis()
-                if (now - windowStart >= 1000) {
-                    _rate.value = count * 1000.0 / (now - windowStart)
-                    count = 0
-                    windowStart = now
-                }
-                if (r.ok + r.failed == 0) delay(20) // 何も読まなかったサイクルで CPU を回し続けない
+                log.log(CommLogger.Direction.INFO, "車両からの応答が途絶えました。イグニッション ON を待ちます")
             }
+            return SessionEnd.LOST
         } catch (e: CancellationException) {
             throw e
+        } catch (e: StopSession) {
+            log.log(CommLogger.Direction.INFO, e.message ?: "")
+            _state.value = ConnectionState.Error(e.message ?: "", retrying = false)
+            _values.value = emptyMap()
+            _rate.value = 0.0
+            return SessionEnd.STOP
         } catch (e: Exception) {
             val msg = e.message ?: e.javaClass.simpleName
             log.log(CommLogger.Direction.ERROR, msg)
             _state.value = ConnectionState.Error(msg, retrying = settings.autoReconnect)
             _values.value = emptyMap()
             _rate.value = 0.0
+            return if (adapterReady) SessionEnd.LOST else SessionEnd.NO_ADAPTER
         } finally {
             withContext(NonCancellable) { runCatching { protocol?.close() } }
         }
-        return established
+    }
+
+    /**
+     * 車両が応答するまで 5 秒ごとに確認する。待機中はアダプターで測ったバッテリー電圧を表示する。
+     * 車両の説明文を返す。
+     */
+    private suspend fun waitForVehicle(p: ObdProtocol, adapter: String, settings: AppSettings): String {
+        val start = System.currentTimeMillis()
+        var first = true
+        while (true) {
+            drainTests(p)
+            if (first) _state.value = ConnectionState.Connecting("車両と通信を確立しています…")
+            p.connectVehicle()?.let { return it }
+            val reason = p.lastFailure ?: "応答なし"
+            if (!settings.waitForVehicle) {
+                throw IllegalStateException("車両に接続できません: $reason (イグニッション ON を確認してください)")
+            }
+            if (first) log.log(CommLogger.Direction.INFO, "車両が応答しません ($reason)。イグニッション ON を待ちます")
+            first = false
+
+            // 待機中もバッテリー電圧だけは表示する (アダプターが測るので車両は起こさない)
+            val volt = runCatching { p.readAdapterVoltage() }.getOrNull()
+            _values.value = volt?.let { mapOf("BATTERY" to it) } ?: emptyMap()
+            _rate.value = 0.0
+            _state.value = ConnectionState.WaitingForVehicle(adapter, volt)
+
+            val limitMin = settings.waitTimeoutMin
+            if (limitMin > 0 && System.currentTimeMillis() - start > limitMin * 60_000L) {
+                throw StopSession("$limitMin 分間車両が応答しなかったため、バッテリー保護のため待機を終了しました")
+            }
+            // 待機中の問い合わせ間隔。短すぎると車両のネットワークを起こし続けてしまう
+            repeat(25) { delay(200); drainTests(p) }
+        }
+    }
+
+    /** メーター表示中の読み出しループ。車両の応答が途絶えたら戻る */
+    private suspend fun pollVehicle(p: ObdProtocol, desc: String) {
+        val reader = ObdReader(p, log)
+        _state.value = ConnectionState.Connecting("対応項目を確認しています…")
+        reader.detectSupported()
+        _supported.value = reader.supported
+        _state.value = ConnectionState.Connected(desc)
+
+        val values = HashMap<String, Double>()
+        var deadCycles = 0
+        var count = 0
+        var windowStart = System.currentTimeMillis()
+        var lastPublish = 0L
+        while (currentCoroutineContext().isActive) {
+            drainTests(p)
+            val defs = activePids
+            if (defs.isEmpty()) { delay(100); continue }
+            val r = reader.poll(defs, values)
+            // 画面への反映は 10 回/秒まで (それ以上は描画負荷が増えるだけ)
+            val t = System.currentTimeMillis()
+            if (t - lastPublish >= 100) {
+                _values.value = HashMap(values)
+                lastPublish = t
+            }
+            // 「非対応」から実際に読めた項目へ昇格した場合に画面へ反映
+            if (reader.supported != _supported.value) _supported.value = reader.supported
+            count += r.ok + r.failed
+            deadCycles = if (r.ok == 0 && r.failed > 0) deadCycles + 1 else 0
+            if (deadCycles >= 5) {
+                _values.value = emptyMap()
+                _rate.value = 0.0
+                return
+            }
+            val now = System.currentTimeMillis()
+            if (now - windowStart >= 1000) {
+                _rate.value = count * 1000.0 / (now - windowStart)
+                count = 0
+                windowStart = now
+            }
+            if (r.ok + r.failed == 0) delay(20) // 何も読まなかったサイクルで CPU を回し続けない
+        }
     }
 
     private suspend fun createProtocol(settings: AppSettings): ObdProtocol {

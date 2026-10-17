@@ -25,11 +25,14 @@ class Elm327Protocol(
 
     private var hintSupported = options.singleResponseHint
 
-    override fun initialize(): String {
+    override fun initAdapter(): String {
         transport.purge()
         // 途中状態をリセットするため CR を一度送ってプロンプトを待つ
         sendRaw("", 1000)
         val ws = command("ATWS", 5000) // ウォームスタート (ボーレート設定は維持される)
+        if (ws.isEmpty() && lastTimedOut) {
+            throw ProtocolException("アダプターが応答しません。ボーレートの設定とケーブルを確認してください")
+        }
         logger.log(CommLogger.Direction.INFO, "Adapter: ${ws.joinToString(" ").trim()}")
         for (cmd in listOf("ATE0", "ATL0", "ATS0", "ATH0", "ATAT1", "ATSP${options.protocol}")) {
             val r = command(cmd)
@@ -37,18 +40,26 @@ class Elm327Protocol(
                 logger.log(CommLogger.Direction.ERROR, "$cmd に OK が返りません: $r")
             }
         }
-        val id = command("ATI").lastOrNull { it.isNotBlank() } ?: "?"
+        currentHeader = ""
+        currentCea = ""
+        return command("ATI").lastOrNull { it.isNotBlank() } ?: "ELM327"
+    }
 
+    override fun connectVehicle(): String? {
+        // 前回のカスタム PID のヘッダーが残っていれば既定に戻す
+        if (currentHeader.isNotEmpty() || currentCea.isNotEmpty()) applyAddressing("", "")
         // 車両との接続確立 (自動判別ならここでプロトコルが決まる)
         val first = command("0100", options.searchTimeoutMs)
-        checkError(first)?.let { throw ProtocolException("車両に接続できません: $it") }
+        checkError(first)?.let { lastFailure = it; return null }
         if (parseMode01(first, 0x00) == null) {
-            throw ProtocolException("0100 への応答を解釈できません: $first")
+            lastFailure = first.joinToString("|").ifEmpty { "応答なし" }
+            return null
         }
+        lastFailure = null
         val dp = command("ATDPN").lastOrNull()?.trim() ?: "?"
         protocolNumber = dp.removePrefix("A")
         val desc = command("ATDP").lastOrNull()?.trim() ?: "?"
-        return "$id / $desc (ATDPN=$dp)"
+        return "$desc (ATDPN=$dp)"
     }
 
     /** ATDPN の結果 ("6" など。自動判別時の先頭 "A" は除く) */
@@ -160,7 +171,11 @@ class Elm327Protocol(
     /** 前回タイムアウトした場合、遅れて届いた応答が次の応答に混ざらないよう捨てる */
     private var needsResync = false
 
+    /** 直前のコマンドがタイムアウトしたか (アダプター無応答の判定用) */
+    private var lastTimedOut = false
+
     private fun sendRaw(cmd: String, timeoutMs: Int): String {
+        lastTimedOut = false
         if (needsResync) {
             transport.purge()
             needsResync = false
@@ -175,6 +190,7 @@ class Elm327Protocol(
             if (remaining <= 0) {
                 logger.log(CommLogger.Direction.ERROR, "タイムアウト: $cmd (受信: ${sb.toString().replace('\r', '|')})")
                 needsResync = true
+                lastTimedOut = true
                 break
             }
             val n = transport.read(buf, minOf(remaining, 100))

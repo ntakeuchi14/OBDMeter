@@ -239,6 +239,10 @@ private fun StatusIndicator(state: ConnectionState, rate: Double, modifier: Modi
         ConnectionState.Disconnected -> GaugeColors.SubText to "未接続"
         is ConnectionState.Connecting -> Color(0xFFFFC107) to state.message
         is ConnectionState.Connected -> Color(0xFF4CAF50) to "接続中  %.1f PID/s".format(rate)
+        is ConnectionState.WaitingForVehicle -> Color(0xFF64B5F6) to (
+            "車両の応答待ち (イグニッション ON で自動開始)" +
+                (state.voltage?.let { "  バッテリー %.1fV".format(it) } ?: "")
+            )
         is ConnectionState.Error -> GaugeColors.Warn to (state.message + if (state.retrying) "  (再接続待ち)" else "")
     }
     Row(modifier, verticalAlignment = Alignment.CenterVertically) {

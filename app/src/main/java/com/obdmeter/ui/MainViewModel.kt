@@ -25,6 +25,7 @@ import com.obdmeter.data.GaugeStyle
 import com.obdmeter.data.Layout
 import com.obdmeter.data.Repository
 import com.obdmeter.session.ConnectionState
+import com.obdmeter.session.ConnectionTest
 import com.obdmeter.session.LogBuffer
 import com.obdmeter.session.ObdSession
 import kotlinx.coroutines.flow.SharingStarted
@@ -149,6 +150,31 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             _backupBusy.value = false
         }
     }
+
+    // ---- 接続テスト ----
+
+    private val _testLines = MutableStateFlow<List<String>?>(null)
+    /** 接続テストの結果 (null = ダイアログを閉じている) */
+    val testLines: StateFlow<List<String>?> = _testLines
+    private val _testRunning = MutableStateFlow(false)
+    val testRunning: StateFlow<Boolean> = _testRunning
+
+    fun runConnectionTest() {
+        if (_testRunning.value) return
+        viewModelScope.launch {
+            _testRunning.value = true
+            _testLines.value = emptyList()
+            // 接続中ならいったん切断し、USB を閉じてからテストする
+            session.disconnectAndWait()
+            val s = repo.settings.first()
+            runCatching {
+                ConnectionTest(getApplication(), log).run(s) { line -> _testLines.value = _testLines.value.orEmpty() + line }
+            }.onFailure { _testLines.value = _testLines.value.orEmpty() + "✗ エラー: ${it.message}" }
+            _testRunning.value = false
+        }
+    }
+
+    fun closeConnectionTest() { if (!_testRunning.value) _testLines.value = null }
 
     // ---- 接続 ----
 

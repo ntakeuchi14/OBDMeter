@@ -29,6 +29,10 @@ data class AppSettings(
     val dcanEcho: Boolean = true,
     // --- 共通 ---
     val autoReconnect: Boolean = true,
+    /** イグニッション OFF でもアダプターに接続し、車両が応答するまで待つ */
+    val waitForVehicle: Boolean = true,
+    /** 待機の上限 (分)。0 = 無制限。待機中も車両に問い合わせるので、バッテリー保護のため */
+    val waitTimeoutMin: Int = 15,
     val keepScreenOn: Boolean = true,
 ) {
     companion object {
