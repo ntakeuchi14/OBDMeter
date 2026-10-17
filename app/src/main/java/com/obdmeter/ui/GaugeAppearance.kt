@@ -84,6 +84,7 @@ fun GaugeDesign.toLook(def: PidDef, style: GaugeStyle): GaugeLook {
         valueOffsetX = valueOffsetX.coerceIn(-0.95f, 0.95f),
         imageOffsetX = imageOffsetX.coerceIn(-0.6f, 0.6f),
         imageOffsetY = imageOffsetY.coerceIn(-0.6f, 0.6f),
+        faceColor = faceColor?.let { Color(it) },
         showPeak = showPeak,
         peakColor = peakColor.color(GaugeColors.Peak),
         showPeakValue = showPeakValue,

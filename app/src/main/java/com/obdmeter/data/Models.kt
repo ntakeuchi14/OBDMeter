@@ -176,6 +176,8 @@ data class GaugeDesign(
     val backgroundImage: String? = null,
     /** 背景画像の大きさ (1.0 = メーター枠いっぱい) */
     val imageScale: Float = 1f,
+    /** メーターの背景色 (文字盤の色)。背景画像を使わないときだけ塗る。null = 塗らない */
+    val faceColor: Long? = null,
     /** 背景画像の位置のずれ (メーターの大きさに対する比率。右・下が正) */
     val imageOffsetX: Float = 0f,
     val imageOffsetY: Float = 0f,

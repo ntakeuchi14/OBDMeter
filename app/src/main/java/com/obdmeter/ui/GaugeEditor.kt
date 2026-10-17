@@ -440,6 +440,11 @@ private fun ColorTab(g: GaugeConfig, update: ((GaugeDesign) -> GaugeDesign) -> U
     FontLine("文字 (目盛りの数字・名前・単位)", d.labelFont?.let { lib[it]?.name ?: "(削除されたフォント)" } ?: "既定") { onPickFont("label") }
 
     ColorLine("メーターの色 (現在値の弧・バー)", d.color, GaugeColors.Accent) { c -> update { it.copy(color = c) } }
+    if (d.backgroundImage == null) {
+        ColorLine("メーターの背景色 (既定 = なし)", d.faceColor, Color.Transparent) { c -> update { it.copy(faceColor = c) } }
+    } else {
+        Hint("メーターの背景色は、背景画像を使わないときに指定できます")
+    }
 
     Head("外周リング")
     Row {

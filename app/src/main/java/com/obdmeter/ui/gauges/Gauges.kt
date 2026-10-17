@@ -109,6 +109,8 @@ data class GaugeLook(
     val valueOffsetX: Float = 0f,
     val imageOffsetX: Float = 0f,
     val imageOffsetY: Float = 0f,
+    /** 文字盤の背景色 (背景画像が無いときだけ塗る) */
+    val faceColor: Color? = null,
     val showPeak: Boolean = false,
     val peakColor: Color = GaugeColors.Peak,
     val showPeakValue: Boolean = false,
@@ -271,16 +273,21 @@ fun AnalogGauge(
         val center = Offset(size.width / 2, size.height / 2)
         val outer = d / 2
 
-        // 背景画像 (目盛りや針は上から描く)
-        image?.let { drawImageFit(it, Offset(center.x + d * look.imageOffsetX, center.y + d * look.imageOffsetY), d * look.imageScale) }
-
-        // 外周リング
         val ringWidth = when (look.ring) {
             RingStyle.NONE -> 0f
             RingStyle.LINE -> d * 0.012f
             RingStyle.BOLD -> d * 0.035f
             RingStyle.METAL -> d * 0.05f
         } * look.ringThickness
+
+        // 背景画像 (目盛りや針は上から描く)。画像が無ければ指定の背景色で文字盤を塗る
+        if (image != null) {
+            drawImageFit(image, Offset(center.x + d * look.imageOffsetX, center.y + d * look.imageOffsetY), d * look.imageScale)
+        } else {
+            look.faceColor?.let { drawCircle(it, outer - ringWidth / 2, center) }
+        }
+
+        // 外周リング
         if (ringWidth > 0f) drawRing(look, center, outer, ringWidth)
 
         // 目盛り・弧の基準半径
@@ -480,6 +487,7 @@ fun BarGauge(
     Canvas(modifier) {
         val h = size.height
         val w = size.width
+        if (image == null) drawFace(look)
         image?.let { drawImageFit(it, Offset(w / 2 + w * look.imageOffsetX, h / 2 + h * look.imageOffsetY), max(w, h) * look.imageScale) }
         val unit = min(h, w * 0.5f)
         if (look.showName) {
@@ -556,6 +564,7 @@ fun DigitalGauge(
     val tm = rememberTextMeasurer()
     val warn = isWarn(def, value)
     Canvas(modifier) {
+        if (image == null) drawFace(look)
         image?.let {
             drawImageFit(it, Offset(size.width * (0.5f + look.imageOffsetX), size.height * (0.5f + look.imageOffsetY)),
                 max(size.width, size.height) * look.imageScale)
@@ -588,6 +597,13 @@ fun DigitalGauge(
     }
 }
 
+
+/** バー・デジタル表示の背景色 (角丸の四角) */
+private fun DrawScope.drawFace(look: GaugeLook) {
+    val c = look.faceColor ?: return
+    val r = min(size.width, size.height) * 0.08f
+    drawRoundRect(c, cornerRadius = CornerRadius(r, r))
+}
 
 /**
  * 外周リング。
