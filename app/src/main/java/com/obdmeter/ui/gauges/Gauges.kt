@@ -22,6 +22,7 @@ import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -261,6 +262,48 @@ private fun animated(def: PidDef, value: Double?): Float {
 }
 
 /** 画像を縦横比を保ったまま、[center] を中心に一辺 [box] の正方形に収めて描く */
+/**
+ * メーターの中で実際に絵がある範囲 (メーターの枠の左上を原点とする px)。
+ * 編集時の枠とつかめる範囲に使う。四角いカード・背景色・グラフは枠いっぱい。
+ * @param w,h メーターの枠の大きさ
+ * @param pad カードの内側の余白 (GaugeCard の padding と同じ値)
+ * @param imageSize 背景画像の大きさ (無ければ null)
+ */
+fun gaugeContentRect(style: GaugeStyle, look: GaugeLook, imageSize: IntSize?, w: Float, h: Float, pad: Float): Rect {
+    val full = Rect(0f, 0f, w, h)
+    if (look.showCard || style == GaugeStyle.CHART) return full
+    val iw = w - pad * 2
+    val ih = h - pad * 2
+    if (iw <= 0f || ih <= 0f) return full
+    fun imageRect(center: Offset, box: Float): Rect? {
+        val s = imageSize ?: return null
+        if (s.width <= 0 || s.height <= 0) return null
+        val k = min(box / s.width, box / s.height)
+        val rw = s.width * k
+        val rh = s.height * k
+        return Rect(center.x - rw / 2, center.y - rh / 2, center.x + rw / 2, center.y + rh / 2)
+    }
+    var r: Rect = when (style) {
+        GaugeStyle.ANALOG -> {
+            val d = min(iw, ih)
+            val c = Offset(iw / 2, ih / 2)
+            val dial = Rect(c.x - d / 2, c.y - d / 2, c.x + d / 2, c.y + d / 2)
+            imageRect(Offset(c.x + d * look.imageOffsetX, c.y + d * look.imageOffsetY), d * look.imageScale)
+                ?.let { dial.union(it) } ?: dial
+        }
+        else -> {
+            // 背景色を塗るときや画像が無いときは文字が枠全体に出るので枠いっぱい
+            if (look.faceColor != null || imageSize == null) return full
+            imageRect(Offset(iw * (0.5f + look.imageOffsetX), ih * (0.5f + look.imageOffsetY)), max(iw, ih) * look.imageScale)
+                ?: return full
+        }
+    }
+    r = r.intersect(Rect(0f, 0f, iw, ih)).translate(pad, pad)
+    return if (r.width <= 0f || r.height <= 0f) full else r
+}
+
+private fun Rect.union(o: Rect) = Rect(min(left, o.left), min(top, o.top), max(right, o.right), max(bottom, o.bottom))
+
 internal fun DrawScope.drawImageFit(image: ImageBitmap, center: Offset, box: Float) {
     val iw = image.width.toFloat()
     val ih = image.height.toFloat()
