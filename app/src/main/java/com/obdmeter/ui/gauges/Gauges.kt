@@ -314,7 +314,7 @@ fun AnalogGauge(
         // 目盛り・弧の基準半径
         val gaugeR = (outer - ringWidth - d * 0.01f) * look.tickRadius
         val rawStroke = d * 0.045f * look.arcWidth
-        // 現在値の弧が無い (OFF か太さ 0) ときは、レッドゾーンを目盛りの内側に描く
+        // 現在値の弧が無い (OFF か太さ 0) ときは、レッドゾーンを目盛りの範囲の外側寄せに描く
         val arcHidden = !look.showValueArc || rawStroke <= 0f
         // 目盛りの外側に弧の場所を空けるのは、弧か背景の弧を描くときだけ
         val stroke = if (arcHidden && !look.showTrack) 0f else rawStroke
@@ -337,8 +337,8 @@ fun AnalogGauge(
             val e = fraction(def, z.endInclusive)
             if (e > s) {
                 if (arcHidden) {
-                    // 目盛りのすぐ内側に帯で描く
-                    val zr = tickOuter - majorLen - d * 0.006f - zoneInsideW / 2
+                    // 目盛りの範囲内の外側寄せに帯で描く (目盛りは上から重ねて描く)
+                    val zr = tickOuter - zoneInsideW / 2
                     drawArc(look.redZoneColor, start + sweep * s, sweep * (e - s), false,
                         Offset(center.x - zr, center.y - zr), Size(zr * 2, zr * 2),
                         style = Stroke(zoneInsideW, cap = StrokeCap.Butt))
@@ -355,8 +355,6 @@ fun AnalogGauge(
 
         // 目盛り (主・小) と数字
         val scale = TickScale.of(def.min, def.max, look.majorDivisions)
-        // レッドゾーンを内側に描くときは、数字をその分さらに内側へ
-        val zoneShift = if (arcHidden && look.redZone != null) zoneInsideW + d * 0.006f else 0f
         val labelSize = (d * 0.07f * look.labelSize).toSp()
         val majors = scale.values(def.max)
         for ((i, t) in majors.withIndex()) {
@@ -366,7 +364,7 @@ fun AnalogGauge(
                 Offset(center.x + tickOuter * cos(a).toFloat(), center.y + tickOuter * sin(a).toFloat()),
                 strokeWidth = d * 0.012f)
             if (look.showLabels) {
-                val labelR = tickOuter - majorLen - zoneShift - d * 0.06f * look.labelSize
+                val labelR = tickOuter - majorLen - d * 0.06f * look.labelSize
                 drawCenteredText(tm, scale.label(t),
                     Offset(center.x + labelR * cos(a).toFloat(), center.y + labelR * sin(a).toFloat()),
                     TextStyle(color = look.labelColor, fontFamily = fonts.label, fontSize = labelSize))
