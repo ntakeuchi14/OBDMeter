@@ -22,7 +22,6 @@ import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -32,7 +31,6 @@ import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.graphics.drawscope.translate
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.TextMeasurer
 import androidx.compose.ui.text.TextStyle
@@ -263,51 +261,6 @@ private fun animated(def: PidDef, value: Double?): Float {
 }
 
 /** 画像を縦横比を保ったまま、[center] を中心に一辺 [box] の正方形に収めて描く */
-/**
- * メーターの中で実際に絵がある範囲 (メーターの枠の左上を原点とする px)。
- * 編集時の枠とつかめる範囲に使う。四角いカード・背景色・グラフは枠いっぱい。
- * @param w,h メーターの枠の大きさ
- * @param pad カードの内側の余白 (GaugeCard の padding と同じ値)
- * @param imageSize 背景画像の大きさ (無ければ null)
- */
-fun gaugeContentRect(style: GaugeStyle, look: GaugeLook, imageSize: IntSize?, w: Float, h: Float, pad: Float): Rect {
-    val full = Rect(0f, 0f, w, h)
-    if (look.showCard || style == GaugeStyle.CHART) return full
-    val iw = w - pad * 2
-    val ih = h - pad * 2
-    if (iw <= 0f || ih <= 0f) return full
-    fun imageRect(center: Offset, box: Float): Rect? {
-        val s = imageSize ?: return null
-        if (s.width <= 0 || s.height <= 0) return null
-        val k = min(box / s.width, box / s.height)
-        val rw = s.width * k
-        val rh = s.height * k
-        return Rect(center.x - rw / 2, center.y - rh / 2, center.x + rw / 2, center.y + rh / 2)
-    }
-    var r: Rect = when (style) {
-        GaugeStyle.ANALOG -> {
-            val d = min(iw, ih)
-            val c = Offset(iw / 2, ih / 2)
-            val dial = Rect(c.x - d / 2, c.y - d / 2, c.x + d / 2, c.y + d / 2)
-            imageRect(Offset(c.x + d * look.imageOffsetX, c.y + d * look.imageOffsetY), d * look.imageScale)
-                ?.let { dial.union(it) } ?: dial
-        }
-        else -> {
-            // 文字・画像は決まった比率の枠 (designFrame) の中に描かれる
-            val fr = designFrame(Size(iw, ih), frameRatio(style))
-            if (look.faceColor != null || imageSize == null) fr
-            else imageRect(
-                Offset(fr.left + fr.width * (0.5f + look.imageOffsetX), fr.top + fr.height * (0.5f + look.imageOffsetY)),
-                max(fr.width, fr.height) * look.imageScale,
-            ) ?: fr
-        }
-    }
-    r = r.intersect(Rect(0f, 0f, iw, ih)).translate(pad, pad)
-    return if (r.width <= 0f || r.height <= 0f) full else r
-}
-
-private fun Rect.union(o: Rect) = Rect(min(left, o.left), min(top, o.top), max(right, o.right), max(bottom, o.bottom))
-
 internal fun DrawScope.drawImageFit(image: ImageBitmap, center: Offset, box: Float) {
     val iw = image.width.toFloat()
     val ih = image.height.toFloat()
@@ -568,11 +521,9 @@ fun BarGauge(
     val f = animated(def, value)
     val warn = isWarn(def, value)
     Canvas(modifier) {
-        val fr = designFrame(size, BAR_RATIO)
-        translate(fr.left, fr.top) {
-        val h = fr.height
-        val w = fr.width
-        if (image == null) drawFace(look, fr.size)
+        val h = size.height
+        val w = size.width
+        if (image == null) drawFace(look)
         image?.let { drawImageFit(it, Offset(w / 2 + w * look.imageOffsetX, h / 2 + h * look.imageOffsetY), max(w, h) * look.imageScale) }
         val unit = min(h, w * 0.5f)
         if (look.showName) {
@@ -631,7 +582,6 @@ fun BarGauge(
                 drawText(t, topLeft = Offset(4f, barY - t.size.height - barH * 0.6f))
             }
         }
-        }
     }
 }
 
@@ -653,24 +603,20 @@ fun DigitalGauge(
     val tm = rememberTextMeasurer()
     val warn = isWarn(def, value)
     Canvas(modifier) {
-        val fr = designFrame(size, DIGITAL_RATIO)
-        translate(fr.left, fr.top) {
-        val w = fr.width
-        val h = fr.height
-        if (image == null) drawFace(look, fr.size)
+        if (image == null) drawFace(look)
         image?.let {
-            drawImageFit(it, Offset(w * (0.5f + look.imageOffsetX), h * (0.5f + look.imageOffsetY)),
-                max(w, h) * look.imageScale)
+            drawImageFit(it, Offset(size.width * (0.5f + look.imageOffsetX), size.height * (0.5f + look.imageOffsetY)),
+                max(size.width, size.height) * look.imageScale)
         }
-        val unit = min(h, w * 0.6f)
+        val unit = min(size.height, size.width * 0.6f)
         if (look.showName) {
             val name = tm.measure(def.shortName,
                 TextStyle(color = look.nameColor, fontFamily = fonts.label, fontSize = (unit * 0.14f).toSp(), fontWeight = FontWeight.Medium))
-            drawText(name, topLeft = Offset(4f + w * look.nameOffsetX, h * look.nameOffsetY))
+            drawText(name, topLeft = Offset(4f + size.width * look.nameOffsetX, size.height * look.nameOffsetY))
         }
         // valuePosition は中心からのずれ (アナログと共通の値を流用。既定 0.42 → 中央やや下)
-        val cy = h * (0.5f + (look.valuePosition - 0.42f) * 0.5f)
-        val cx = w * (0.5f + look.valueOffsetX * 0.5f)
+        val cy = size.height * (0.5f + (look.valuePosition - 0.42f) * 0.5f)
+        val cx = size.width * (0.5f + look.valueOffsetX * 0.5f)
         if (look.showValue) {
             // 幅に収まらないときは縮める (メーターの形によってはみ出さないように)
             drawCenteredTextFit(tm, if (unsupported) "非対応" else def.format(value),
@@ -678,52 +624,27 @@ fun DigitalGauge(
                 TextStyle(color = if (warn) GaugeColors.Warn else look.valueColor,
                     fontSize = (unit * (if (unsupported) 0.2f else 0.38f) * look.valueSize).toSp(),
                     fontWeight = FontWeight.Bold, fontFamily = fonts.value),
-                maxWidth = w * 0.96f)
+                maxWidth = size.width * 0.96f)
         }
         if (look.showUnit) {
             drawCenteredText(tm, def.unit,
-                Offset(cx + w * look.unitOffsetX, cy + unit * 0.3f * max(look.valueSize, 0.6f) + h * look.unitOffsetY),
+                Offset(cx + size.width * look.unitOffsetX, cy + unit * 0.3f * max(look.valueSize, 0.6f) + size.height * look.unitOffsetY),
                 TextStyle(color = look.unitColor, fontFamily = fonts.label, fontSize = (unit * 0.13f).toSp()))
         }
         if (peak != null) {
             val t = tm.measure("MAX " + def.format(peak),
                 TextStyle(color = look.peakColor, fontSize = (unit * 0.12f).toSp(), fontFamily = fonts.value))
-            drawText(t, topLeft = Offset(w - t.size.width - 4f, 0f))
-        }
+            drawText(t, topLeft = Offset(size.width - t.size.width - 4f, 0f))
         }
     }
 }
 
 
 /** バー・デジタル表示の背景色 (角丸の四角) */
-internal fun DrawScope.drawFace(look: GaugeLook, area: Size = size) {
+internal fun DrawScope.drawFace(look: GaugeLook) {
     val c = look.faceColor ?: return
-    val r = min(area.width, area.height) * 0.08f
-    drawRoundRect(c, size = area, cornerRadius = CornerRadius(r, r))
-}
-
-/** バー・デジタル・ランプの描画枠の縦横比 (幅 / 高さ) */
-const val DIGITAL_RATIO = 2.5f
-const val BAR_RATIO = 2.5f
-const val LAMP_RATIO = 1f
-
-fun frameRatio(style: GaugeStyle): Float = when (style) {
-    GaugeStyle.BAR -> BAR_RATIO
-    GaugeStyle.LAMP -> LAMP_RATIO
-    else -> DIGITAL_RATIO
-}
-
-/**
- * 決まった縦横比の四角を、[area] の中央にできるだけ大きく収めたもの。
- * バー・デジタル・ランプは文字・画像・バーをすべてこの枠に合わせて描くので、
- * レイアウトで大きさや形を変えても、全体が同じ比率で拡大縮小する (画像と同じふるまい)。
- */
-fun designFrame(area: Size, ratio: Float): Rect {
-    val w = min(area.width, area.height * ratio)
-    val h = w / ratio
-    val x = (area.width - w) / 2
-    val y = (area.height - h) / 2
-    return Rect(x, y, x + w, y + h)
+    val r = min(size.width, size.height) * 0.08f
+    drawRoundRect(c, cornerRadius = CornerRadius(r, r))
 }
 
 /**

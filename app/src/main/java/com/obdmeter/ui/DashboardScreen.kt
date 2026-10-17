@@ -1,11 +1,5 @@
 package com.obdmeter.ui
 
-import androidx.compose.ui.layout.onGloballyPositioned
-import androidx.compose.ui.layout.LayoutCoordinates
-import com.obdmeter.ui.gauges.rememberGaugeImage
-import com.obdmeter.ui.gauges.gaugeContentRect
-import androidx.compose.ui.unit.IntSize
-import androidx.compose.ui.geometry.Rect
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.flow.first
 import androidx.compose.runtime.snapshotFlow
@@ -21,7 +15,6 @@ import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -266,11 +259,7 @@ fun DashboardScreen(vm: MainViewModel, onNavigate: (Screen) -> Unit, onCreateCus
             catalog = catalog,
             supported = supported,
             liveValue = values[gaugeInSettings.pidKey],
-            onChange = { updated ->
-                // デザインしたときの縦横比を覚える (レイアウトで大きさを変えても全体を同じ比率で拡大縮小する)
-                val aspect = updated.w.coerceAtLeast(1) * vm.cellAspect.value / updated.h.coerceAtLeast(1)
-                vm.updateGauge(current.id, updated.id) { updated.copy(design = updated.design.copy(designAspect = aspect)) }
-            },
+            onChange = { updated -> vm.updateGauge(current.id, updated.id) { updated } },
             onBringToFront = { vm.bringToFront(current.id, gaugeInSettings.id) },
             onDelete = { vm.removeGauge(current.id, gaugeInSettings.id); settingsFor = null },
             onCreateCustomPid = { settingsFor = null; onCreateCustomPid() },
@@ -404,21 +393,8 @@ private fun DashboardCanvas(
         dashboard.gauges.forEach { g ->
             key(g.id) {
                 val def = g.resolvedDef(catalog)
-                val look = def?.let { g.look(it) }
-                val img = rememberGaugeImage(look?.image)
                 GaugeOnGrid(
                     gauge = g,
-                    // 編集時の枠・つかめる範囲は、絵が実際にある部分だけにする
-                    contentRect = { w, h, pad ->
-                        if (look == null) Rect(0f, 0f, w, h)
-                        else {
-                            // 縦横比を固定しているときは、枠の中に収めた部分を基準にする
-                            val a = g.lockedAspect
-                            val (bw, bh) = if (a == null) w to h else if (w / h > a) h * a to h else w to w / a
-                            gaugeContentRect(g.style, look, img?.let { IntSize(it.width, it.height) }, bw, bh, pad)
-                                .translate((w - bw) / 2, (h - bh) / 2)
-                        }
-                    },
                     cellWPx = cellWPx,
                     cellHPx = cellHPx,
                     editing = editing,
@@ -447,16 +423,8 @@ fun GaugeView(
     catalog: PidCatalog? = null,
     /** 折れ線グラフをドラッグで操作できるか */
     interactive: Boolean = false,
-    modifier: Modifier = Modifier.fillMaxSize(),
 ) {
-    val aspect = g.lockedAspect
-    if (def != null && aspect != null) {
-        // デザインしたときの縦横比のまま、枠に収まるように全体を拡大縮小する
-        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-            GaugeView(g.copy(design = g.design.copy(lockAspect = false)), def, values, supported, peakResetKey, noCard,
-                catalog, interactive, Modifier.aspectRatio(aspect))
-        }
-    } else if (def != null) {
+    if (def != null) {
         GaugeCard(
             def = def,
             // メインの値が無いときは代替項目の値を出す (イグニッション OFF 時など)
@@ -464,7 +432,7 @@ fun GaugeView(
             style = g.style,
             unsupported = isUnsupported(def, supported) && g.fallbackKey == null,
             look = g.look(def).let { if (noCard) it.copy(showCard = false) else it },
-            modifier = modifier,
+            modifier = Modifier.fillMaxSize(),
             peakResetKey = peakResetKey,
             series = if (g.style == GaugeStyle.CHART) chartSeries(g, def, values, catalog) else emptyList(),
             interactive = interactive,
@@ -487,8 +455,6 @@ private fun GaugeOnGrid(
     onCommit: (GaugeConfig, Int, Int, Int, Int) -> Unit,
     onTap: (GaugeConfig) -> Unit,
     onLongPress: () -> Unit,
-    /** 枠の大きさ (px) とカードの余白から、絵がある範囲を返す */
-    contentRect: (Float, Float, Float) -> Rect = { w, h, _ -> Rect(0f, 0f, w, h) },
     content: @Composable () -> Unit,
 ) {
     val g by rememberUpdatedState(gauge)
@@ -514,97 +480,73 @@ private fun GaugeOnGrid(
     val density = LocalDensity.current
     val dragging = move != Offset.Zero || resize != Offset.Zero
 
-    val cellPad = with(density) { 3.dp.toPx() }
-    val boxW = r[2] * cellWPx - cellPad * 2
-    val boxH = r[3] * cellHPx - cellPad * 2
-    // GaugeCard の内側の余白 (カード表示 8dp / なし 2dp) は contentRect 側で扱う
-    val rect = contentRect(boxW, boxH, with(density) { 2.dp.toPx() })
-    // 指の位置は画面全体の座標で追う (つかんだ枠自体が動いたり形が変わったりしてもずれないように)
-    val frameCoords = remember { arrayOfNulls<LayoutCoordinates>(1) }
-    val handleCoords = remember { arrayOfNulls<LayoutCoordinates>(1) }
-    fun toRoot(holder: Array<LayoutCoordinates?>, p: Offset): Offset =
-        holder[0]?.takeIf { it.isAttached }?.localToRoot(p) ?: p
-
     Box(
         Modifier
             .offset(with(density) { (r[0] * cellWPx).toDp() }, with(density) { (r[1] * cellHPx).toDp() })
             .size(with(density) { (r[2] * cellWPx).toDp() }, with(density) { (r[3] * cellHPx).toDp() })
             .padding(3.dp)
+            .then(
+                if (editing) Modifier
+                    .border(2.dp, if (dragging) GaugeColors.Warn else GaugeColors.Accent, RoundedCornerShape(14.dp))
+                    .pointerInput(gauge.id) {
+                        detectTapGestures(onTap = { onTap(g) })
+                    }
+                    .pointerInput(gauge.id) {
+                        detectDragGestures(
+                            onDragEnd = {
+                                val p = preview()
+                                pending = p
+                                move = Offset.Zero
+                                if (p[0] != g.x || p[1] != g.y) onCommit(g, p[0], p[1], p[2], p[3]) else pending = null
+                            },
+                            onDragCancel = { move = Offset.Zero },
+                        ) { change, amount ->
+                            change.consume()
+                            move += amount
+                        }
+                    }
+                else Modifier.pointerInput(gauge.id) {
+                    // 通常表示中は長押しでピーク値をリセット
+                    detectTapGestures(onLongPress = { onLongPress() })
+                }
+            )
     ) {
         content()
-        // 枠・操作は絵がある範囲だけ (余白の部分は下のメーターをつかめるようにする)
-        Box(
-            Modifier
-                .offset(with(density) { rect.left.toDp() }, with(density) { rect.top.toDp() })
-                .size(with(density) { rect.width.toDp() }, with(density) { rect.height.toDp() })
-                .onGloballyPositioned { frameCoords[0] = it }
-                .then(
-                    if (editing) Modifier
-                        .border(2.dp, if (dragging) GaugeColors.Warn else GaugeColors.Accent, RoundedCornerShape(14.dp))
-                        .pointerInput(gauge.id) {
-                            detectTapGestures(onTap = { onTap(g) })
+        if (editing && gauge.floatGroup != null) {
+            // フロート表示のグループ (左上)
+            Box(
+                Modifier.align(Alignment.TopStart).padding(4.dp).size(22.dp).clip(CircleShape)
+                    .background(GaugeColors.Accent),
+                contentAlignment = Alignment.Center,
+            ) { Text(GaugeConfig.groupLabel(gauge.floatGroup), color = GaugeColors.Background, fontSize = 12.sp, fontWeight = FontWeight.Bold) }
+        }
+        if (editing) {
+            // サイズ変更のつまみ (右下)
+            Box(
+                Modifier
+                    .align(Alignment.BottomEnd)
+                    .size(36.dp)
+                    .pointerInput(gauge.id) {
+                        detectDragGestures(
+                            onDragEnd = {
+                                val p = preview()
+                                pending = p
+                                resize = Offset.Zero
+                                if (p[2] != g.w || p[3] != g.h) onCommit(g, p[0], p[1], p[2], p[3]) else pending = null
+                            },
+                            onDragCancel = { resize = Offset.Zero },
+                        ) { change, amount ->
+                            change.consume()
+                            resize += amount
                         }
-                        .pointerInput(gauge.id) {
-                            var start = Offset.Zero
-                            detectDragGestures(
-                                onDragStart = { p -> start = toRoot(frameCoords, p) },
-                                onDragEnd = {
-                                    val p = preview()
-                                    pending = p
-                                    move = Offset.Zero
-                                    if (p[0] != g.x || p[1] != g.y) onCommit(g, p[0], p[1], p[2], p[3]) else pending = null
-                                },
-                                onDragCancel = { move = Offset.Zero },
-                            ) { change, _ ->
-                                change.consume()
-                                move = toRoot(frameCoords, change.position) - start
-                            }
-                        }
-                    else Modifier.pointerInput(gauge.id) {
-                        // 通常表示中は長押しでピーク値をリセット
-                        detectTapGestures(onLongPress = { onLongPress() })
+                    },
+                contentAlignment = Alignment.BottomEnd,
+            ) {
+                Canvas(Modifier.size(22.dp).padding(4.dp)) {
+                    val path = androidx.compose.ui.graphics.Path().apply {
+                        moveTo(size.width, 0f); lineTo(size.width, size.height); lineTo(0f, size.height); close()
                     }
-                )
-        ) {
-            if (editing && gauge.floatGroup != null) {
-                // フロート表示のグループ (左上)
-                Box(
-                    Modifier.align(Alignment.TopStart).padding(4.dp).size(22.dp).clip(CircleShape)
-                        .background(GaugeColors.Accent),
-                    contentAlignment = Alignment.Center,
-                ) { Text(GaugeConfig.groupLabel(gauge.floatGroup), color = GaugeColors.Background, fontSize = 12.sp, fontWeight = FontWeight.Bold) }
-            }
-            if (editing) {
-                // サイズ変更のつまみ (右下)
-                Box(
-                    Modifier
-                        .align(Alignment.BottomEnd)
-                        .size(36.dp)
-                        .onGloballyPositioned { handleCoords[0] = it }
-                        .pointerInput(gauge.id) {
-                            var start = Offset.Zero
-                            detectDragGestures(
-                                onDragStart = { p -> start = toRoot(handleCoords, p) },
-                                onDragEnd = {
-                                    val p = preview()
-                                    pending = p
-                                    resize = Offset.Zero
-                                    if (p[2] != g.w || p[3] != g.h) onCommit(g, p[0], p[1], p[2], p[3]) else pending = null
-                                },
-                                onDragCancel = { resize = Offset.Zero },
-                            ) { change, _ ->
-                                change.consume()
-                                resize = toRoot(handleCoords, change.position) - start
-                            }
-                        },
-                    contentAlignment = Alignment.BottomEnd,
-                ) {
-                    Canvas(Modifier.size(22.dp).padding(4.dp)) {
-                        val path = androidx.compose.ui.graphics.Path().apply {
-                            moveTo(size.width, 0f); lineTo(size.width, size.height); lineTo(0f, size.height); close()
-                        }
-                        drawPath(path, GaugeColors.Accent)
-                    }
+                    drawPath(path, GaugeColors.Accent)
                 }
             }
         }

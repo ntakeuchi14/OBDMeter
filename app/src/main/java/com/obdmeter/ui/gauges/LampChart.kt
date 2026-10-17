@@ -40,7 +40,6 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.graphics.drawscope.translate
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.TextStyle
@@ -93,20 +92,16 @@ internal fun LampGauge(
     val tm = rememberTextMeasurer()
     val on = !unsupported && value != null && (look.lampCondition?.test(value) ?: isWarn(def, value))
     Canvas(modifier) {
-        val fr = designFrame(size, LAMP_RATIO)
-        translate(fr.left, fr.top) {
-        val fw = fr.width
-        val fh = fr.height
-        if (image == null) drawFace(look, fr.size)
+        if (image == null) drawFace(look)
         image?.let {
-            drawImageFit(it, Offset(fw * (0.5f + look.imageOffsetX), fh * (0.5f + look.imageOffsetY)),
-                max(fw, fh) * look.imageScale)
+            drawImageFit(it, Offset(size.width * (0.5f + look.imageOffsetX), size.height * (0.5f + look.imageOffsetY)),
+                max(size.width, size.height) * look.imageScale)
         }
-        val nameH = if (look.showName) fh * 0.2f else 0f
-        val valueH = if (look.showValue) fh * 0.2f else 0f
-        val areaH = fh - nameH - valueH
-        val r = min(fw, areaH) * 0.4f
-        val c = Offset(fw / 2, nameH + areaH / 2)
+        val nameH = if (look.showName) size.height * 0.2f else 0f
+        val valueH = if (look.showValue) size.height * 0.2f else 0f
+        val areaH = size.height - nameH - valueH
+        val r = min(size.width, areaH) * 0.4f
+        val c = Offset(size.width / 2, nameH + areaH / 2)
         val color = if (on) look.lampOnColor else look.lampOffColor
         if (on) {
             // 光のにじみ
@@ -125,19 +120,18 @@ internal fun LampGauge(
         )
         drawCircle(Color.Black.copy(alpha = 0.55f), r, c, style = Stroke(max(1f, r * 0.08f)))
 
-        val unit = min(fw, fh)
+        val unit = min(size.width, size.height)
         if (look.showName) {
             drawCenteredText(tm, def.shortName,
-                Offset(fw * (0.5f + look.nameOffsetX), nameH / 2 + fh * look.nameOffsetY),
+                Offset(size.width * (0.5f + look.nameOffsetX), nameH / 2 + size.height * look.nameOffsetY),
                 TextStyle(color = look.nameColor, fontFamily = fonts.label, fontWeight = FontWeight.Medium,
                     fontSize = (unit * 0.11f * look.labelSize).toSp()))
         }
         if (look.showValue) {
             val text = if (unsupported) "非対応" else def.format(value) + if (look.showUnit) " ${def.unit}" else ""
-            drawCenteredText(tm, text, Offset(fw / 2, fh - valueH / 2),
+            drawCenteredText(tm, text, Offset(size.width / 2, size.height - valueH / 2),
                 TextStyle(color = look.valueColor, fontFamily = fonts.value,
                     fontSize = (unit * 0.11f * look.valueSize).toSp()))
-        }
         }
     }
 }

@@ -184,12 +184,6 @@ data class GaugeDesign(
     val backgroundImage: String? = null,
     /** 背景画像の大きさ (1.0 = メーター枠いっぱい) */
     val imageScale: Float = 1f,
-    /**
-     * デザインしたときのメーターの縦横比 (幅 / 高さ)。[lockAspect] が ON なら、レイアウトで
-     * 大きさを変えてもこの比率のまま全体を拡大縮小する (文字や画像の大きさ・位置の関係が崩れない)
-     */
-    val designAspect: Float? = null,
-    val lockAspect: Boolean = true,
     /** 名前・単位の位置のずれ (メーターの大きさに対する比率。右・下が正) と色 (null = 文字の色と同じ) */
     val nameOffsetX: Float = 0f,
     val nameOffsetY: Float = 0f,
@@ -256,10 +250,6 @@ data class GaugeConfig(
     /** 折れ線グラフで、[pidKey] に加えて表示する項目のキー */
     val chartKeys: List<String> = emptyList(),
 ) {
-    /** 縦横比を固定して描くときの比率 (幅 / 高さ)。固定しないなら null */
-    val lockedAspect: Float?
-        get() = design.designAspect?.takeIf { design.lockAspect && style != GaugeStyle.CHART && it > 0f }
-
     /** 折れ線グラフに出す項目すべて (先頭が [pidKey]) */
     val chartAllKeys: List<String> get() = listOf(pidKey) + chartKeys
 
