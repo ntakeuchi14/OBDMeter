@@ -1,6 +1,9 @@
 package com.obdmeter.ui
 
 import androidx.compose.foundation.Canvas
+import kotlinx.coroutines.delay
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -100,10 +103,10 @@ fun DashboardScreen(vm: MainViewModel, onNavigate: (Screen) -> Unit, onCreateCus
         vm.setActiveDashboard(current, catalog)
     }
 
-    Column(Modifier.fillMaxSize()) {
-        // ---- 上部バー ----
+    // ---- 上部バー (接続状態・接続ボタン・編集・ログ・設定) ----
+    val topBar: @Composable (Modifier) -> Unit = { modifier ->
         Row(
-            Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp),
+            modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             if (editing) {
@@ -127,9 +130,11 @@ fun DashboardScreen(vm: MainViewModel, onNavigate: (Screen) -> Unit, onCreateCus
                 IconButton(onClick = { onNavigate(Screen.SETTINGS) }) { Icon(Icons.Default.Settings, "設定") }
             }
         }
+    }
 
-        // ---- ダッシュボード (左右スワイプで切替。編集中はスワイプしない) ----
-        HorizontalPager(pager, Modifier.weight(1f).fillMaxWidth(), userScrollEnabled = !editing) { page ->
+    // ---- ダッシュボード (左右スワイプで切替。編集中はスワイプしない) ----
+    val pagerContent: @Composable (Modifier) -> Unit = { modifier ->
+        HorizontalPager(pager, modifier, userScrollEnabled = !editing) { page ->
             dashboards.getOrNull(page)?.let { d ->
                 DashboardCanvas(
                     dashboard = d,
@@ -144,11 +149,13 @@ fun DashboardScreen(vm: MainViewModel, onNavigate: (Screen) -> Unit, onCreateCus
                 )
             }
         }
+    }
 
-        // ---- 下部: 編集ツールバー / ページ名タブ ----
+    // ---- 下部: 編集ツールバー / ページ名タブ ----
+    val bottomBar: @Composable (Modifier) -> Unit = { modifier ->
         if (editing) {
             Row(
-                Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp),
+                modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
@@ -171,7 +178,7 @@ fun DashboardScreen(vm: MainViewModel, onNavigate: (Screen) -> Unit, onCreateCus
             }
         } else if (dashboards.size > 1) {
             Row(
-                Modifier.fillMaxWidth().padding(vertical = 6.dp),
+                modifier.fillMaxWidth().padding(vertical = 6.dp),
                 horizontalArrangement = Arrangement.Center,
             ) {
                 dashboards.forEachIndexed { i, d ->
@@ -189,6 +196,38 @@ fun DashboardScreen(vm: MainViewModel, onNavigate: (Screen) -> Unit, onCreateCus
                             .padding(horizontal = 12.dp, vertical = 4.dp),
                     )
                 }
+            }
+        }
+    }
+
+    // 通常はメーターを全画面に出し、バーはボタンで呼び出す (編集中・「常に表示」設定のときは常に表示)
+    val barsPinned = editing || settings.alwaysShowToolbar
+    var barsShown by remember { mutableStateOf(false) }
+    LaunchedEffect(barsShown, barsPinned) {
+        if (barsShown && !barsPinned) {
+            delay(6000)
+            barsShown = false
+        }
+    }
+
+    if (barsPinned) {
+        Column(Modifier.fillMaxSize()) {
+            topBar(Modifier)
+            pagerContent(Modifier.weight(1f).fillMaxWidth())
+            bottomBar(Modifier)
+        }
+    } else {
+        Box(Modifier.fillMaxSize()) {
+            pagerContent(Modifier.fillMaxSize())
+            if (barsShown) {
+                // 画面のどこかをタップしたら閉じる
+                Box(Modifier.fillMaxSize().clickable(
+                    interactionSource = remember { MutableInteractionSource() }, indication = null,
+                ) { barsShown = false })
+                topBar(Modifier.align(Alignment.TopCenter).background(GaugeColors.Background.copy(alpha = 0.92f)))
+                bottomBar(Modifier.align(Alignment.BottomCenter).background(GaugeColors.Background.copy(alpha = 0.92f)))
+            } else {
+                MenuButton(connection, Modifier.align(Alignment.TopEnd).padding(6.dp)) { barsShown = true }
             }
         }
     }
@@ -226,6 +265,29 @@ fun DashboardScreen(vm: MainViewModel, onNavigate: (Screen) -> Unit, onCreateCus
             onCreateCustom = { pickerFor = null; onCreateCustomPid() },
             onDismiss = { pickerFor = null },
         )
+    }
+}
+
+/** 通常時に右上に出す小さなボタン。接続状態の色の点付き。タップでバーを呼び出す */
+@Composable
+private fun MenuButton(state: ConnectionState, modifier: Modifier, onClick: () -> Unit) {
+    val dot = when (state) {
+        ConnectionState.Disconnected -> GaugeColors.SubText
+        is ConnectionState.Connecting -> Color(0xFFFFC107)
+        is ConnectionState.Connected -> Color(0xFF4CAF50)
+        is ConnectionState.WaitingForVehicle -> Color(0xFF64B5F6)
+        is ConnectionState.Error -> GaugeColors.Warn
+    }
+    Box(
+        modifier
+            .size(40.dp)
+            .clip(CircleShape)
+            .background(GaugeColors.Card.copy(alpha = 0.55f))
+            .clickable(onClick = onClick),
+        contentAlignment = Alignment.Center,
+    ) {
+        Icon(Icons.Default.MoreVert, "メニュー", tint = GaugeColors.Text.copy(alpha = 0.8f))
+        Box(Modifier.align(Alignment.TopEnd).padding(6.dp).size(9.dp).clip(CircleShape).background(dot))
     }
 }
 

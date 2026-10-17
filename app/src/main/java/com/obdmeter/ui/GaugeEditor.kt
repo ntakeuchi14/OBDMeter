@@ -452,6 +452,11 @@ private fun ColorTab(g: GaugeConfig, update: ((GaugeDesign) -> GaugeDesign) -> U
                 update { it.copy(ringDepth = snap(v, 5f) / 100f) }
             }
         }
+        if (d.ring == RingStyle.METAL) {
+            SliderLine("内側の段の幅 (凹んだ部分)", d.ringInner * 100, 0f..80f, "%.0f%%") { v ->
+                update { it.copy(ringInner = snap(v, 5f) / 100f) }
+            }
+        }
     }
 
     ColorLine("目盛りの色", d.tickColor, GaugeColors.Tick) { c -> update { it.copy(tickColor = c) } }
@@ -487,6 +492,9 @@ private fun ColorTab(g: GaugeConfig, update: ((GaugeDesign) -> GaugeDesign) -> U
         ColorLine("数値の色", d.valueColor, GaugeColors.Text) { c -> update { it.copy(valueColor = c) } }
         SliderLine("数値の縦位置 (中心 = 0、下が +)", d.valuePosition * 100, -90f..90f, "%.0f") { v ->
             update { it.copy(valuePosition = snap(v, 1f) / 100f) }
+        }
+        SliderLine("数値の横位置 (中心 = 0、右が +)", d.valueOffsetX * 100, -90f..90f, "%.0f") { v ->
+            update { it.copy(valueOffsetX = snap(v, 1f) / 100f) }
         }
         SliderLine("数値の大きさ", d.valueSize * 100, 30f..300f, "%.0f%%") { v -> update { it.copy(valueSize = snap(v, 5f) / 100f) } }
     }
@@ -549,13 +557,22 @@ private fun ImageTab(g: GaugeConfig, update: ((GaugeDesign) -> GaugeDesign) -> U
 
     if (d.backgroundImage != null) {
         SliderLine("画像の大きさ", d.imageScale * 100, 30f..200f, "%.0f%%") { v -> update { it.copy(imageScale = snap(v, 1f) / 100f) } }
+        SliderLine("画像の横位置 (右が +)", d.imageOffsetX * 100, -50f..50f, "%.0f%%") { v ->
+            update { it.copy(imageOffsetX = snap(v, 1f) / 100f) }
+        }
+        SliderLine("画像の縦位置 (下が +)", d.imageOffsetY * 100, -50f..50f, "%.0f%%") { v ->
+            update { it.copy(imageOffsetY = snap(v, 1f) / 100f) }
+        }
         Head("画像に合わせる")
-        Hint("目盛りが画像の枠と重なる場合は「目盛りの位置」を、数値を画像の表示窓に入れたい場合は「数値の縦位置」を調整してください。")
+        Hint("目盛りが画像の枠と重なる場合は「目盛りの位置」を、数値を画像の表示窓に入れたい場合は「数値の縦位置・横位置」を調整してください。")
         SliderLine("目盛りの位置 (外周 = 100%)", d.tickRadius * 100, 40f..110f, "%.0f%%") { v ->
             update { it.copy(tickRadius = snap(v, 1f) / 100f) }
         }
         SliderLine("数値の縦位置 (中心 = 0、下が +)", d.valuePosition * 100, -90f..90f, "%.0f") { v ->
             update { it.copy(valuePosition = snap(v, 1f) / 100f) }
+        }
+        SliderLine("数値の横位置 (中心 = 0、右が +)", d.valueOffsetX * 100, -90f..90f, "%.0f") { v ->
+            update { it.copy(valueOffsetX = snap(v, 1f) / 100f) }
         }
         SwitchLine("四角いカードの背景を表示", null, d.showCard) { v -> update { it.copy(showCard = v) } }
         SwitchLine("下地の弧", null, d.showTrack) { v -> update { it.copy(showTrack = v) } }

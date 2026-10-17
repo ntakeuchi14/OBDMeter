@@ -31,6 +31,8 @@ data class AppSettings(
     val autoReconnect: Boolean = true,
     /** アプリ起動時に自動で接続する */
     val autoConnect: Boolean = false,
+    /** ダッシュボード上部のバーを常に表示する (OFF なら右上のボタンで呼び出す) */
+    val alwaysShowToolbar: Boolean = false,
     /** イグニッション OFF でもアダプターに接続し、車両が応答するまで待つ */
     val waitForVehicle: Boolean = true,
     /** 待機の上限 (分)。0 = 無制限。待機中も車両に問い合わせるので、バッテリー保護のため */
@@ -98,6 +100,8 @@ data class GaugeDesign(
     val ringThickness: Float = 1f,
     /** リングの立体感 (0 = 平ら、1 = 強い陰影)。メタル・太線で使う */
     val ringDepth: Float = 0.6f,
+    /** メタルの内側の段 (凹んだ部分) の幅。リング全体に対する比率 (0 = 段なし) */
+    val ringInner: Float = 0.4f,
     /** 目盛りに沿った下地の弧 */
     val showTrack: Boolean = true,
     /** 現在値まで伸びる色付きの弧 */
@@ -138,6 +142,8 @@ data class GaugeDesign(
     val valueColor: Long? = null,
     /** 数値の縦位置 (中心からの距離、半径に対する比率。下が正) */
     val valuePosition: Float = 0.42f,
+    /** 数値の横位置 (中心からの距離、半径に対する比率。右が正) */
+    val valueOffsetX: Float = 0f,
     val valueSize: Float = 1f,
     val showName: Boolean = true,
     val showUnit: Boolean = true,
@@ -153,6 +159,9 @@ data class GaugeDesign(
     val backgroundImage: String? = null,
     /** 背景画像の大きさ (1.0 = メーター枠いっぱい) */
     val imageScale: Float = 1f,
+    /** 背景画像の位置のずれ (メーターの大きさに対する比率。右・下が正) */
+    val imageOffsetX: Float = 0f,
+    val imageOffsetY: Float = 0f,
     /** 四角いカードの背景と枠を表示する。丸い画像を使うときは OFF がきれい */
     val showCard: Boolean = true,
 )

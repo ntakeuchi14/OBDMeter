@@ -157,6 +157,11 @@ fun SettingsScreen(vm: MainViewModel, onBack: () -> Unit, onOpenCustomPids: () -
             BackupSection(vm)
 
             Section("その他")
+            SwitchRow(
+                "ダッシュボードのバーを常に表示",
+                "OFF のときは、接続状態や編集・設定のボタンを隠してメーターを全画面に表示し、右上のボタンで呼び出します",
+                s.alwaysShowToolbar,
+            ) { v -> vm.updateSettings { it.copy(alwaysShowToolbar = v) } }
             SwitchRow("起動時に自動接続", "アプリを開いたら「接続」を押さなくても接続を始めます", s.autoConnect) { v ->
                 vm.updateSettings { it.copy(autoConnect = v) }
             }

@@ -27,6 +27,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
@@ -104,6 +105,10 @@ data class GaugeLook(
     val knobSize: Float = 1f,
     val ringThickness: Float = 1f,
     val ringDepth: Float = 0.6f,
+    val ringInner: Float = 0.4f,
+    val valueOffsetX: Float = 0f,
+    val imageOffsetX: Float = 0f,
+    val imageOffsetY: Float = 0f,
     val showPeak: Boolean = false,
     val peakColor: Color = GaugeColors.Peak,
     val showPeakValue: Boolean = false,
@@ -267,7 +272,7 @@ fun AnalogGauge(
         val outer = d / 2
 
         // 背景画像 (目盛りや針は上から描く)
-        image?.let { drawImageFit(it, center, d * look.imageScale) }
+        image?.let { drawImageFit(it, Offset(center.x + d * look.imageOffsetX, center.y + d * look.imageOffsetY), d * look.imageScale) }
 
         // 外周リング
         val ringWidth = when (look.ring) {
@@ -394,21 +399,22 @@ fun AnalogGauge(
                 TextStyle(color = look.labelColor, fontFamily = fonts.label, fontSize = (d * 0.07f).toSp(), fontWeight = FontWeight.Medium))
         }
         val valueY = center.y + gaugeR * look.valuePosition
+        val valueX = center.x + gaugeR * look.valueOffsetX
         if (look.showValue) {
             val valueText = if (unsupported) "非対応" else def.format(value)
-            drawCenteredText(tm, valueText, Offset(center.x, valueY),
+            drawCenteredText(tm, valueText, Offset(valueX, valueY),
                 TextStyle(color = if (warn) GaugeColors.Warn else look.valueColor,
                     fontSize = (d * (if (unsupported) 0.09f else 0.13f) * look.valueSize).toSp(),
                     fontWeight = FontWeight.Bold, fontFamily = fonts.value))
         }
         if (look.showUnit) {
             drawCenteredText(tm, def.unit + scale.unitSuffix,
-                Offset(center.x, valueY + d * 0.1f * max(look.valueSize, 0.6f)),
+                Offset(valueX, valueY + d * 0.1f * max(look.valueSize, 0.6f)),
                 TextStyle(color = look.labelColor, fontFamily = fonts.label, fontSize = (d * 0.055f).toSp()))
         }
         if (peak != null && look.showPeakValue) {
             drawCenteredText(tm, "MAX " + def.format(peak),
-                Offset(center.x, valueY + d * 0.17f * max(look.valueSize, 0.6f)),
+                Offset(valueX, valueY + d * 0.17f * max(look.valueSize, 0.6f)),
                 TextStyle(color = look.peakColor, fontSize = (d * 0.05f).toSp(), fontFamily = fonts.value))
         }
     }
@@ -474,7 +480,7 @@ fun BarGauge(
     Canvas(modifier) {
         val h = size.height
         val w = size.width
-        image?.let { drawImageFit(it, Offset(w / 2, h / 2), max(w, h) * look.imageScale) }
+        image?.let { drawImageFit(it, Offset(w / 2 + w * look.imageOffsetX, h / 2 + h * look.imageOffsetY), max(w, h) * look.imageScale) }
         val unit = min(h, w * 0.5f)
         if (look.showName) {
             val name = tm.measure(def.shortName,
@@ -491,9 +497,11 @@ fun BarGauge(
             val valueLayout = tm.measure(if (unsupported) "非対応" else def.format(value), valueStyle)
             val unitLayout = tm.measure(if (look.showUnit) def.unit else "",
                 TextStyle(color = look.labelColor, fontFamily = fonts.label, fontSize = (unit * 0.14f).toSp()))
-            val valueY = h * 0.52f - valueLayout.size.height / 2f
-            drawText(unitLayout, topLeft = Offset(w - unitLayout.size.width - 4f, valueY + valueLayout.size.height - unitLayout.size.height * 1.15f))
-            drawText(valueLayout, topLeft = Offset(w - unitLayout.size.width - 10f - valueLayout.size.width, valueY))
+            // 縦横の位置調整 (アナログと共通の設定。既定は右寄せ・中央)
+            val valueY = h * (0.52f + (look.valuePosition - 0.42f) * 0.5f) - valueLayout.size.height / 2f
+            val dx = w * look.valueOffsetX * 0.5f
+            drawText(unitLayout, topLeft = Offset(w - unitLayout.size.width - 4f + dx, valueY + valueLayout.size.height - unitLayout.size.height * 1.15f))
+            drawText(valueLayout, topLeft = Offset(w - unitLayout.size.width - 10f - valueLayout.size.width + dx, valueY))
         }
 
         // バー
@@ -548,7 +556,10 @@ fun DigitalGauge(
     val tm = rememberTextMeasurer()
     val warn = isWarn(def, value)
     Canvas(modifier) {
-        image?.let { drawImageFit(it, Offset(size.width / 2, size.height / 2), max(size.width, size.height) * look.imageScale) }
+        image?.let {
+            drawImageFit(it, Offset(size.width * (0.5f + look.imageOffsetX), size.height * (0.5f + look.imageOffsetY)),
+                max(size.width, size.height) * look.imageScale)
+        }
         val unit = min(size.height, size.width * 0.6f)
         if (look.showName) {
             val name = tm.measure(def.shortName,
@@ -557,15 +568,16 @@ fun DigitalGauge(
         }
         // valuePosition は中心からのずれ (アナログと共通の値を流用。既定 0.42 → 中央やや下)
         val cy = size.height * (0.5f + (look.valuePosition - 0.42f) * 0.5f)
+        val cx = size.width * (0.5f + look.valueOffsetX * 0.5f)
         if (look.showValue) {
             drawCenteredText(tm, if (unsupported) "非対応" else def.format(value),
-                Offset(size.width / 2, cy),
+                Offset(cx, cy),
                 TextStyle(color = if (warn) GaugeColors.Warn else look.valueColor,
                     fontSize = (unit * (if (unsupported) 0.2f else 0.38f) * look.valueSize).toSp(),
                     fontWeight = FontWeight.Bold, fontFamily = fonts.value))
         }
         if (look.showUnit) {
-            drawCenteredText(tm, def.unit, Offset(size.width / 2, cy + unit * 0.3f * max(look.valueSize, 0.6f)),
+            drawCenteredText(tm, def.unit, Offset(cx, cy + unit * 0.3f * max(look.valueSize, 0.6f)),
                 TextStyle(color = look.labelColor, fontFamily = fonts.label, fontSize = (unit * 0.13f).toSp()))
         }
         if (peak != null) {
@@ -578,57 +590,79 @@ fun DigitalGauge(
 
 
 /**
- * 外周リング。メタル・太線は [GaugeLook.ringDepth] に応じて陰影を付け、
- * 左上から光が当たったような立体感 (外側の縁の影・内側の縁のハイライト・文字盤への落ち影) を出す。
+ * 外周リング。
+ * メタル: 実物のメーターのベゼルのような 2 段構成。外側の段は凸面 (上が明るく下が暗い)、
+ * 内側の段は凹面 (上が暗く下が明るい) にして、文字盤に向かって一段下がって見えるようにする。
+ * 陰影の強さは [GaugeLook.ringDepth]、内側の段の幅は [GaugeLook.ringInner]。
  */
 private fun DrawScope.drawRing(look: GaugeLook, center: Offset, outer: Float, w: Float) {
-    val r = outer - w / 2
     val c = look.ringColor
     val depth = look.ringDepth.coerceIn(0f, 1f)
-    val tl = Offset(center.x - outer, center.y - outer)
-    val br = Offset(center.x + outer, center.y + outer)
+    // 光は真上よりやや左から当たる
+    val top = Offset(center.x - outer * 0.25f, center.y - outer)
+    val bottom = Offset(center.x + outer * 0.25f, center.y + outer)
     when (look.ring) {
         RingStyle.NONE -> return
-        RingStyle.LINE -> { drawCircle(c, r, center, style = Stroke(w)); return }
-        RingStyle.BOLD -> drawCircle(c, r, center, style = Stroke(w))
+        RingStyle.LINE -> { drawCircle(c, outer - w / 2, center, style = Stroke(w)); return }
+        RingStyle.BOLD -> {
+            drawCircle(c, outer - w / 2, center, style = Stroke(w))
+            if (depth > 0f) {
+                drawCircle(
+                    Brush.linearGradient(
+                        listOf(Color.White.copy(alpha = 0.45f * depth), Color.Transparent, Color.Black.copy(alpha = 0.55f * depth)),
+                        start = top, end = bottom,
+                    ),
+                    outer - w / 2, center, style = Stroke(w),
+                )
+            }
+        }
         RingStyle.METAL -> {
-            // 金属の地: 回転方向の反射ムラ
+            val innerW = w * look.ringInner.coerceIn(0f, 0.8f)
+            val outerW = w - innerW
+            // 外側の段 (凸): 上が白っぽく、下に行くほど暗い
             drawCircle(
-                Brush.sweepGradient(
-                    listOf(c, Color.White, c.copy(alpha = 0.75f), Color.DarkGray, c, Color.White.copy(alpha = 0.9f), c),
-                    center,
+                Brush.linearGradient(
+                    listOf(
+                        lerp(c, Color.White, 0.85f * depth),
+                        lerp(c, Color.White, 0.35f * depth),
+                        c,
+                        lerp(c, Color.Black, 0.25f * depth),
+                        lerp(c, Color.White, 0.25f * depth),
+                    ),
+                    start = top, end = bottom,
                 ),
-                r, center, style = Stroke(w),
+                outer - outerW / 2, center, style = Stroke(outerW),
             )
+            // 外側の段の外縁の影
+            drawCircle(Color.Black.copy(alpha = 0.5f * depth), outer - outerW * 0.03f, center, style = Stroke(max(1f, outerW * 0.06f)))
+            if (innerW > 0f) {
+                // 内側の段 (凹): 地の色を少し暗くし、上が暗く下が明るい
+                val ci = lerp(c, Color.Black, 0.45f)
+                drawCircle(
+                    Brush.linearGradient(
+                        listOf(
+                            lerp(ci, Color.Black, 0.5f * depth),
+                            ci,
+                            lerp(ci, Color.White, 0.35f * depth),
+                        ),
+                        start = top, end = bottom,
+                    ),
+                    outer - outerW - innerW / 2, center, style = Stroke(innerW),
+                )
+                // 段の境目の細い影
+                drawCircle(Color.Black.copy(alpha = 0.45f * depth), outer - outerW, center, style = Stroke(max(1f, w * 0.025f)))
+            }
         }
     }
     if (depth <= 0f) return
-    // 光: 左上が明るく右下が暗い
-    drawCircle(
-        Brush.linearGradient(
-            listOf(Color.White.copy(alpha = 0.55f * depth), Color.Transparent, Color.Black.copy(alpha = 0.65f * depth)),
-            start = tl, end = br,
-        ),
-        r, center, style = Stroke(w),
-    )
-    // 外側の縁 (暗い線)
-    drawCircle(Color.Black.copy(alpha = 0.55f * depth), outer - w * 0.04f, center, style = Stroke(w * 0.08f))
-    // 内側の縁: 左上は影、右下はハイライト (面取りされた縁に見える)
-    drawCircle(
-        Brush.linearGradient(
-            listOf(Color.Black.copy(alpha = 0.7f * depth), Color.Transparent, Color.White.copy(alpha = 0.6f * depth)),
-            start = tl, end = br,
-        ),
-        outer - w + w * 0.07f, center, style = Stroke(w * 0.14f),
-    )
     // 文字盤への落ち影 (リングの内側をうっすら暗く)
     val inner = outer - w
     if (inner > 0f) {
         drawCircle(
             Brush.radialGradient(
                 0f to Color.Transparent,
-                0.86f to Color.Transparent,
-                1f to Color.Black.copy(alpha = 0.5f * depth),
+                0.88f to Color.Transparent,
+                1f to Color.Black.copy(alpha = 0.55f * depth),
                 center = center, radius = inner,
             ),
             inner, center,
