@@ -10,6 +10,7 @@ import com.obdmeter.data.CustomPid
 import com.obdmeter.data.Dashboard
 import com.obdmeter.data.Defaults
 import com.obdmeter.data.GaugeConfig
+import com.obdmeter.data.GaugeImages
 import com.obdmeter.data.GaugeStyle
 import com.obdmeter.data.Layout
 import com.obdmeter.data.Repository
@@ -48,6 +49,14 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     val values: StateFlow<Map<String, Double>> = session.values
     val rate: StateFlow<Double> = session.rate
     val supported: StateFlow<Set<Int>?> = session.supported
+
+    init {
+        // どのメーターからも使われなくなった背景画像を消す
+        viewModelScope.launch {
+            val used = repo.dashboards.first().flatMap { it.gauges }.mapNotNull { it.design.backgroundImage }.toSet()
+            runCatching { GaugeImages.cleanup(app, used) }
+        }
+    }
 
     // ---- 接続 ----
 

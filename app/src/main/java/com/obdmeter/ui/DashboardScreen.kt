@@ -88,7 +88,7 @@ fun DashboardScreen(vm: MainViewModel, onNavigate: (Screen) -> Unit, onCreateCus
     var editing by rememberSaveable { mutableStateOf(false) }
     /** 設定ダイアログを開いているメーターの id */
     var settingsFor by remember { mutableStateOf<Long?>(null) }
-    /** 項目選択ダイアログ: null = 閉じる、0 = 新規追加、それ以外 = そのメーターの項目変更 */
+    /** メーター追加の項目選択ダイアログ (null = 閉じる) */
     var pickerFor by remember { mutableStateOf<Long?>(null) }
     var arrangeMenu by remember { mutableStateOf(false) }
 
@@ -192,42 +192,34 @@ fun DashboardScreen(vm: MainViewModel, onNavigate: (Screen) -> Unit, onCreateCus
         }
     }
 
-    // ---- メーター設定ダイアログ ----
+    // ---- メーターのデザイン編集 (全画面) ----
     val gaugeInSettings = current?.gauges?.firstOrNull { it.id == settingsFor }
     if (current != null && gaugeInSettings != null) {
         GaugeSettingsDialog(
             gauge = gaugeInSettings,
             catalog = catalog,
+            supported = supported,
+            liveValue = values[gaugeInSettings.pidKey],
             onChange = { updated -> vm.updateGauge(current.id, updated.id) { updated } },
-            onChangeItem = { pickerFor = gaugeInSettings.id },
             onBringToFront = { vm.bringToFront(current.id, gaugeInSettings.id) },
             onDelete = { vm.removeGauge(current.id, gaugeInSettings.id); settingsFor = null },
+            onCreateCustomPid = { settingsFor = null; onCreateCustomPid() },
             onDismiss = { settingsFor = null },
         )
     } else if (settingsFor != null && current?.gauges?.none { it.id == settingsFor } == true) {
-        settingsFor = null
+        LaunchedEffect(settingsFor) { settingsFor = null }
     }
 
-    // ---- 項目選択ダイアログ ----
-    val target = pickerFor
-    if (current != null && target != null) {
+    // ---- メーター追加: 項目選択 ----
+    if (current != null && pickerFor != null) {
         ItemPickerDialog(
             catalog = catalog,
             supported = supported,
             onPick = { def ->
-                if (target == 0L) {
-                    // 空いている場所に置く。位置と大きさはドラッグで調整してもらう
-                    vm.addGauge(current.id, def.key, defaultStyleFor(def))
-                    if (!editing) editing = true
-                    settingsFor = null
-                    pickerFor = null
-                } else {
-                    // 項目を変えたら、前の項目用の範囲・表示名などはリセットする
-                    vm.updateGauge(current.id, target) { it.copy(pidKey = def.key, design = it.design.copy(
-                        label = null, min = null, max = null, decimals = null, useDefaultWarn = true,
-                        warnAbove = null, warnBelow = null)) }
-                    pickerFor = null
-                }
+                // 空いている場所に置く。位置と大きさはドラッグで調整してもらう
+                vm.addGauge(current.id, def.key, defaultStyleFor(def))
+                if (!editing) editing = true
+                pickerFor = null
             },
             onCreateCustom = { pickerFor = null; onCreateCustomPid() },
             onDismiss = { pickerFor = null },
@@ -313,8 +305,7 @@ private fun DashboardCanvas(
                             value = values[def.key],
                             style = g.style,
                             unsupported = isUnsupported(def, supported),
-                            accent = g.accentColor(),
-                            customColor = g.hasCustomColor,
+                            look = g.look(def),
                             modifier = Modifier.fillMaxSize(),
                         )
                     } else {

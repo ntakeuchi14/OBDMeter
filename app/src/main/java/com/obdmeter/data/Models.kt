@@ -67,7 +67,72 @@ data class GaugeDesign(
     val decimals: Int? = null,
     /** メーターの色 (ARGB)。null = 既定の水色 */
     val color: Long? = null,
+
+    // ---- 角度 (アナログ) : 12 時 = 0°、時計回りが正 ----
+    val startAngle: Float = -120f,
+    val endAngle: Float = 120f,
+
+    // ---- 目盛り ----
+    /** 主目盛りの区間数。null = 範囲から自動 */
+    val majorDivisions: Int? = null,
+    /** 主目盛りの間の小目盛りの数 */
+    val minorDivisions: Int = 0,
+    val showLabels: Boolean = true,
+    /** 目盛りを描く位置 (外周 = 1.0)。背景画像の枠の内側に合わせる */
+    val tickRadius: Float = 1f,
+    val tickColor: Long? = null,
+    val labelColor: Long? = null,
+    /** 目盛り数字の大きさ (1.0 = 標準) */
+    val labelSize: Float = 1f,
+
+    // ---- リング・弧 ----
+    val ring: RingStyle = RingStyle.NONE,
+    val ringColor: Long? = null,
+    /** 目盛りに沿った下地の弧 */
+    val showTrack: Boolean = true,
+    /** 現在値まで伸びる色付きの弧 */
+    val showValueArc: Boolean = true,
+    /** 弧の太さ (1.0 = 標準) */
+    val arcWidth: Float = 1f,
+
+    // ---- レッドゾーン ----
+    val showRedZone: Boolean = true,
+    /** null なら警告値 (上限〜最大、または最小〜下限) を使う */
+    val redZoneFrom: Double? = null,
+    val redZoneTo: Double? = null,
+    val redZoneColor: Long? = null,
+
+    // ---- 針 ----
+    val showNeedle: Boolean = true,
+    val needleColor: Long? = null,
+    /** 針の長さ (1.0 = 目盛りまで) */
+    val needleLength: Float = 1f,
+
+    // ---- 数値・名前 ----
+    val showValue: Boolean = true,
+    val valueColor: Long? = null,
+    /** 数値の縦位置 (中心からの距離、半径に対する比率。下が正) */
+    val valuePosition: Float = 0.42f,
+    val valueSize: Float = 1f,
+    val showName: Boolean = true,
+    val showUnit: Boolean = true,
+
+    // ---- 背景 ----
+    /** アプリ内に保存した背景画像のファイル名。null = 画像なし */
+    val backgroundImage: String? = null,
+    /** 背景画像の大きさ (1.0 = メーター枠いっぱい) */
+    val imageScale: Float = 1f,
+    /** 四角いカードの背景と枠を表示する。丸い画像を使うときは OFF がきれい */
+    val showCard: Boolean = true,
 )
+
+/** メーター外周のリング */
+enum class RingStyle(val label: String) {
+    NONE("なし"),
+    LINE("細線"),
+    BOLD("太線"),
+    METAL("メタル"),
+}
 
 /**
  * ダッシュボード上のメーター 1 個。

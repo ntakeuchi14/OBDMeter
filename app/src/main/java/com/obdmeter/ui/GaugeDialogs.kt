@@ -51,152 +51,8 @@ import com.obdmeter.data.GaugeStyle
 import com.obdmeter.data.Layout
 import com.obdmeter.ui.gauges.GaugeColors
 
-/**
- * メーター 1 個の設定。変更はその場でダッシュボードに反映される (後ろに見えている)。
- */
-@Composable
-fun GaugeSettingsDialog(
-    gauge: GaugeConfig,
-    catalog: PidCatalog,
-    onChange: (GaugeConfig) -> Unit,
-    onChangeItem: () -> Unit,
-    onBringToFront: () -> Unit,
-    onDelete: () -> Unit,
-    onDismiss: () -> Unit,
-) {
-    val base = catalog.get(gauge.pidKey)
-    val d = gauge.design
-    var confirmDelete by remember { mutableStateOf(false) }
+internal fun fmt(v: Double): String = if (v == Math.floor(v)) v.toLong().toString() else v.toString()
 
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("メーターの設定") },
-        text = {
-            Column(Modifier.heightIn(max = 520.dp).verticalScroll(rememberScrollState())) {
-                // ---- 表示項目 ----
-                Label("表示する項目")
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Column(Modifier.weight(1f)) {
-                        Text(base?.name ?: "(見つかりません: ${gauge.pidKey})", fontWeight = FontWeight.Medium)
-                        if (base != null) Text("${base.sourceLabel()}  ${base.unit}", color = GaugeColors.SubText, fontSize = 12.sp)
-                    }
-                    OutlinedButton(onClick = onChangeItem) { Text("変更") }
-                }
-
-                // ---- 表示形式 ----
-                Label("表示形式")
-                Row {
-                    GaugeStyle.entries.forEach { s ->
-                        FilterChip(
-                            selected = gauge.style == s,
-                            onClick = { onChange(gauge.copy(style = s)) },
-                            label = { Text(s.label) },
-                            modifier = Modifier.padding(end = 6.dp),
-                        )
-                    }
-                }
-
-                // ---- 表示名 ----
-                Label("表示名 (空欄で「${base?.shortName ?: ""}」)")
-                var labelText by remember(gauge.id) { mutableStateOf(d.label.orEmpty()) }
-                OutlinedTextField(
-                    value = labelText,
-                    onValueChange = {
-                        labelText = it
-                        onChange(gauge.copy(design = d.copy(label = it.ifBlank { null })))
-                    },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth(),
-                )
-
-                // ---- 範囲 ----
-                Label("目盛りの範囲 (空欄で既定値)")
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    NumberField("最小", d.min, base?.min, gauge.id, Modifier.weight(1f)) {
-                        onChange(gauge.copy(design = d.copy(min = it)))
-                    }
-                    NumberField("最大", d.max, base?.max, gauge.id, Modifier.weight(1f)) {
-                        onChange(gauge.copy(design = d.copy(max = it)))
-                    }
-                }
-
-                // ---- 小数桁 ----
-                Label("小数点以下の桁数")
-                Row {
-                    val options = listOf<Int?>(null, 0, 1, 2, 3)
-                    options.forEach { n ->
-                        FilterChip(
-                            selected = d.decimals == n,
-                            onClick = { onChange(gauge.copy(design = d.copy(decimals = n))) },
-                            label = { Text(n?.toString() ?: "既定") },
-                            modifier = Modifier.padding(end = 4.dp),
-                        )
-                    }
-                }
-
-                // ---- 警告値 ----
-                Row(Modifier.fillMaxWidth().padding(top = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Column(Modifier.weight(1f)) {
-                        Text("既定の警告値を使う")
-                        val def = listOfNotNull(
-                            base?.warnAbove?.let { "上限 ${fmt(it)}" },
-                            base?.warnBelow?.let { "下限 ${fmt(it)}" },
-                        ).joinToString(" / ").ifEmpty { "警告なし" }
-                        Text(def, color = GaugeColors.SubText, fontSize = 12.sp)
-                    }
-                    Switch(d.useDefaultWarn, { onChange(gauge.copy(design = d.copy(useDefaultWarn = it))) })
-                }
-                if (!d.useDefaultWarn) {
-                    Text("値がこの範囲を超えるとメーターが赤くなります (空欄 = 警告なし)",
-                        color = GaugeColors.SubText, fontSize = 12.sp)
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        NumberField("下限", d.warnBelow, null, gauge.id, Modifier.weight(1f)) {
-                            onChange(gauge.copy(design = d.copy(warnBelow = it)))
-                        }
-                        NumberField("上限", d.warnAbove, null, gauge.id, Modifier.weight(1f)) {
-                            onChange(gauge.copy(design = d.copy(warnAbove = it)))
-                        }
-                    }
-                }
-
-                // ---- 色 ----
-                Label("色")
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    ColorDot(GaugeColors.Accent, d.color == null, "既定") { onChange(gauge.copy(design = d.copy(color = null))) }
-                    Layout.COLORS.forEach { (name, argb) ->
-                        ColorDot(Color(argb), d.color == argb, name) { onChange(gauge.copy(design = d.copy(color = argb))) }
-                    }
-                }
-
-                // ---- 配置 ----
-                Label("配置")
-                Text("位置 (${gauge.x}, ${gauge.y})  大きさ ${gauge.w} × ${gauge.h} マス (全体 ${Layout.COLS} × ${Layout.ROWS})",
-                    color = GaugeColors.SubText, fontSize = 12.sp)
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(top = 4.dp)) {
-                    OutlinedButton(onClick = onBringToFront) { Text("最前面へ") }
-                    OutlinedButton(onClick = { confirmDelete = true }) { Text("削除", color = GaugeColors.Warn) }
-                }
-            }
-        },
-        confirmButton = { TextButton(onClick = onDismiss) { Text("閉じる") } },
-    )
-
-    if (confirmDelete) {
-        AlertDialog(
-            onDismissRequest = { confirmDelete = false },
-            title = { Text("このメーターを削除しますか？") },
-            confirmButton = { TextButton(onClick = { confirmDelete = false; onDelete() }) { Text("削除", color = GaugeColors.Warn) } },
-            dismissButton = { TextButton(onClick = { confirmDelete = false }) { Text("キャンセル") } },
-        )
-    }
-}
-
-private fun fmt(v: Double): String = if (v == Math.floor(v)) v.toLong().toString() else v.toString()
-
-@Composable
-private fun Label(text: String) {
-    Text(text, color = GaugeColors.SubText, fontSize = 13.sp, modifier = Modifier.padding(top = 12.dp, bottom = 4.dp))
-}
 
 /** 数値入力。空欄は null。入力途中 ("-" や "1.") の間は値を確定しない */
 @Composable
@@ -229,7 +85,7 @@ fun NumberField(
 }
 
 @Composable
-private fun ColorDot(color: Color, selected: Boolean, name: String, onClick: () -> Unit) {
+internal fun ColorDot(color: Color, selected: Boolean, name: String, onClick: () -> Unit) {
     Box(
         Modifier
             .padding(end = 6.dp)
