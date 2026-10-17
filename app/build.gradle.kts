@@ -13,12 +13,30 @@ android {
         applicationId = "com.obdmeter"
         minSdk = 26
         targetSdk = 35
-        versionCode = 1
-        versionName = "0.1.0"
+        // GitHub Actions の実行番号をバージョンにする (ローカルビルドは 1)
+        val runNumber = System.getenv("GITHUB_RUN_NUMBER")?.toIntOrNull() ?: 1
+        versionCode = runNumber
+        versionName = "0.2.$runNumber"
+    }
+
+    // どこでビルドしても同じ鍵で署名する。
+    // (GitHub Actions は毎回新しいデバッグ鍵を作るため、鍵を固定しないと上書きインストールできない)
+    // この鍵は開発用で秘密情報ではない。Play ストア配布には別の鍵を使うこと。
+    signingConfigs {
+        getByName("debug") {
+            storeFile = file("debug.keystore")
+            storePassword = "android"
+            keyAlias = "androiddebugkey"
+            keyPassword = "android"
+        }
     }
 
     buildTypes {
+        debug {
+            signingConfig = signingConfigs.getByName("debug")
+        }
         release {
+            signingConfig = signingConfigs.getByName("debug")
             isMinifyEnabled = false
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"))
         }
