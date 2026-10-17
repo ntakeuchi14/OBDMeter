@@ -32,6 +32,7 @@ import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.drawscope.translate
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.TextMeasurer
 import androidx.compose.ui.text.TextStyle
@@ -292,10 +293,13 @@ fun gaugeContentRect(style: GaugeStyle, look: GaugeLook, imageSize: IntSize?, w:
                 ?.let { dial.union(it) } ?: dial
         }
         else -> {
-            // 背景色を塗るときや画像が無いときは文字が枠全体に出るので枠いっぱい
-            if (look.faceColor != null || imageSize == null) return full
-            imageRect(Offset(iw * (0.5f + look.imageOffsetX), ih * (0.5f + look.imageOffsetY)), max(iw, ih) * look.imageScale)
-                ?: return full
+            // 文字・画像は決まった比率の枠 (designFrame) の中に描かれる
+            val fr = designFrame(Size(iw, ih), frameRatio(style))
+            if (look.faceColor != null || imageSize == null) fr
+            else imageRect(
+                Offset(fr.left + fr.width * (0.5f + look.imageOffsetX), fr.top + fr.height * (0.5f + look.imageOffsetY)),
+                max(fr.width, fr.height) * look.imageScale,
+            ) ?: fr
         }
     }
     r = r.intersect(Rect(0f, 0f, iw, ih)).translate(pad, pad)
@@ -564,9 +568,11 @@ fun BarGauge(
     val f = animated(def, value)
     val warn = isWarn(def, value)
     Canvas(modifier) {
-        val h = size.height
-        val w = size.width
-        if (image == null) drawFace(look)
+        val fr = designFrame(size, BAR_RATIO)
+        translate(fr.left, fr.top) {
+        val h = fr.height
+        val w = fr.width
+        if (image == null) drawFace(look, fr.size)
         image?.let { drawImageFit(it, Offset(w / 2 + w * look.imageOffsetX, h / 2 + h * look.imageOffsetY), max(w, h) * look.imageScale) }
         val unit = min(h, w * 0.5f)
         if (look.showName) {
@@ -625,6 +631,7 @@ fun BarGauge(
                 drawText(t, topLeft = Offset(4f, barY - t.size.height - barH * 0.6f))
             }
         }
+        }
     }
 }
 
@@ -646,20 +653,24 @@ fun DigitalGauge(
     val tm = rememberTextMeasurer()
     val warn = isWarn(def, value)
     Canvas(modifier) {
-        if (image == null) drawFace(look)
+        val fr = designFrame(size, DIGITAL_RATIO)
+        translate(fr.left, fr.top) {
+        val w = fr.width
+        val h = fr.height
+        if (image == null) drawFace(look, fr.size)
         image?.let {
-            drawImageFit(it, Offset(size.width * (0.5f + look.imageOffsetX), size.height * (0.5f + look.imageOffsetY)),
-                max(size.width, size.height) * look.imageScale)
+            drawImageFit(it, Offset(w * (0.5f + look.imageOffsetX), h * (0.5f + look.imageOffsetY)),
+                max(w, h) * look.imageScale)
         }
-        val unit = min(size.height, size.width * 0.6f)
+        val unit = min(h, w * 0.6f)
         if (look.showName) {
             val name = tm.measure(def.shortName,
                 TextStyle(color = look.nameColor, fontFamily = fonts.label, fontSize = (unit * 0.14f).toSp(), fontWeight = FontWeight.Medium))
-            drawText(name, topLeft = Offset(4f + size.width * look.nameOffsetX, size.height * look.nameOffsetY))
+            drawText(name, topLeft = Offset(4f + w * look.nameOffsetX, h * look.nameOffsetY))
         }
         // valuePosition は中心からのずれ (アナログと共通の値を流用。既定 0.42 → 中央やや下)
-        val cy = size.height * (0.5f + (look.valuePosition - 0.42f) * 0.5f)
-        val cx = size.width * (0.5f + look.valueOffsetX * 0.5f)
+        val cy = h * (0.5f + (look.valuePosition - 0.42f) * 0.5f)
+        val cx = w * (0.5f + look.valueOffsetX * 0.5f)
         if (look.showValue) {
             // 幅に収まらないときは縮める (メーターの形によってはみ出さないように)
             drawCenteredTextFit(tm, if (unsupported) "非対応" else def.format(value),
@@ -667,27 +678,52 @@ fun DigitalGauge(
                 TextStyle(color = if (warn) GaugeColors.Warn else look.valueColor,
                     fontSize = (unit * (if (unsupported) 0.2f else 0.38f) * look.valueSize).toSp(),
                     fontWeight = FontWeight.Bold, fontFamily = fonts.value),
-                maxWidth = size.width * 0.96f)
+                maxWidth = w * 0.96f)
         }
         if (look.showUnit) {
             drawCenteredText(tm, def.unit,
-                Offset(cx + size.width * look.unitOffsetX, cy + unit * 0.3f * max(look.valueSize, 0.6f) + size.height * look.unitOffsetY),
+                Offset(cx + w * look.unitOffsetX, cy + unit * 0.3f * max(look.valueSize, 0.6f) + h * look.unitOffsetY),
                 TextStyle(color = look.unitColor, fontFamily = fonts.label, fontSize = (unit * 0.13f).toSp()))
         }
         if (peak != null) {
             val t = tm.measure("MAX " + def.format(peak),
                 TextStyle(color = look.peakColor, fontSize = (unit * 0.12f).toSp(), fontFamily = fonts.value))
-            drawText(t, topLeft = Offset(size.width - t.size.width - 4f, 0f))
+            drawText(t, topLeft = Offset(w - t.size.width - 4f, 0f))
+        }
         }
     }
 }
 
 
 /** バー・デジタル表示の背景色 (角丸の四角) */
-internal fun DrawScope.drawFace(look: GaugeLook) {
+internal fun DrawScope.drawFace(look: GaugeLook, area: Size = size) {
     val c = look.faceColor ?: return
-    val r = min(size.width, size.height) * 0.08f
-    drawRoundRect(c, cornerRadius = CornerRadius(r, r))
+    val r = min(area.width, area.height) * 0.08f
+    drawRoundRect(c, size = area, cornerRadius = CornerRadius(r, r))
+}
+
+/** バー・デジタル・ランプの描画枠の縦横比 (幅 / 高さ) */
+const val DIGITAL_RATIO = 2.5f
+const val BAR_RATIO = 2.5f
+const val LAMP_RATIO = 1f
+
+fun frameRatio(style: GaugeStyle): Float = when (style) {
+    GaugeStyle.BAR -> BAR_RATIO
+    GaugeStyle.LAMP -> LAMP_RATIO
+    else -> DIGITAL_RATIO
+}
+
+/**
+ * 決まった縦横比の四角を、[area] の中央にできるだけ大きく収めたもの。
+ * バー・デジタル・ランプは文字・画像・バーをすべてこの枠に合わせて描くので、
+ * レイアウトで大きさや形を変えても、全体が同じ比率で拡大縮小する (画像と同じふるまい)。
+ */
+fun designFrame(area: Size, ratio: Float): Rect {
+    val w = min(area.width, area.height * ratio)
+    val h = w / ratio
+    val x = (area.width - w) / 2
+    val y = (area.height - h) / 2
+    return Rect(x, y, x + w, y + h)
 }
 
 /**
