@@ -46,7 +46,7 @@ data class AppSettings(
     /** フロート表示全体の不透明度 (0.2〜1) */
     val floatOpacity: Float = 1f,
     /** フロート表示の背景の濃さ (0 = 透明) */
-    val floatBackground: Float = 0.45f,
+    val floatBackground: Float = 0f,
     /**
      * フロート表示: ホームボタンなどでアプリを離れたら、表示していたページのメーターを
      * ほかのアプリやホーム画面の上に小さなウィンドウで出す。ON のときは起動時の自動接続も ON 扱い

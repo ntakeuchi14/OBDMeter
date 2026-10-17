@@ -37,7 +37,7 @@ class Repository(private val context: Context) {
         val FLOAT_PAGE = longPreferencesKey("float_page")
         val FLOAT_PLACEMENTS = stringPreferencesKey("float_placements_json")
         val FLOAT_OPACITY = floatPreferencesKey("float_opacity")
-        val FLOAT_BG = floatPreferencesKey("float_background")
+        val FLOAT_BG = floatPreferencesKey("float_background_v2")
         val FLOAT_ON_LEAVE = booleanPreferencesKey("float_on_leave")
         val DASHBOARDS = stringPreferencesKey("dashboards_json")
         val CUSTOM_PIDS = stringPreferencesKey("custom_pids_json")

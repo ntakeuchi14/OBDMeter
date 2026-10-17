@@ -70,7 +70,7 @@ fun FloatGauge(
         ) {
             if (gauge != null) {
                 Box(Modifier.fillMaxSize().padding(2.dp)) {
-                    GaugeView(gauge, gauge.resolvedDef(catalog), values, supported)
+                    GaugeView(gauge, gauge.resolvedDef(catalog), values, supported, noCard = true)
                 }
             }
 

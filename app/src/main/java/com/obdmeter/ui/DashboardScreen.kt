@@ -389,7 +389,15 @@ private fun DashboardCanvas(
 
 /** メーター 1 つ (アプリのダッシュボードとフロート表示で共通) */
 @Composable
-fun GaugeView(g: GaugeConfig, def: PidDef?, values: Map<String, Double>, supported: Set<Int>?, peakResetKey: Int = 0) {
+fun GaugeView(
+    g: GaugeConfig,
+    def: PidDef?,
+    values: Map<String, Double>,
+    supported: Set<Int>?,
+    peakResetKey: Int = 0,
+    /** true = 四角いカードの背景を描かない (フロート表示で背景を透過させる) */
+    noCard: Boolean = false,
+) {
     if (def != null) {
         GaugeCard(
             def = def,
@@ -397,7 +405,7 @@ fun GaugeView(g: GaugeConfig, def: PidDef?, values: Map<String, Double>, support
             value = values[def.key] ?: g.fallbackKey?.let { values[it] },
             style = g.style,
             unsupported = isUnsupported(def, supported) && g.fallbackKey == null,
-            look = g.look(def),
+            look = g.look(def).let { if (noCard) it.copy(showCard = false) else it },
             modifier = Modifier.fillMaxSize(),
             peakResetKey = peakResetKey,
         )
