@@ -40,6 +40,9 @@ class BmwFastProtocol(
         transport.purge()
         // DME に Mode 01 PID 00 (対応 PID 一覧) を問い合わせて疎通確認
         val data = readPid(0x00)
+        if (data == null && lastResponded) {
+            return "ECU 0x%02X 応答あり (イグニッション OFF)".format(options.targetAddress)
+        }
         if (data == null) {
             if (echoMissing) {
                 // ケーブル自体が反応していない (車両の状態とは無関係)
@@ -57,8 +60,12 @@ class BmwFastProtocol(
     override var lastFailure: String? = null
         private set
 
+    override var lastResponded: Boolean = false
+        private set
+
     override fun readPid(pid: Int): IntArray? {
-        val resp = request(intArrayOf(0x01, pid)) ?: run { lastFailure = "応答なし"; return null }
+        val resp = request(intArrayOf(0x01, pid)) ?: run { lastFailure = "応答なし"; lastResponded = false; return null }
+        lastResponded = resp.isNotEmpty() && resp[0] == 0x7F
         if (resp.size >= 2 && resp[0] == 0x41 && resp[1] == pid) {
             lastFailure = null
             return resp.copyOfRange(2, resp.size)
@@ -79,7 +86,8 @@ class BmwFastProtocol(
         val target = request.header.takeIf { it.isNotEmpty() }?.toIntOrNull(16)?.takeIf { it in 0..0xFF }
             ?: options.targetAddress
         val resp = request(intArrayOf(request.mode) + request.pid, target)
-            ?: run { lastFailure = "応答なし"; return null }
+            ?: run { lastFailure = "応答なし"; lastResponded = false; return null }
+        lastResponded = resp.isNotEmpty() && resp[0] == 0x7F
         val echo = intArrayOf(request.mode + 0x40) + request.pid
         if (resp.size >= echo.size && echo.indices.all { resp[it] == echo[it] }) {
             lastFailure = null

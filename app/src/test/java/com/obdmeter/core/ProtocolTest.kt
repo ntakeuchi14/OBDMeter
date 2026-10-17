@@ -94,6 +94,42 @@ class ProtocolTest {
     }
 
     @Test
+    fun elmIgnitionOffEcuRefusalCountsAsConnected() {
+        // 実車ログ (E90, イグニッション OFF): 0100 → 7E8 03 7F 01 22
+        val fake = FakeElm(mapOf(
+            "0100" to "7F0122",
+            "0100 1" to "7F0122",
+            "010C 1" to "7F0122",
+            "ATDPN" to "6",
+            "ATDP" to "ISO 15765-4 (CAN 11/500)",
+        ))
+        val p = Elm327Protocol(fake, Elm327Protocol.Options(protocol = "6"))
+        p.initAdapter()
+        val desc = p.connectVehicle()
+        assertNotNull(desc)
+        assertTrue(desc!!.contains("イグニッション OFF"))
+        assertTrue(p.lastResponded)
+
+        val reader = ObdReader(p)
+        reader.detectSupported()
+        assertNull(reader.supported)
+        val r = reader.poll(listOf(Pids.get("RPM")!!), mutableMapOf())
+        assertEquals(0, r.ok)
+        assertEquals(1, r.refused)
+        assertTrue(r.vehicleAlive)
+        assertTrue(p.lastFailure!!.contains("22"))
+    }
+
+    @Test
+    fun elmNoDataIsNotAlive() {
+        val fake = FakeElm(mapOf("0100" to "4100BE3EB811", "010C 1" to "NO DATA"))
+        val p = Elm327Protocol(fake)
+        p.initAdapter()
+        val r = ObdReader(p).poll(listOf(Pids.get("RPM")!!), mutableMapOf())
+        assertTrue(!r.vehicleAlive)
+    }
+
+    @Test
     fun elmSilentAdapterFailsFast() {
         val p = Elm327Protocol(SilentTransport(), Elm327Protocol.Options(commandTimeoutMs = 50))
         try {

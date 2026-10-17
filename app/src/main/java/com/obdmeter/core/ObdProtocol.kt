@@ -36,6 +36,13 @@ interface ObdProtocol {
     val lastFailure: String? get() = null
 
     /**
+     * 直近の失敗が「ECU は応答したが拒否した (否定応答 7F xx yy)」だったか。
+     * イグニッション OFF でも ECU は起きていて 7F 01 22 (条件不成立) を返すので、
+     * 「車両とはつながっている」と判断するのに使う。
+     */
+    val lastResponded: Boolean get() = false
+
+    /**
      * 任意のモード・PID を問い合わせる (カスタム PID 用)。
      * 応答からサービス ID (0x40+mode) と PID のエコーを除いたデータ部を返す。
      * 既定実装は Mode 01・ヘッダー指定なしのときだけ [readPid] に委ねる。

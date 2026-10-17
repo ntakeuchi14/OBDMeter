@@ -33,7 +33,11 @@ import java.util.concurrent.ConcurrentLinkedQueue
 sealed interface ConnectionState {
     data object Disconnected : ConnectionState
     data class Connecting(val message: String) : ConnectionState
-    data class Connected(val description: String) : ConnectionState
+    /**
+     * 車両と接続中。[ignitionOff] は ECU が応答しているがエンジンの値を返さない状態
+     * (イグニッション OFF で 7F 01 22 を返している)。イグニッションを ON にすれば値が出る。
+     */
+    data class Connected(val description: String, val ignitionOff: Boolean = false) : ConnectionState
     /** アダプターには接続済みで、車両 (エンジン ECU) の応答を待っている (イグニッション OFF など) */
     data class WaitingForVehicle(val adapter: String, val voltage: Double?) : ConnectionState
     data class Error(val message: String, val retrying: Boolean) : ConnectionState
@@ -220,7 +224,9 @@ class ObdSession(
         _state.value = ConnectionState.Connecting("対応項目を確認しています…")
         reader.detectSupported()
         _supported.value = reader.supported
-        _state.value = ConnectionState.Connected(desc)
+        // 対応 PID 一覧も拒否された (7F 01 22) なら、イグニッション OFF で接続している
+        var ignitionOff = reader.supported == null && p.lastResponded
+        _state.value = ConnectionState.Connected(desc, ignitionOff)
 
         val values = HashMap<String, Double>()
         var deadCycles = 0
@@ -241,11 +247,32 @@ class ObdSession(
             // 「非対応」から実際に読めた項目へ昇格した場合に画面へ反映
             if (reader.supported != _supported.value) _supported.value = reader.supported
             count += r.ok + r.failed
-            deadCycles = if (r.ok == 0 && r.failed > 0) deadCycles + 1 else 0
+            // ECU が拒否 (7F) しているだけなら車両とはつながっている。完全に無応答が続いたときだけ切れたとみなす
+            deadCycles = if (!r.vehicleAlive && r.failed > 0) deadCycles + 1 else 0
             if (deadCycles >= 5) {
                 _values.value = emptyMap()
                 _rate.value = 0.0
                 return
+            }
+            // イグニッション OFF (ECU は応答するが値を返さない) の判定
+            val nowOff = r.ok == 0 && r.refused > 0
+            val anyMode01Ok = r.ok > 0
+            if (nowOff != ignitionOff && (nowOff || anyMode01Ok)) {
+                ignitionOff = nowOff
+                log.log(CommLogger.Direction.INFO,
+                    if (ignitionOff) "ECU は応答していますが値を返しません (イグニッション OFF)" else "イグニッション ON を検出しました")
+                if (!ignitionOff && reader.supported == null) {
+                    // イグニッション OFF のまま接続したので、対応 PID 一覧を取り直す
+                    reader.detectSupported()
+                    _supported.value = reader.supported
+                }
+                _state.value = ConnectionState.Connected(desc, ignitionOff)
+            }
+            if (ignitionOff) {
+                // 値が出ない間は問い合わせを 1 秒に 1 回に抑える (車両のネットワークへの負担とバッテリー対策)
+                _rate.value = 0.0
+                repeat(5) { delay(200); drainTests(p) }
+                continue
             }
             val now = System.currentTimeMillis()
             if (now - windowStart >= 1000) {

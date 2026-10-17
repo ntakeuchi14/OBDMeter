@@ -178,6 +178,7 @@ class ObdReader(
      * @return 実際に通信して成功した件数と失敗した件数
      */
     fun poll(defs: Collection<PidDef>, values: MutableMap<String, Double>): Result {
+        var refused = 0
         cycle++
         // 派生項目の依存先も読む
         val direct = LinkedHashMap<String, PidDef>()
@@ -229,6 +230,7 @@ class ObdReader(
                 if (failing.remove(d.key)) logger.log(CommLogger.Direction.INFO, "${d.shortName}: 復帰")
                 ok++
             } else {
+                if ((d.kind == PidDef.Kind.MODE01 || d.kind == PidDef.Kind.CUSTOM) && protocol.lastResponded) refused++
                 failStreak[d.key] = streak + 1
                 // 一時的な失敗では直前の値を残す
                 if (streak + 1 >= HOLD_FAILS) values.remove(d.key)
@@ -250,10 +252,17 @@ class ObdReader(
                 if (v != null) values[d.key] = v else values.remove(d.key)
             }
         }
-        return Result(ok, failed)
+        return Result(ok, failed, refused)
     }
 
-    data class Result(val ok: Int, val failed: Int)
+    /**
+     * 1 サイクルの結果。
+     * @param refused 失敗のうち、ECU が応答して拒否したもの (イグニッション OFF の 7F 01 22 など)
+     */
+    data class Result(val ok: Int, val failed: Int, val refused: Int = 0) {
+        /** ECU から何らかの応答があった (= 車両とはつながっている) */
+        val vehicleAlive: Boolean get() = ok > 0 || refused > 0
+    }
 
     companion object {
         const val HOLD_FAILS = 3

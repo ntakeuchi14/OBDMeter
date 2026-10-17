@@ -238,7 +238,11 @@ private fun StatusIndicator(state: ConnectionState, rate: Double, modifier: Modi
     val (color, text) = when (state) {
         ConnectionState.Disconnected -> GaugeColors.SubText to "未接続"
         is ConnectionState.Connecting -> Color(0xFFFFC107) to state.message
-        is ConnectionState.Connected -> Color(0xFF4CAF50) to "接続中  %.1f PID/s".format(rate)
+        is ConnectionState.Connected -> if (state.ignitionOff) {
+            Color(0xFF4CAF50) to "接続中 (イグニッション OFF: エンジンの値は ON で表示)"
+        } else {
+            Color(0xFF4CAF50) to "接続中  %.1f PID/s".format(rate)
+        }
         is ConnectionState.WaitingForVehicle -> Color(0xFF64B5F6) to (
             "車両の応答待ち (イグニッション ON で自動開始)" +
                 (state.voltage?.let { "  バッテリー %.1fV".format(it) } ?: "")

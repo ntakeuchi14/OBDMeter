@@ -50,16 +50,20 @@ class Elm327Protocol(
         if (currentHeader.isNotEmpty() || currentCea.isNotEmpty()) applyAddressing("", "")
         // 車両との接続確立 (自動判別ならここでプロトコルが決まる)
         val first = command("0100", options.searchTimeoutMs)
-        checkError(first)?.let { lastFailure = it; return null }
-        if (parseMode01(first, 0x00) == null) {
-            lastFailure = first.joinToString("|").ifEmpty { "応答なし" }
+        val ok = parseMode01(first, 0x00) != null
+        // イグニッション OFF でも ECU は起きていて否定応答 (7F 01 22) を返す。これも「接続できた」とみなす
+        val refused = negativeResponse(first, 0x01)
+        if (!ok && refused == null) {
+            lastFailure = checkError(first) ?: first.joinToString("|").ifEmpty { "応答なし" }
+            lastResponded = false
             return null
         }
-        lastFailure = null
+        lastFailure = refused
+        lastResponded = refused != null
         val dp = command("ATDPN").lastOrNull()?.trim() ?: "?"
         protocolNumber = dp.removePrefix("A")
         val desc = command("ATDP").lastOrNull()?.trim() ?: "?"
-        return "$desc (ATDPN=$dp)"
+        return "$desc (ATDPN=$dp)" + if (ok) "" else " / ECU 応答あり (イグニッション OFF)"
     }
 
     /** ATDPN の結果 ("6" など。自動判別時の先頭 "A" は除く) */
@@ -98,9 +102,8 @@ class Elm327Protocol(
         }
         val lines = command(cmd, options.commandTimeoutMs)
         val data = parseResponseAll(lines, request.mode, request.pid).firstOrNull()
-        if (data != null) { lastFailure = null; return data }
-        lastFailure = negativeResponse(lines, request.mode) ?: checkError(lines) ?: lines.joinToString("|").ifEmpty { "応答なし" }
-        return null
+        if (data != null) return ok(data)
+        return fail(lines, request.mode)
     }
 
     override var lastFailure: String? = null
@@ -126,10 +129,15 @@ class Elm327Protocol(
         return parseMode01(lines, pid)?.let(::ok) ?: fail(lines)
     }
 
-    private fun ok(data: IntArray): IntArray { lastFailure = null; return data }
+    override var lastResponded: Boolean = false
+        private set
 
-    private fun fail(lines: List<String>): IntArray? {
-        lastFailure = checkError(lines) ?: lines.joinToString("|").ifEmpty { "応答なし" }
+    private fun ok(data: IntArray): IntArray { lastFailure = null; lastResponded = false; return data }
+
+    private fun fail(lines: List<String>, mode: Int = 0x01): IntArray? {
+        val refused = negativeResponse(lines, mode)
+        lastResponded = refused != null
+        lastFailure = refused ?: checkError(lines) ?: lines.joinToString("|").ifEmpty { "応答なし" }
         return null
     }
 
