@@ -313,7 +313,11 @@ fun AnalogGauge(
 
         // 目盛り・弧の基準半径
         val gaugeR = (outer - ringWidth - d * 0.01f) * look.tickRadius
-        val stroke = d * 0.045f * look.arcWidth
+        val rawStroke = d * 0.045f * look.arcWidth
+        // 現在値の弧が無い (OFF か太さ 0) ときは、レッドゾーンを目盛りの内側に描く
+        val arcHidden = !look.showValueArc || rawStroke <= 0f
+        // 目盛りの外側に弧の場所を空けるのは、弧か背景の弧を描くときだけ
+        val stroke = if (arcHidden && !look.showTrack) 0f else rawStroke
         val arcR = gaugeR - stroke / 2
         val arcTopLeft = Offset(center.x - arcR, center.y - arcR)
         val arcSize = Size(arcR * 2, arcR * 2)
@@ -323,12 +327,25 @@ fun AnalogGauge(
         if (look.showTrack && stroke > 0f) {
             drawArc(GaugeColors.Track, start, sweep, false, arcTopLeft, arcSize, style = Stroke(stroke, cap = StrokeCap.Butt))
         }
+        // 目盛りの位置 (レッドゾーンを内側に描くときにも使う)
+        val tickOuter = gaugeR - stroke - d * 0.008f
+        val majorLen = d * 0.05f
+        val minorLen = d * 0.025f
+        val zoneInsideW = d * 0.025f
         look.redZone?.let { z ->
             val s = fraction(def, z.start)
             val e = fraction(def, z.endInclusive)
             if (e > s) {
-                drawArc(look.redZoneColor, start + sweep * s, sweep * (e - s), false, arcTopLeft, arcSize,
-                    style = Stroke(max(stroke, d * 0.02f), cap = StrokeCap.Butt))
+                if (arcHidden) {
+                    // 目盛りのすぐ内側に帯で描く
+                    val zr = tickOuter - majorLen - d * 0.006f - zoneInsideW / 2
+                    drawArc(look.redZoneColor, start + sweep * s, sweep * (e - s), false,
+                        Offset(center.x - zr, center.y - zr), Size(zr * 2, zr * 2),
+                        style = Stroke(zoneInsideW, cap = StrokeCap.Butt))
+                } else {
+                    drawArc(look.redZoneColor, start + sweep * s, sweep * (e - s), false, arcTopLeft, arcSize,
+                        style = Stroke(max(stroke, d * 0.02f), cap = StrokeCap.Butt))
+                }
             }
         }
         if (value != null && look.showValueArc && stroke > 0f) {
@@ -338,9 +355,8 @@ fun AnalogGauge(
 
         // 目盛り (主・小) と数字
         val scale = TickScale.of(def.min, def.max, look.majorDivisions)
-        val tickOuter = gaugeR - stroke - d * 0.008f
-        val majorLen = d * 0.05f
-        val minorLen = d * 0.025f
+        // レッドゾーンを内側に描くときは、数字をその分さらに内側へ
+        val zoneShift = if (arcHidden && look.redZone != null) zoneInsideW + d * 0.006f else 0f
         val labelSize = (d * 0.07f * look.labelSize).toSp()
         val majors = scale.values(def.max)
         for ((i, t) in majors.withIndex()) {
@@ -350,7 +366,7 @@ fun AnalogGauge(
                 Offset(center.x + tickOuter * cos(a).toFloat(), center.y + tickOuter * sin(a).toFloat()),
                 strokeWidth = d * 0.012f)
             if (look.showLabels) {
-                val labelR = tickOuter - majorLen - d * 0.06f * look.labelSize
+                val labelR = tickOuter - majorLen - zoneShift - d * 0.06f * look.labelSize
                 drawCenteredText(tm, scale.label(t),
                     Offset(center.x + labelR * cos(a).toFloat(), center.y + labelR * sin(a).toFloat()),
                     TextStyle(color = look.labelColor, fontFamily = fonts.label, fontSize = labelSize))
@@ -547,16 +563,19 @@ fun BarGauge(
         }
 
         // バー
-        val barH = max(h * 0.12f * look.arcWidth, 4f)
-        val barY = h - barH - h * 0.08f
+        val barHidden = !look.showValueArc || look.arcWidth <= 0f
+        val barH = if (look.arcWidth <= 0f) 0f else max(h * 0.12f * look.arcWidth, 4f)
+        // バーが無いときのレッドゾーンは細い帯で描く
+        val zoneH = if (barHidden) max(h * 0.04f, 3f) else barH
+        val barY = h - max(barH, zoneH) - h * 0.08f
         val r = CornerRadius(barH / 2, barH / 2)
-        if (look.showTrack) drawRoundRect(GaugeColors.Track, Offset(0f, barY), Size(w, barH), r)
+        if (look.showTrack && barH > 0f) drawRoundRect(GaugeColors.Track, Offset(0f, barY), Size(w, barH), r)
         look.redZone?.let { z ->
             val s = fraction(def, z.start)
             val e = fraction(def, z.endInclusive)
-            if (e > s) drawRect(look.redZoneColor, Offset(w * s, barY), Size(w * (e - s), barH))
+            if (e > s) drawRect(look.redZoneColor, Offset(w * s, barY + (max(barH, zoneH) - zoneH) / 2), Size(w * (e - s), zoneH))
         }
-        if (value != null && look.showValueArc) {
+        if (value != null && !barHidden) {
             val color = if (warn) GaugeColors.Warn else look.accent
             if (def.min < 0 && def.max > 0) {
                 // 燃調のような ± 値は 0 から伸ばす

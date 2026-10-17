@@ -70,7 +70,7 @@ fun GaugeDesign.toLook(def: PidDef, style: GaugeStyle): GaugeLook {
         ringColor = ringColor.color(GaugeColors.Ring),
         showTrack = showTrack,
         showValueArc = showValueArc,
-        arcWidth = arcWidth.coerceIn(0.2f, 3f),
+        arcWidth = arcWidth.coerceIn(0f, 3f),
         redZone = zone,
         redZoneColor = redZoneColor.color(GaugeColors.WarnZone),
         showNeedle = showNeedle,

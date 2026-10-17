@@ -459,7 +459,7 @@ private fun AngleTab(g: GaugeConfig, update: ((GaugeDesign) -> GaugeDesign) -> U
     Head("弧")
     SwitchLine("下地の弧", null, d.showTrack) { v -> update { it.copy(showTrack = v) } }
     SwitchLine("現在値の弧 / バー", null, d.showValueArc) { v -> update { it.copy(showValueArc = v) } }
-    SliderLine("弧・バーの太さ", d.arcWidth * 100, 20f..300f, "%.0f%%") { v -> update { it.copy(arcWidth = snap(v, 5f) / 100f) } }
+    SliderLine("弧・バーの太さ (0 = なし)", d.arcWidth * 100, 0f..300f, "%.0f%%") { v -> update { it.copy(arcWidth = snap(v, 5f) / 100f) } }
 
     Head("レッドゾーン")
     SwitchLine("レッドゾーンを表示", null, d.showRedZone) { v -> update { it.copy(showRedZone = v) } }
