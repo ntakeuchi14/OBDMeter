@@ -4,7 +4,9 @@ import android.content.Context
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.floatPreferencesKey
 import androidx.datastore.preferences.core.intPreferencesKey
+import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import kotlinx.coroutines.flow.Flow
@@ -32,6 +34,13 @@ class Repository(private val context: Context) {
         val WAIT_FOR_VEHICLE = booleanPreferencesKey("wait_for_vehicle")
         val WAIT_TIMEOUT = intPreferencesKey("wait_timeout_min")
         val KEEP_SCREEN_ON = booleanPreferencesKey("keep_screen_on")
+        val FLOAT_PAGE = longPreferencesKey("float_page")
+        val FLOAT_X = intPreferencesKey("float_x")
+        val FLOAT_Y = intPreferencesKey("float_y")
+        val FLOAT_W = intPreferencesKey("float_width_dp")
+        val FLOAT_OPACITY = floatPreferencesKey("float_opacity")
+        val FLOAT_BG = floatPreferencesKey("float_background")
+        val FLOAT_ON_LEAVE = booleanPreferencesKey("float_on_leave")
         val DASHBOARDS = stringPreferencesKey("dashboards_json")
         val CUSTOM_PIDS = stringPreferencesKey("custom_pids_json")
         val FONTS = stringPreferencesKey("fonts_json")
@@ -86,6 +95,13 @@ class Repository(private val context: Context) {
             p[Keys.WAIT_FOR_VEHICLE] = s.waitForVehicle
             p[Keys.WAIT_TIMEOUT] = s.waitTimeoutMin
             p[Keys.KEEP_SCREEN_ON] = s.keepScreenOn
+            s.floatPageId?.let { p[Keys.FLOAT_PAGE] = it } ?: p.remove(Keys.FLOAT_PAGE)
+            p[Keys.FLOAT_X] = s.floatX
+            p[Keys.FLOAT_Y] = s.floatY
+            p[Keys.FLOAT_W] = s.floatWidthDp
+            p[Keys.FLOAT_OPACITY] = s.floatOpacity
+            p[Keys.FLOAT_BG] = s.floatBackground
+            p[Keys.FLOAT_ON_LEAVE] = s.floatOnLeave
         }
     }
 
@@ -111,6 +127,13 @@ class Repository(private val context: Context) {
             waitForVehicle = this[Keys.WAIT_FOR_VEHICLE] ?: d.waitForVehicle,
             waitTimeoutMin = this[Keys.WAIT_TIMEOUT] ?: d.waitTimeoutMin,
             keepScreenOn = this[Keys.KEEP_SCREEN_ON] ?: d.keepScreenOn,
+            floatPageId = this[Keys.FLOAT_PAGE],
+            floatX = this[Keys.FLOAT_X] ?: d.floatX,
+            floatY = this[Keys.FLOAT_Y] ?: d.floatY,
+            floatWidthDp = this[Keys.FLOAT_W] ?: d.floatWidthDp,
+            floatOpacity = this[Keys.FLOAT_OPACITY] ?: d.floatOpacity,
+            floatBackground = this[Keys.FLOAT_BG] ?: d.floatBackground,
+            floatOnLeave = this[Keys.FLOAT_ON_LEAVE] ?: d.floatOnLeave,
         )
     }
 }

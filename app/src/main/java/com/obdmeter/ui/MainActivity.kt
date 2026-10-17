@@ -1,6 +1,14 @@
 package com.obdmeter.ui
 
 import android.os.Bundle
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.repeatOnLifecycle
+import com.obdmeter.AppCore
+import com.obdmeter.overlay.FloatController
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.launch
 import android.view.WindowManager
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
@@ -40,6 +48,30 @@ class MainActivity : ComponentActivity() {
                 App(vm, onKeepScreenOn = { setKeepScreenOn(it) })
             }
         }
+        // フロート表示が ON の間は、アプリが前面にあるうちにサービスを起動しておく
+        // (バックグラウンドからは起動できない端末があるため)。ウィンドウはアプリを離れたときだけ出る
+        val core = AppCore.get(this)
+        lifecycleScope.launch {
+            repeatOnLifecycle(Lifecycle.State.STARTED) {
+                core.settings.map { it.floatOnLeave }.distinctUntilChanged().collect { on ->
+                    if (on && FloatController.canDraw(this@MainActivity)) {
+                        if (!core.floatActive.value) FloatController.start(this@MainActivity, null)
+                    } else if (!on && core.floatActive.value) {
+                        FloatController.stop(this@MainActivity)
+                    }
+                }
+            }
+        }
+    }
+
+    override fun onStart() {
+        super.onStart()
+        vm.setAppVisible(true)
+    }
+
+    override fun onStop() {
+        vm.setAppVisible(false)
+        super.onStop()
     }
 
     private fun setKeepScreenOn(on: Boolean) {

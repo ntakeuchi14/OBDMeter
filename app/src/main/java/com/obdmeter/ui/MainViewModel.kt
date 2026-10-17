@@ -13,6 +13,7 @@ import java.util.Date
 import java.util.Locale
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.obdmeter.AppCore
 import com.obdmeter.core.Pids
 import com.obdmeter.data.AppSettings
 import com.obdmeter.core.PidCatalog
@@ -41,33 +42,32 @@ import kotlinx.coroutines.sync.withLock
 
 class MainViewModel(app: Application) : AndroidViewModel(app) {
 
-    private val repo = Repository(app)
-    val log = LogBuffer()
-    private val session = ObdSession(app, viewModelScope, log)
+    private val core = AppCore.get(app)
+    private val repo = core.repo
+    val log = core.log
+    private val session = core.session
 
-    val settings: StateFlow<AppSettings> =
-        repo.settings.stateIn(viewModelScope, SharingStarted.Eagerly, AppSettings())
-    val dashboards: StateFlow<List<Dashboard>> =
-        repo.dashboards.stateIn(viewModelScope, SharingStarted.Eagerly, Defaults.dashboards)
-
-    val customPids: StateFlow<List<CustomPid>> =
-        repo.customPids.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+    val settings: StateFlow<AppSettings> = core.settings
+    val dashboards: StateFlow<List<Dashboard>> = core.dashboards
+    val customPids: StateFlow<List<CustomPid>> = core.customPids
 
     /** 標準項目 + カスタム PID。式が不正なカスタム PID は一覧から外す */
-    val catalog: StateFlow<PidCatalog> = customPids
-        .map { list -> PidCatalog(list.mapNotNull { runCatching { it.toDef() }.getOrNull() }) }
-        .stateIn(viewModelScope, SharingStarted.Eagerly, PidCatalog())
+    val catalog: StateFlow<PidCatalog> = core.catalog
 
     val connection: StateFlow<ConnectionState> = session.state
     val values: StateFlow<Map<String, Double>> = session.values
     val rate: StateFlow<Double> = session.rate
     val supported: StateFlow<Set<Int>?> = session.supported
+    val floatActive: StateFlow<Boolean> = core.floatActive
 
     init {
         // 起動時の自動接続 (ViewModel は画面回転などでは作り直されないので、アプリ起動時の 1 回だけ)
-        viewModelScope.launch {
-            val s = repo.settings.first()
-            if (s.autoConnect) session.connect(s)
+        if (!core.autoConnectDone) {
+            core.autoConnectDone = true
+            viewModelScope.launch {
+                val s = repo.settings.first()
+                if (s.autoConnectEffective && session.state.value == ConnectionState.Disconnected) session.connect(s)
+            }
         }
         // どのメーターからも使われなくなった背景画像を消す
         viewModelScope.launch {
@@ -170,8 +170,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     // ---- フォント ----
 
-    val fonts: StateFlow<List<FontEntry>> =
-        repo.fonts.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+    val fonts: StateFlow<List<FontEntry>> = core.fonts
     private val fontLock = Mutex()
 
     /** フォントファイルを取り込み、ライブラリに追加する。結果 (id かエラー) を [onResult] に返す */
@@ -255,15 +254,28 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    fun disconnect() = session.disconnect()
-
-    /** 表示中のダッシュボードが変わったら、読み出す項目を切り替える */
-    fun setActiveDashboard(dashboard: Dashboard?, catalog: PidCatalog) {
-        session.activePids = dashboard?.gauges?.mapNotNull { catalog.get(it.pidKey) }?.distinctBy { it.key }.orEmpty()
-        session.activeFallbacks = dashboard?.gauges.orEmpty()
-            .mapNotNull { g -> g.fallbackKey?.let { fb -> catalog.get(fb)?.let { g.pidKey to it } } }
-            .toMap()
+    fun disconnect() {
+        core.reconnectOnReturn = false
+        session.disconnect()
     }
+
+    /** アプリの画面が前面に出た / 隠れた (フロート表示の出し入れに使う) */
+    fun setAppVisible(visible: Boolean) {
+        core.appVisible.value = visible
+        if (visible && core.reconnectOnReturn) {
+            core.reconnectOnReturn = false
+            val s = settings.value
+            if (s.autoConnectEffective && session.state.value == ConnectionState.Disconnected) {
+                session.connect(s)
+            }
+        }
+    }
+
+    /** 表示中のページが変わったら、読み出す項目を切り替える */
+    fun setActivePage(id: Long?) { core.appPage.value = id }
+
+    /** アプリのダッシュボードの 1 マスの縦横比を覚えておく (フロート表示の形に使う) */
+    fun reportCellAspect(aspect: Float) { if (aspect.isFinite() && aspect > 0f) core.cellAspect.value = aspect }
 
     // ---- カスタム PID ----
 
@@ -366,7 +378,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     fun resetDashboards() = viewModelScope.launch { repo.saveDashboards(Defaults.dashboards) }
 
     override fun onCleared() {
-        session.disconnect()
+        // フロート表示中は接続を続ける
+        if (!core.floatActive.value) session.disconnect()
     }
 }
 

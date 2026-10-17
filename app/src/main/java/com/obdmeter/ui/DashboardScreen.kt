@@ -99,8 +99,8 @@ fun DashboardScreen(vm: MainViewModel, onNavigate: (Screen) -> Unit, onCreateCus
     val current = dashboards.getOrNull(pager.currentPage)
 
     // 表示中のページの項目だけを読み出す
-    LaunchedEffect(pager.currentPage, dashboards, catalog) {
-        vm.setActiveDashboard(current, catalog)
+    LaunchedEffect(current?.id) {
+        vm.setActivePage(current?.id)
     }
 
     // ---- 上部バー (接続状態・接続ボタン・編集・ログ・設定) ----
@@ -146,6 +146,7 @@ fun DashboardScreen(vm: MainViewModel, onNavigate: (Screen) -> Unit, onCreateCus
                         vm.updateGauge(d.id, g.id) { it.copy(x = x, y = y, w = w, h = h) }
                     },
                     onTap = { g -> if (editing) settingsFor = g.id },
+                    onCellAspect = vm::reportCellAspect,
                 )
             }
         }
@@ -271,13 +272,7 @@ fun DashboardScreen(vm: MainViewModel, onNavigate: (Screen) -> Unit, onCreateCus
 /** 通常時に右上に出す小さなボタン。接続状態の色の点付き。タップでバーを呼び出す */
 @Composable
 private fun MenuButton(state: ConnectionState, modifier: Modifier, onClick: () -> Unit) {
-    val dot = when (state) {
-        ConnectionState.Disconnected -> GaugeColors.SubText
-        is ConnectionState.Connecting -> Color(0xFFFFC107)
-        is ConnectionState.Connected -> Color(0xFF4CAF50)
-        is ConnectionState.WaitingForVehicle -> Color(0xFF64B5F6)
-        is ConnectionState.Error -> GaugeColors.Warn
-    }
+    val dot = statusColor(state)
     Box(
         modifier
             .size(40.dp)
@@ -289,6 +284,15 @@ private fun MenuButton(state: ConnectionState, modifier: Modifier, onClick: () -
         Icon(Icons.Default.MoreVert, "メニュー", tint = GaugeColors.Text.copy(alpha = 0.8f))
         Box(Modifier.align(Alignment.TopEnd).padding(6.dp).size(9.dp).clip(CircleShape).background(dot))
     }
+}
+
+/** 接続状態を表す色 (ダッシュボードとフロート表示の点) */
+fun statusColor(state: ConnectionState): Color = when (state) {
+    ConnectionState.Disconnected -> GaugeColors.SubText
+    is ConnectionState.Connecting -> Color(0xFFFFC107)
+    is ConnectionState.Connected -> Color(0xFF4CAF50)
+    is ConnectionState.WaitingForVehicle -> Color(0xFF64B5F6)
+    is ConnectionState.Error -> GaugeColors.Warn
 }
 
 fun defaultStyleFor(def: PidDef): GaugeStyle = when (def.key) {
@@ -333,6 +337,7 @@ private fun DashboardCanvas(
     editing: Boolean,
     onCommit: (GaugeConfig, Int, Int, Int, Int) -> Unit,
     onTap: (GaugeConfig) -> Unit,
+    onCellAspect: (Float) -> Unit = {},
 ) {
     // メーターごとのピーク値リセット回数 (長押しで増やす)
     val peakResets = remember { mutableStateMapOf<Long, Int>() }
@@ -342,6 +347,7 @@ private fun DashboardCanvas(
         val density = LocalDensity.current
         val cellWPx = with(density) { cellW.toPx() }
         val cellHPx = with(density) { cellH.toPx() }
+        LaunchedEffect(cellWPx, cellHPx) { if (cellHPx > 0f) onCellAspect(cellWPx / cellHPx) }
 
         if (editing) {
             // マス目のガイド
@@ -374,27 +380,33 @@ private fun DashboardCanvas(
                     onTap = onTap,
                     onLongPress = { peakResets[g.id] = (peakResets[g.id] ?: 0) + 1 },
                 ) {
-                    if (def != null) {
-                        GaugeCard(
-                            def = def,
-                            // メインの値が無いときは代替項目の値を出す (イグニッション OFF 時など)
-                            value = values[def.key] ?: g.fallbackKey?.let { values[it] },
-                            style = g.style,
-                            unsupported = isUnsupported(def, supported) && g.fallbackKey == null,
-                            look = g.look(def),
-                            modifier = Modifier.fillMaxSize(),
-                            peakResetKey = peakResets[g.id] ?: 0,
-                        )
-                    } else {
-                        // 削除されたカスタム PID など
-                        Box(
-                            Modifier.fillMaxSize().background(GaugeColors.Card, RoundedCornerShape(14.dp)),
-                            contentAlignment = Alignment.Center,
-                        ) { Text("項目が見つかりません\n(${g.pidKey})", color = GaugeColors.SubText, fontSize = 12.sp) }
-                    }
+                    GaugeView(g, def, values, supported, peakResets[g.id] ?: 0)
                 }
             }
         }
+    }
+}
+
+/** メーター 1 つ (アプリのダッシュボードとフロート表示で共通) */
+@Composable
+fun GaugeView(g: GaugeConfig, def: PidDef?, values: Map<String, Double>, supported: Set<Int>?, peakResetKey: Int = 0) {
+    if (def != null) {
+        GaugeCard(
+            def = def,
+            // メインの値が無いときは代替項目の値を出す (イグニッション OFF 時など)
+            value = values[def.key] ?: g.fallbackKey?.let { values[it] },
+            style = g.style,
+            unsupported = isUnsupported(def, supported) && g.fallbackKey == null,
+            look = g.look(def),
+            modifier = Modifier.fillMaxSize(),
+            peakResetKey = peakResetKey,
+        )
+    } else {
+        // 削除されたカスタム PID など
+        Box(
+            Modifier.fillMaxSize().background(GaugeColors.Card, RoundedCornerShape(14.dp)),
+            contentAlignment = Alignment.Center,
+        ) { Text("項目が見つかりません\n(${g.pidKey})", color = GaugeColors.SubText, fontSize = 12.sp) }
     }
 }
 

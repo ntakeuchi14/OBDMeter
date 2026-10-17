@@ -38,7 +38,27 @@ data class AppSettings(
     /** 待機の上限 (分)。0 = 無制限。待機中も車両に問い合わせるので、バッテリー保護のため */
     val waitTimeoutMin: Int = 15,
     val keepScreenOn: Boolean = true,
+    // --- フロート表示 (ほかのアプリやホーム画面の上にメーターを出す) ---
+    /** フロート表示するページの id (null = 先頭のページ) */
+    val floatPageId: Long? = null,
+    /** フロート表示の位置 (画面左上からの px) */
+    val floatX: Int = 40,
+    val floatY: Int = 120,
+    /** フロート表示の幅 (dp)。高さはメーターの並びに合わせて決まる */
+    val floatWidthDp: Int = 220,
+    /** フロート表示全体の不透明度 (0.2〜1) */
+    val floatOpacity: Float = 1f,
+    /** フロート表示の背景の濃さ (0 = 透明) */
+    val floatBackground: Float = 0.45f,
+    /**
+     * フロート表示: ホームボタンなどでアプリを離れたら、表示していたページのメーターを
+     * ほかのアプリやホーム画面の上に小さなウィンドウで出す。ON のときは起動時の自動接続も ON 扱い
+     */
+    val floatOnLeave: Boolean = false,
 ) {
+    /** 起動時に自動接続するか (フロート表示が ON なら常に接続する) */
+    val autoConnectEffective: Boolean get() = autoConnect || floatOnLeave
+
     companion object {
         val ELM_BAUD_RATES = listOf(9600, 38400, 115200, 230400, 500000)
         val ELM_PROTOCOLS = listOf(

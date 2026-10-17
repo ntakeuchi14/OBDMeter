@@ -1,6 +1,14 @@
 package com.obdmeter.ui
 
+import android.Manifest
 import android.content.Intent
+import android.content.pm.PackageManager
+import android.os.Build
+import androidx.compose.material3.Slider
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LifecycleEventEffect
+import com.obdmeter.overlay.FloatController
+import kotlin.math.roundToInt
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.graphics.Color
@@ -150,6 +158,9 @@ fun SettingsScreen(vm: MainViewModel, onBack: () -> Unit, onOpenCustomPids: () -
                 }
             }
 
+            Section("フロート表示")
+            FloatSection(vm, s)
+
             Section("接続テスト")
             ConnectionTestSection(vm)
 
@@ -162,9 +173,13 @@ fun SettingsScreen(vm: MainViewModel, onBack: () -> Unit, onOpenCustomPids: () -
                 "OFF のときは、接続状態や編集・設定のボタンを隠してメーターを全画面に表示し、右上のボタンで呼び出します",
                 s.alwaysShowToolbar,
             ) { v -> vm.updateSettings { it.copy(alwaysShowToolbar = v) } }
-            SwitchRow("起動時に自動接続", "アプリを開いたら「接続」を押さなくても接続を始めます", s.autoConnect) { v ->
-                vm.updateSettings { it.copy(autoConnect = v) }
-            }
+            SwitchRow(
+                "起動時に自動接続",
+                if (s.floatOnLeave) "フロート表示が ON のため、常に自動接続します"
+                else "アプリを開いたら「接続」を押さなくても接続を始めます",
+                s.autoConnectEffective,
+                enabled = !s.floatOnLeave,
+            ) { v -> vm.updateSettings { it.copy(autoConnect = v) } }
             SwitchRow("自動再接続", "通信が切れたら 3 秒後に再接続", s.autoReconnect) { v ->
                 vm.updateSettings { it.copy(autoReconnect = v) }
             }
@@ -234,16 +249,84 @@ private fun RadioRow(label: String, detail: String?, selected: Boolean, enabled:
 }
 
 @Composable
-private fun SwitchRow(label: String, detail: String?, checked: Boolean, onChange: (Boolean) -> Unit) {
+private fun SwitchRow(
+    label: String,
+    detail: String?,
+    checked: Boolean,
+    enabled: Boolean = true,
+    onChange: (Boolean) -> Unit,
+) {
     Row(
-        Modifier.fillMaxWidth().clickable { onChange(!checked) }.padding(vertical = 8.dp),
+        Modifier.fillMaxWidth().clickable(enabled = enabled) { onChange(!checked) }.padding(vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Column(Modifier.weight(1f)) {
-            Text(label)
+            Text(label, color = if (enabled) GaugeColors.Text else GaugeColors.SubText)
             if (detail != null) Text(detail, color = GaugeColors.SubText, fontSize = 12.sp)
         }
-        Switch(checked = checked, onCheckedChange = onChange)
+        Switch(checked = checked, onCheckedChange = onChange, enabled = enabled)
+    }
+}
+
+/**
+ * フロート表示の設定。ON にすると、アプリを離れたときに表示中のページのメーターを
+ * ほかのアプリやホーム画面の上に出す。「ほかのアプリの上に重ねて表示」の許可が必要。
+ */
+@Composable
+private fun FloatSection(vm: MainViewModel, s: AppSettings) {
+    val context = LocalContext.current
+    var canDraw by remember { mutableStateOf(FloatController.canDraw(context)) }
+    // 許可画面から戻ってきたら確認し直す
+    LifecycleEventEffect(Lifecycle.Event.ON_RESUME) { canDraw = FloatController.canDraw(context) }
+    val notifyLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { }
+
+    SwitchRow(
+        "メーターをフロート表示",
+        "ホームボタンなどでアプリを離れると、表示していたページのメーターを、ほかのアプリやホーム画面の上に小さく表示します。" +
+            "ON のときは起動時の自動接続も ON になります",
+        s.floatOnLeave,
+    ) { v ->
+        vm.updateSettings { it.copy(floatOnLeave = v, autoConnect = if (v) true else it.autoConnect) }
+        if (v) {
+            if (Build.VERSION.SDK_INT >= 33 &&
+                context.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
+            ) notifyLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+            if (!FloatController.canDraw(context)) {
+                runCatching { context.startActivity(FloatController.permissionIntent(context)) }
+            }
+        }
+    }
+    if (s.floatOnLeave && !canDraw) {
+        Text(
+            "「ほかのアプリの上に重ねて表示」が許可されていないため、フロート表示できません",
+            color = GaugeColors.Warn, fontSize = 12.sp,
+        )
+        OutlinedButton(onClick = { runCatching { context.startActivity(FloatController.permissionIntent(context)) } }) {
+            Text("許可の画面を開く")
+        }
+    }
+    if (s.floatOnLeave) {
+        Text(
+            "フロート表示の操作: ドラッグで移動、2 本指または右下の ◢ で大きさ変更、タップでページ切替・閉じるボタン、ダブルタップでアプリを開く",
+            color = GaugeColors.SubText, fontSize = 12.sp,
+        )
+        FloatSlider("不透明度", s.floatOpacity, 0.2f..1f) { v -> vm.updateSettings { it.copy(floatOpacity = v) } }
+        FloatSlider("背景の濃さ", s.floatBackground, 0f..1f) { v -> vm.updateSettings { it.copy(floatBackground = v) } }
+    }
+}
+
+@Composable
+private fun FloatSlider(label: String, value: Float, range: ClosedFloatingPointRange<Float>, onChange: (Float) -> Unit) {
+    // ドラッグ中は手元の値で動かし、離したときに保存する
+    var v by remember(value) { mutableStateOf(value) }
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Text(label, Modifier.width(96.dp), fontSize = 14.sp)
+        Slider(
+            value = v, onValueChange = { v = it }, valueRange = range,
+            onValueChangeFinished = { onChange((v * 20).roundToInt() / 20f) },
+            modifier = Modifier.weight(1f),
+        )
+        Text("%.0f%%".format(v * 100), Modifier.width(48.dp), fontSize = 13.sp, color = GaugeColors.SubText)
     }
 }
 
