@@ -246,7 +246,9 @@ fun DashboardScreen(vm: MainViewModel, onNavigate: (Screen) -> Unit, onCreateCus
     }
 
     // 通常はメーターを全画面に出し、バーはボタンで呼び出す (編集中・「常に表示」設定のときは常に表示)
-    val barsPinned = editing || settings.alwaysShowToolbar
+    // 編集中と完了後でメーターの大きさが変わらないよう、編集中もバーは上に重ねて表示する
+    // (バーの分だけメーターの領域が縮むのは「常に表示」のときだけ。そのときは編集中も同じ)
+    val barsPinned = settings.alwaysShowToolbar
     var barsShown by remember { mutableStateOf(false) }
     LaunchedEffect(barsShown, barsPinned) {
         if (barsShown && !barsPinned) {
@@ -264,7 +266,11 @@ fun DashboardScreen(vm: MainViewModel, onNavigate: (Screen) -> Unit, onCreateCus
     } else {
         Box(Modifier.fillMaxSize()) {
             pagerContent(Modifier.fillMaxSize())
-            if (barsShown) {
+            if (editing) {
+                // 背景だけの部分は触れても下のメーターに届く (ボタンだけが反応する)
+                topBar(Modifier.align(Alignment.TopCenter).background(GaugeColors.Background.copy(alpha = 0.8f)))
+                bottomBar(Modifier.align(Alignment.BottomCenter).background(GaugeColors.Background.copy(alpha = 0.8f)))
+            } else if (barsShown) {
                 // 画面のどこかをタップしたら閉じる
                 Box(Modifier.fillMaxSize().clickable(
                     interactionSource = remember { MutableInteractionSource() }, indication = null,

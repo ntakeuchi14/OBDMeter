@@ -299,12 +299,7 @@ fun AnalogGauge(
         val center = Offset(size.width / 2, size.height / 2)
         val outer = d / 2
 
-        val ringWidth = when (look.ring) {
-            RingStyle.NONE -> 0f
-            RingStyle.LINE -> d * 0.012f
-            RingStyle.BOLD -> d * 0.035f
-            RingStyle.METAL -> d * 0.05f
-        } * look.ringThickness
+        val ringWidth = ringWidthFor(look, d)
 
         // 背景画像 (目盛りや針は上から描く)。画像が無ければ指定の背景色で文字盤を塗る
         if (image != null) {
@@ -653,7 +648,15 @@ internal fun DrawScope.drawFace(look: GaugeLook) {
  * 内側の段は凹面 (上が暗く下が明るい) にして、文字盤に向かって一段下がって見えるようにする。
  * 陰影の強さは [GaugeLook.ringDepth]、内側の段の幅は [GaugeLook.ringInner]。
  */
-private fun DrawScope.drawRing(look: GaugeLook, center: Offset, outer: Float, w: Float) {
+/** 外周リングの幅 (メーターの直径 [d] に対して) */
+internal fun ringWidthFor(look: GaugeLook, d: Float): Float = when (look.ring) {
+    RingStyle.NONE -> 0f
+    RingStyle.LINE -> d * 0.012f
+    RingStyle.BOLD -> d * 0.035f
+    RingStyle.METAL -> d * 0.05f
+} * look.ringThickness
+
+internal fun DrawScope.drawRing(look: GaugeLook, center: Offset, outer: Float, w: Float) {
     val c = look.ringColor
     val depth = look.ringDepth.coerceIn(0f, 1f)
     // 光は真上よりやや左から当たる

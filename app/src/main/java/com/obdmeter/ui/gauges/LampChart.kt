@@ -100,7 +100,10 @@ internal fun LampGauge(
         val nameH = if (look.showName) size.height * 0.2f else 0f
         val valueH = if (look.showValue) size.height * 0.2f else 0f
         val areaH = size.height - nameH - valueH
-        val r = min(size.width, areaH) * 0.4f
+        // 外周リングを付けるときは、その分ランプを小さくして内側に収める
+        val outer = min(size.width, areaH) * 0.4f
+        val ringW = ringWidthFor(look, outer * 2)
+        val r = outer - ringW
         val c = Offset(size.width / 2, nameH + areaH / 2)
         val color = if (on) look.lampOnColor else look.lampOffColor
         if (on) {
@@ -119,6 +122,7 @@ internal fun LampGauge(
             r, c,
         )
         drawCircle(Color.Black.copy(alpha = 0.55f), r, c, style = Stroke(max(1f, r * 0.08f)))
+        if (ringW > 0f) drawRing(look, c, outer, ringW)
 
         val unit = min(size.width, size.height)
         if (look.showName) {
