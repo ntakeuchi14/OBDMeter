@@ -1,0 +1,173 @@
+package com.obdmeter.core
+
+import org.junit.Assert.assertArrayEquals
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
+import org.junit.Test
+
+/** 送信内容に応じて応答をキューに積む、テスト用の疑似アダプター。 */
+abstract class FakeTransport : Transport {
+    protected val rx = ArrayDeque<Byte>()
+    val sent = mutableListOf<ByteArray>()
+    override fun open() {}
+    override fun close() {}
+    override fun purge() { rx.clear() }
+    override fun write(data: ByteArray) { sent += data; respond(data) }
+    override fun read(buffer: ByteArray, timeoutMs: Int): Int {
+        var n = 0
+        while (n < buffer.size && rx.isNotEmpty()) buffer[n++] = rx.removeFirst()
+        return n
+    }
+    protected fun push(bytes: ByteArray) { bytes.forEach { rx.addLast(it) } }
+    abstract fun respond(data: ByteArray)
+}
+
+/** OBDLink 風 ELM327。エコー OFF 前は送信文字列をエコーする。 */
+class FakeElm(private val replies: Map<String, String>) : FakeTransport() {
+    private var echo = true
+    override fun respond(data: ByteArray) {
+        val cmd = String(data, Charsets.US_ASCII).trim()
+        if (echo) push("$cmd\r".toByteArray())
+        if (cmd == "ATE0") echo = false
+        val reply = replies[cmd] ?: when {
+            cmd.startsWith("AT") -> "OK"
+            cmd.isEmpty() -> ""
+            else -> "NO DATA"
+        }
+        push("$reply\r\r>".toByteArray())
+    }
+}
+
+/** K+DCAN ケーブル + DME (0x12) 風。エコーしてから応答テレグラムを返す。 */
+class FakeDcan(private val replies: Map<String, IntArray>, private val pending78: Boolean = false) : FakeTransport() {
+    override fun respond(data: ByteArray) {
+        push(data) // ケーブルのエコー
+        val t = BmwFastProtocol.parseTelegram(data) ?: return
+        val key = Hex.of(t.data)
+        val reply = replies[key] ?: intArrayOf(0x7F, t.data[0], 0x12)
+        if (pending78) push(BmwFastProtocol.buildTelegram(0xF1, t.target, intArrayOf(0x7F, t.data[0], 0x78)))
+        // 別 ECU (0x18 = EGS) のノイズも混ぜる
+        push(BmwFastProtocol.buildTelegram(0xF1, 0x18, intArrayOf(0x41, 0x00)))
+        push(BmwFastProtocol.buildTelegram(0xF1, t.target, reply))
+    }
+}
+
+class ProtocolTest {
+
+    @Test
+    fun elmParseMode01() {
+        assertArrayEquals(intArrayOf(0x1A, 0xF8), Elm327Protocol.parseMode01(listOf("410C1AF8"), 0x0C))
+        assertArrayEquals(intArrayOf(0x1A, 0xF8), Elm327Protocol.parseMode01(listOf("SEARCHING...", "41 0C 1A F8"), 0x0C))
+        assertNull(Elm327Protocol.parseMode01(listOf("NO DATA"), 0x0C))
+        assertNull(Elm327Protocol.parseMode01(listOf("410D32"), 0x0C))
+    }
+
+    @Test
+    fun elmInitializeAndRead() {
+        val fake = FakeElm(mapOf(
+            "ATWS" to "ELM327 v1.4b",
+            "ATI" to "ELM327 v1.4b",
+            "0100" to "SEARCHING...\r4100BE3EB811",
+            "ATDPN" to "A6",
+            "ATDP" to "AUTO, ISO 15765-4 (CAN 11/500)",
+            "010C 1" to "410C1AF8",
+            "010D 1" to "410D32",
+            "0100 1" to "4100BE3EB811",
+            "0120 1" to "NO DATA",
+            "ATRV" to "12.6V",
+        ))
+        val p = Elm327Protocol(fake)
+        val desc = p.initialize()
+        assertTrue(desc.contains("ISO 15765-4"))
+        assertArrayEquals(intArrayOf(0x1A, 0xF8), p.readPid(0x0C))
+        assertEquals(12.6, p.readAdapterVoltage()!!, 0.001)
+
+        val reader = ObdReader(p)
+        reader.detectSupported()
+        assertTrue(reader.supported!!.contains(0x0C))
+        val values = mutableMapOf<String, Double>()
+        reader.poll(listOf(Pids.get("RPM")!!, Pids.get("SPEED")!!), values)
+        assertEquals(1726.0, values["RPM"]!!, 0.01) // 0x1AF8 / 4
+        assertEquals(50.0, values["SPEED"]!!, 0.01)
+    }
+
+    @Test
+    fun elmFallsBackWhenHintUnsupported() {
+        val fake = FakeElm(mapOf("010C 1" to "?", "010C" to "410C0FA0", "0100" to "4100BE3EB811"))
+        val p = Elm327Protocol(fake)
+        assertArrayEquals(intArrayOf(0x0F, 0xA0), p.readPid(0x0C))
+        // 2 回目からはヒントなしで送る
+        p.readPid(0x0C)
+        assertEquals("010C\r", String(fake.sent.last()))
+    }
+
+    @Test
+    fun bmwFastTelegramFormat() {
+        val tel = BmwFastProtocol.buildTelegram(0x12, 0xF1, intArrayOf(0x01, 0x0C))
+        // 82 12 F1 01 0C + checksum(0x82+0x12+0xF1+0x01+0x0C = 0x192 -> 0x92)
+        assertEquals("82 12 F1 01 0C 92", Hex.of(tel))
+        val parsed = BmwFastProtocol.parseTelegram(tel)
+        assertNotNull(parsed)
+        assertEquals(0x12, parsed!!.target)
+        assertEquals(0xF1, parsed.source)
+        assertArrayEquals(intArrayOf(0x01, 0x0C), parsed.data)
+
+        // 長いデータは長さバイト付き形式
+        val long = BmwFastProtocol.buildTelegram(0x12, 0xF1, IntArray(70) { it })
+        assertEquals(0x80, long[0].toInt() and 0xFF)
+        assertEquals(70, long[3].toInt() and 0xFF)
+        assertArrayEquals(IntArray(70) { it }, BmwFastProtocol.parseTelegram(long)!!.data)
+
+        // チェックサム不一致は null
+        val bad = tel.copyOf().also { it[5] = 0 }
+        assertNull(BmwFastProtocol.parseTelegram(bad))
+    }
+
+    @Test
+    fun bmwFastReadThroughCable() {
+        val fake = FakeDcan(mapOf(
+            "01 00" to intArrayOf(0x41, 0x00, 0xBE, 0x3E, 0xB8, 0x11),
+            "01 0C" to intArrayOf(0x41, 0x0C, 0x1A, 0xF8),
+            "01 05" to intArrayOf(0x41, 0x05, 0x7B),
+        ))
+        val p = BmwFastProtocol(fake)
+        assertTrue(p.initialize().contains("0x12"))
+        assertArrayEquals(intArrayOf(0x1A, 0xF8), p.readPid(0x0C))
+        assertArrayEquals(intArrayOf(0x7B), p.readPid(0x05))
+        // 否定応答 (7F 01 12) は null
+        assertNull(p.readPid(0x5C))
+    }
+
+    @Test
+    fun bmwFastWaitsOnResponsePending() {
+        val fake = FakeDcan(mapOf("01 0D" to intArrayOf(0x41, 0x0D, 0x64)), pending78 = true)
+        assertArrayEquals(intArrayOf(0x64), BmwFastProtocol(fake).readPid(0x0D))
+    }
+
+    @Test
+    fun simulatorDecodesThroughSamePath() {
+        val sim = SimulatorProtocol(responseDelayMs = 0)
+        val reader = ObdReader(sim)
+        reader.detectSupported()
+        val s = reader.supported!!
+        assertTrue(s.contains(0x0C) && s.contains(0x42) && s.contains(0x49))
+        assertTrue(!s.contains(0x5C))
+        val values = mutableMapOf<String, Double>()
+        reader.poll(Pids.ALL, values)
+        assertTrue(values["RPM"]!! in 600.0..7300.0)
+        assertTrue(values["ECU_VOLT"]!! in 13.0..15.0)
+        assertNotNull(values["BOOST"])
+        assertNull(values["OIL_TEMP"])
+        assertEquals(14.2, values["BATTERY"]!!, 0.01)
+    }
+
+    @Test
+    fun pidFormulas() {
+        assertEquals(90.0, Pids.get("COOLANT")!!.decode(intArrayOf(130)), 0.001)
+        assertEquals(-3.125, Pids.get("STFT1")!!.decode(intArrayOf(124)), 0.001)
+        assertEquals(14.2, Pids.get("ECU_VOLT")!!.decode(intArrayOf(0x37, 0x78)), 0.001)
+        assertEquals(0.5, Pids.get("BOOST")!!.derive(mapOf("MAP" to 151.0, "BARO" to 101.0))!!, 0.001)
+    }
+}
