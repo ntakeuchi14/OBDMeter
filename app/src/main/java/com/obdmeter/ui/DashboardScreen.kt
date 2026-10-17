@@ -1,5 +1,6 @@
 package com.obdmeter.ui
 
+import com.obdmeter.ui.gauges.ChartSeries
 import androidx.compose.foundation.Canvas
 import kotlinx.coroutines.delay
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -286,6 +287,11 @@ private fun MenuButton(state: ConnectionState, modifier: Modifier, onClick: () -
     }
 }
 
+/** 折れ線グラフの項目 (先頭はメーターの項目、続いて追加した項目) */
+fun chartSeries(g: GaugeConfig, def: PidDef, values: Map<String, Double>, catalog: PidCatalog?): List<ChartSeries> =
+    listOf(ChartSeries(def, values[def.key] ?: g.fallbackKey?.let { values[it] })) +
+        g.chartKeys.mapNotNull { k -> catalog?.get(k)?.let { ChartSeries(it, values[it.key]) } }
+
 /** 接続状態を表す色 (ダッシュボードとフロート表示の点) */
 fun statusColor(state: ConnectionState): Color = when (state) {
     ConnectionState.Disconnected -> GaugeColors.SubText
@@ -380,7 +386,7 @@ private fun DashboardCanvas(
                     onTap = onTap,
                     onLongPress = { peakResets[g.id] = (peakResets[g.id] ?: 0) + 1 },
                 ) {
-                    GaugeView(g, def, values, supported, peakResets[g.id] ?: 0)
+                    GaugeView(g, def, values, supported, peakResets[g.id] ?: 0, catalog = catalog, interactive = !editing)
                 }
             }
         }
@@ -397,6 +403,10 @@ fun GaugeView(
     peakResetKey: Int = 0,
     /** true = 四角いカードの背景を描かない (フロート表示で背景を透過させる) */
     noCard: Boolean = false,
+    /** 折れ線グラフの追加項目を探すのに使う */
+    catalog: PidCatalog? = null,
+    /** 折れ線グラフをドラッグで操作できるか */
+    interactive: Boolean = false,
 ) {
     if (def != null) {
         GaugeCard(
@@ -408,6 +418,8 @@ fun GaugeView(
             look = g.look(def).let { if (noCard) it.copy(showCard = false) else it },
             modifier = Modifier.fillMaxSize(),
             peakResetKey = peakResetKey,
+            series = if (g.style == GaugeStyle.CHART) chartSeries(g, def, values, catalog) else emptyList(),
+            interactive = interactive,
         )
     } else {
         // 削除されたカスタム PID など

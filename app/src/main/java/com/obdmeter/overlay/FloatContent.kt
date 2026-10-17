@@ -32,6 +32,7 @@ import com.obdmeter.AppCore
 import com.obdmeter.ui.GaugeView
 import com.obdmeter.ui.gauges.GaugeColors
 import com.obdmeter.ui.gauges.LocalFontLibrary
+import com.obdmeter.ui.gauges.LocalHistory
 import com.obdmeter.ui.resolvedDef
 import com.obdmeter.ui.statusColor
 
@@ -61,6 +62,7 @@ fun FloatGauge(
     CompositionLocalProvider(
         LocalContentColor provides GaugeColors.Text,
         LocalFontLibrary provides fonts.associateBy { it.id },
+        LocalHistory provides core.history,
     ) {
         Box(
             Modifier
@@ -85,7 +87,7 @@ fun FloatGauge(
                                     .offset(cw * (g.x - b[0]), ch * (g.y - b[1]))
                                     .size(cw * g.w, ch * g.h)
                                     .padding(2.dp)
-                            ) { GaugeView(g, g.resolvedDef(catalog), values, supported, noCard = true) }
+                            ) { GaugeView(g, g.resolvedDef(catalog), values, supported, noCard = true, catalog = catalog) }
                         }
                     }
                 }

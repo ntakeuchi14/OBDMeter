@@ -72,6 +72,10 @@ enum class GaugeStyle(val label: String) {
     ANALOG("アナログ"),
     BAR("バー"),
     DIGITAL("デジタル"),
+    /** 2 値ランプ: 条件式を満たすと点灯 */
+    LAMP("ランプ"),
+    /** 折れ線グラフ: 複数項目の推移 */
+    CHART("折れ線グラフ"),
 }
 
 /**
@@ -183,6 +187,19 @@ data class GaugeDesign(
     val imageOffsetY: Float = 0f,
     /** 四角いカードの背景と枠を表示する。丸い画像を使うときは OFF がきれい */
     val showCard: Boolean = true,
+    // --- 2 値ランプ ---
+    /** 点灯条件 (値を x と書く。例: x >= 100)。空欄 = 警告値を超えたら点灯 */
+    val lampCondition: String = "",
+    /** 点灯時・消灯時の色 (null = 既定: 赤 / 暗い灰色) */
+    val lampOnColor: Long? = null,
+    val lampOffColor: Long? = null,
+    // --- 折れ線グラフ ---
+    /** 1 画面に表示する時間 (秒) */
+    val chartSpanSec: Int = 60,
+    /** 記録を残す日数 (この日数分までさかのぼって見られる) */
+    val historyDays: Int = 1,
+    /** 項目ごとの線の色 (並びは「表示する項目」→ 追加した項目の順。null = 自動) */
+    val chartColors: List<Long?> = emptyList(),
 )
 
 /** メーター外周のリング */
@@ -217,8 +234,15 @@ data class GaugeConfig(
      * フロート表示で 1 つのウィンドウにまとめて、ダッシュボードと同じ並びで表示する。null = 単独
      */
     val floatGroup: Int? = null,
+    /** 折れ線グラフで、[pidKey] に加えて表示する項目のキー */
+    val chartKeys: List<String> = emptyList(),
 ) {
+    /** 折れ線グラフに出す項目すべて (先頭が [pidKey]) */
+    val chartAllKeys: List<String> get() = listOf(pidKey) + chartKeys
+
     companion object {
+        /** 折れ線グラフに追加できる項目の数 */
+        const val MAX_CHART_EXTRA = 5
         const val FLOAT_GROUPS = 6
         fun groupLabel(group: Int): String = ('A' + (group - 1)).toString()
     }

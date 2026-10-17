@@ -7,6 +7,8 @@ import com.obdmeter.data.CustomPid
 import com.obdmeter.data.Dashboard
 import com.obdmeter.data.Defaults
 import com.obdmeter.data.FontEntry
+import com.obdmeter.data.GaugeStyle
+import com.obdmeter.data.HistoryStore
 import com.obdmeter.data.Repository
 import com.obdmeter.session.LogBuffer
 import com.obdmeter.session.ObdSession
@@ -32,6 +34,8 @@ class AppCore private constructor(context: Context) {
     val repo = Repository(app)
     val log = LogBuffer()
     val session = ObdSession(app, scope, log)
+    /** 折れ線グラフ用の値の記録 */
+    val history = HistoryStore(app, scope)
 
     val settings: StateFlow<AppSettings> =
         repo.settings.stateIn(scope, SharingStarted.Eagerly, AppSettings())
@@ -76,12 +80,25 @@ class AppCore private constructor(context: Context) {
                     // まだ何も表示していないとき (起動直後) はアプリのページ
                     .ifEmpty { listOfNotNull(pages.firstOrNull { it.id == app }) }
                 val gauges = shown.flatMap { it.gauges }
-                gauges.mapNotNull { cat.get(it.pidKey) }.distinctBy { it.key } to
+                // 折れ線グラフは追加した項目も読む
+                gauges.flatMap { g -> if (g.style == GaugeStyle.CHART) g.chartAllKeys else listOf(g.pidKey) }
+                    .mapNotNull { cat.get(it) }.distinctBy { it.key } to
                     gauges.mapNotNull { g -> g.fallbackKey?.let { fb -> cat.get(fb)?.let { g.pidKey to it } } }.toMap()
             }.collect { (pids, fallbacks) ->
                 session.activePids = pids
                 session.activeFallbacks = fallbacks
             }
+        }
+        // 折れ線グラフで使っている項目を記録する (保存日数はグラフの設定の最大)
+        scope.launch {
+            dashboards.collect { pages ->
+                val charts = pages.flatMap { it.gauges }.filter { it.style == GaugeStyle.CHART }
+                history.keys = charts.flatMap { it.chartAllKeys }.toSet()
+                history.retentionDays = charts.maxOfOrNull { it.design.historyDays } ?: 1
+            }
+        }
+        scope.launch {
+            session.values.collect { v -> if (v.isNotEmpty()) history.record(v) }
         }
     }
 

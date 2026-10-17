@@ -34,6 +34,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.obdmeter.session.ConnectionState
 import com.obdmeter.ui.gauges.GaugeColors
 import com.obdmeter.ui.gauges.LocalFontLibrary
+import com.obdmeter.ui.gauges.LocalHistory
 
 enum class Screen { DASHBOARD, EDIT, SETTINGS, LOG, CUSTOM_PIDS }
 
@@ -118,6 +119,7 @@ fun App(vm: MainViewModel, onKeepScreenOn: (Boolean) -> Unit) {
     CompositionLocalProvider(
         LocalContentColor provides GaugeColors.Text,
         LocalFontLibrary provides fontLibrary.associateBy { it.id },
+        LocalHistory provides vm.history,
     ) {
     Box(
         Modifier

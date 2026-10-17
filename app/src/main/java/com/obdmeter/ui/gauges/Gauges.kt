@@ -41,6 +41,7 @@ import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
+import com.obdmeter.core.Condition
 import com.obdmeter.core.PidDef
 import com.obdmeter.data.FontEntry
 import com.obdmeter.data.GaugeFonts
@@ -111,6 +112,15 @@ data class GaugeLook(
     val imageOffsetY: Float = 0f,
     /** 文字盤の背景色 (背景画像が無いときだけ塗る) */
     val faceColor: Color? = null,
+    /** ランプの点灯条件 (null = 警告値で点灯) */
+    val lampCondition: Condition? = null,
+    val lampOnColor: Color = GaugeColors.Warn,
+    val lampOffColor: Color = Color(0xFF2A2F36),
+    /** 折れ線グラフの 1 画面の時間 (ミリ秒) と保存日数 */
+    val chartSpanMs: Long = 60_000L,
+    val historyDays: Int = 1,
+    /** 折れ線グラフの線の色 (項目の順。足りない分は自動) */
+    val chartColors: List<Color?> = emptyList(),
     val showPeak: Boolean = false,
     val peakColor: Color = GaugeColors.Peak,
     val showPeakValue: Boolean = false,
@@ -155,6 +165,10 @@ fun GaugeCard(
     modifier: Modifier = Modifier,
     /** 値が変わるとピーク値をリセットする (メーターの長押しで増やす) */
     peakResetKey: Int = 0,
+    /** 折れ線グラフの項目 (空なら [def] だけ) */
+    series: List<ChartSeries> = emptyList(),
+    /** 折れ線グラフをドラッグで操作できるか (編集中・フロート表示では false) */
+    interactive: Boolean = false,
 ) {
     val shape = RoundedCornerShape(14.dp)
     // ピーク値 (生の値で記録する。表示用のならし前の値)
@@ -177,6 +191,11 @@ fun GaugeCard(
             GaugeStyle.ANALOG -> AnalogGauge(def, v, unsupported, look, image, Modifier.fillMaxSize(), peak, fonts)
             GaugeStyle.BAR -> BarGauge(def, v, unsupported, look, image, Modifier.fillMaxSize(), peak, fonts)
             GaugeStyle.DIGITAL -> DigitalGauge(def, v, unsupported, look, image, Modifier.fillMaxSize(), peak, fonts)
+            // ランプは条件判定をならし前の値で行う
+            GaugeStyle.LAMP -> LampGauge(def, if (unsupported) null else value, unsupported, look, image, Modifier.fillMaxSize(), fonts)
+            GaugeStyle.CHART -> ChartGauge(
+                series.ifEmpty { listOf(ChartSeries(def, value)) }, look, fonts, interactive, Modifier.fillMaxSize(),
+            )
         }
     }
 }
@@ -219,7 +238,7 @@ private fun rememberDisplayValue(def: PidDef, value: Double?): Double? {
     return shown
 }
 
-private fun isWarn(def: PidDef, v: Double?): Boolean =
+internal fun isWarn(def: PidDef, v: Double?): Boolean =
     v != null && ((def.warnAbove != null && v >= def.warnAbove) || (def.warnBelow != null && v <= def.warnBelow))
 
 private fun fraction(def: PidDef, v: Double): Float =
@@ -235,7 +254,7 @@ private fun animated(def: PidDef, value: Double?): Float {
 }
 
 /** 画像を縦横比を保ったまま、[center] を中心に一辺 [box] の正方形に収めて描く */
-private fun DrawScope.drawImageFit(image: ImageBitmap, center: Offset, box: Float) {
+internal fun DrawScope.drawImageFit(image: ImageBitmap, center: Offset, box: Float) {
     val iw = image.width.toFloat()
     val ih = image.height.toFloat()
     val scale = min(box / iw, box / ih)
@@ -461,7 +480,7 @@ private data class TickScale(val first: Double, val step: Double, val divisor: D
     }
 }
 
-private fun DrawScope.drawCenteredText(tm: TextMeasurer, text: String, center: Offset, style: TextStyle) {
+internal fun DrawScope.drawCenteredText(tm: TextMeasurer, text: String, center: Offset, style: TextStyle) {
     val layout = tm.measure(text, style)
     drawText(layout, topLeft = Offset(center.x - layout.size.width / 2f, center.y - layout.size.height / 2f))
 }
@@ -599,7 +618,7 @@ fun DigitalGauge(
 
 
 /** バー・デジタル表示の背景色 (角丸の四角) */
-private fun DrawScope.drawFace(look: GaugeLook) {
+internal fun DrawScope.drawFace(look: GaugeLook) {
     val c = look.faceColor ?: return
     val r = min(size.width, size.height) * 0.08f
     drawRoundRect(c, cornerRadius = CornerRadius(r, r))

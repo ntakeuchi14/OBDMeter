@@ -59,6 +59,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     val rate: StateFlow<Double> = session.rate
     val supported: StateFlow<Set<Int>?> = session.supported
     val floatActive: StateFlow<Boolean> = core.floatActive
+    /** 折れ線グラフ用の記録 */
+    val history = core.history
 
     init {
         // 起動時の自動接続 (ViewModel は画面回転などでは作り直されないので、アプリ起動時の 1 回だけ)

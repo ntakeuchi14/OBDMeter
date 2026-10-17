@@ -1,5 +1,9 @@
 package com.obdmeter.ui
 
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
+import com.obdmeter.ui.gauges.chartColor
+import com.obdmeter.core.Condition
 import androidx.compose.ui.draw.clip
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.SliderDefaults
@@ -116,6 +120,7 @@ fun GaugeSettingsDialog(
     var tab by remember { mutableIntStateOf(0) }
     var showPicker by remember { mutableStateOf(false) }
     var showFallbackPicker by remember { mutableStateOf(false) }
+    var showChartPicker by remember { mutableStateOf(false) }
     /** フォント選択ダイアログの対象 ("value" / "label")。null = 閉じる */
     var fontPickerFor by remember { mutableStateOf<String?>(null) }
     var confirmDelete by remember { mutableStateOf(false) }
@@ -147,6 +152,9 @@ fun GaugeSettingsDialog(
                                     unsupported = false,
                                     look = draft.look(def),
                                     modifier = Modifier.aspectRatio(ratio).fillMaxHeight(),
+                                    series = if (draft.style == GaugeStyle.CHART) {
+                                        chartSeries(draft, def, mapOf(def.key to (previewValue ?: 0.0)), catalog)
+                                    } else emptyList(),
                                 )
                             } else {
                                 Text("項目が見つかりません", color = GaugeColors.SubText)
@@ -173,7 +181,7 @@ fun GaugeSettingsDialog(
                         Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = 16.dp)) {
                             when (tab) {
                                 0 -> BasicTab(draft, catalog, ::update, { draft = it }, { showPicker = true },
-                                    { showFallbackPicker = true }, onBringToFront) { confirmDelete = true }
+                                    { showFallbackPicker = true }, { showChartPicker = true }, onBringToFront) { confirmDelete = true }
                                 1 -> AngleTab(draft, ::update)
                                 2 -> ColorTab(draft, ::update) { target -> fontPickerFor = target }
                                 3 -> ImageTab(draft, ::update)
@@ -226,6 +234,18 @@ fun GaugeSettingsDialog(
                 onDismiss = { showFallbackPicker = false },
             )
         }
+        if (showChartPicker) {
+            ItemPickerDialog(
+                catalog = catalog,
+                supported = supported,
+                onPick = { picked ->
+                    if (picked.key !in draft.chartAllKeys) draft = draft.copy(chartKeys = draft.chartKeys + picked.key)
+                    showChartPicker = false
+                },
+                onCreateCustom = { showChartPicker = false; close(); onCreateCustomPid() },
+                onDismiss = { showChartPicker = false },
+            )
+        }
         if (showPicker) {
             ItemPickerDialog(
                 catalog = catalog,
@@ -271,6 +291,7 @@ private fun BasicTab(
     replace: (GaugeConfig) -> Unit,
     onChangeItem: () -> Unit,
     onPickFallback: () -> Unit,
+    onAddChartItem: () -> Unit,
     onBringToFront: () -> Unit,
     onDelete: () -> Unit,
 ) {
@@ -316,6 +337,12 @@ private fun BasicTab(
         GaugeStyle.entries.forEach { s ->
             FilterChip(g.style == s, { replace(g.copy(style = s)) }, { Text(s.label) }, Modifier.padding(end = 6.dp))
         }
+    }
+
+    when (g.style) {
+        GaugeStyle.LAMP -> LampSettings(g, update)
+        GaugeStyle.CHART -> ChartSettings(g, catalog, update, replace, onAddChartItem)
+        else -> {}
     }
 
     Head("フロート表示のグループ")
@@ -638,6 +665,102 @@ private fun SliderLine(label: String, value: Float, range: ClosedFloatingPointRa
             Text(format.format(value), color = GaugeColors.SubText, fontSize = 13.sp)
         }
         Slider(value = value.coerceIn(range), onValueChange = onChange, valueRange = range)
+    }
+}
+
+/** 2 値ランプの設定 (点灯条件と色) */
+@Composable
+private fun LampSettings(g: GaugeConfig, update: ((GaugeDesign) -> GaugeDesign) -> Unit) {
+    val d = g.design
+    Head("点灯条件")
+    Hint(
+        "計測値を x として条件を書きます。例: x >= 100 / x > 90 && x < 110 / x < 11.5 || x > 14.8 / abs(x) > 5。" +
+            "空欄のときは警告値 (基本タブの下) を超えたら点灯します。"
+    )
+    var text by remember(g.id) { mutableStateOf(d.lampCondition) }
+    val error = text.takeIf { it.isNotBlank() }?.let { Condition.check(it) }
+    OutlinedTextField(
+        value = text,
+        onValueChange = { t ->
+            text = t
+            // 書き方が正しいときだけ反映する (途中の入力でランプが消えないように)
+            if (t.isBlank() || Condition.check(t) == null) update { it.copy(lampCondition = t.trim()) }
+        },
+        placeholder = { Text("例: x >= 100") },
+        isError = error != null,
+        supportingText = { if (error != null) Text(error) },
+        singleLine = true,
+        modifier = Modifier.fillMaxWidth(),
+    )
+    ColorLine("点灯時の色", d.lampOnColor, GaugeColors.Warn) { c -> update { it.copy(lampOnColor = c) } }
+    ColorLine("消灯時の色", d.lampOffColor, Color(0xFF2A2F36)) { c -> update { it.copy(lampOffColor = c) } }
+}
+
+/** 折れ線グラフの設定 (表示する項目・時間の幅・保存日数・線の色) */
+@Composable
+private fun ChartSettings(
+    g: GaugeConfig,
+    catalog: PidCatalog,
+    update: ((GaugeDesign) -> GaugeDesign) -> Unit,
+    replace: (GaugeConfig) -> Unit,
+    onAddItem: () -> Unit,
+) {
+    val d = g.design
+    val look = g.look(catalog.get(g.pidKey) ?: return)
+    Head("グラフに表示する項目")
+    Hint("先頭は上の「表示する項目」です。項目ごとに、その項目の目盛りの範囲 (最小〜最大) で縦方向を合わせて重ねます。")
+    g.chartAllKeys.forEachIndexed { i, key ->
+        val def = catalog.get(key)
+        Row(Modifier.fillMaxWidth().padding(vertical = 2.dp), verticalAlignment = Alignment.CenterVertically) {
+            Box(Modifier.size(12.dp).clip(CircleShape).background(chartColor(look, i)))
+            Spacer(Modifier.width(8.dp))
+            Column(Modifier.weight(1f)) {
+                Text(def?.name ?: "(見つかりません: $key)", fontSize = 14.sp)
+                if (def != null) Text("${def.unit}  範囲 ${fmt(def.min)}〜${fmt(def.max)}", color = GaugeColors.SubText, fontSize = 12.sp)
+            }
+            if (i > 0) {
+                TextButton(onClick = {
+                    val keys = g.chartKeys.toMutableList().also { it.removeAt(i - 1) }
+                    val colors = d.chartColors.toMutableList().also { if (i < it.size) it.removeAt(i) }
+                    replace(g.copy(chartKeys = keys, design = d.copy(chartColors = colors)))
+                }) { Text("外す") }
+            }
+        }
+    }
+    if (g.chartKeys.size < GaugeConfig.MAX_CHART_EXTRA) {
+        OutlinedButton(onClick = onAddItem) { Text("項目を追加") }
+    }
+
+    Head("1 画面に表示する時間")
+    Row(Modifier.horizontalScroll(rememberScrollState())) {
+        listOf(30 to "30秒", 60 to "1分", 300 to "5分", 900 to "15分", 3600 to "1時間", 21600 to "6時間", 86400 to "1日")
+            .forEach { (sec, label) ->
+                FilterChip(d.chartSpanSec == sec, { update { it.copy(chartSpanSec = sec) } }, { Text(label) },
+                    Modifier.padding(end = 6.dp))
+            }
+    }
+    Hint("表示中は、左右にドラッグで過去へさかのぼり、2 本指で時間の幅を拡大縮小、ダブルタップで現在の表示に戻ります。")
+
+    Head("記録を残す期間")
+    Row(Modifier.horizontalScroll(rememberScrollState())) {
+        listOf(1, 3, 7, 14, 30).forEach { n ->
+            FilterChip(d.historyDays == n, { update { it.copy(historyDays = n) } }, { Text("${n}日") },
+                Modifier.padding(end = 6.dp))
+        }
+    }
+    Hint("接続中の値を 1 秒ごとに端末に記録します。期間を過ぎた記録は自動で消えます。")
+
+    Head("線の色")
+    g.chartAllKeys.forEachIndexed { i, key ->
+        val name = catalog.get(key)?.shortName ?: key
+        ColorLine(name, d.chartColors.getOrNull(i), chartColor(look.copy(chartColors = emptyList()), i)) { c ->
+            update {
+                val list = it.chartColors.toMutableList()
+                while (list.size <= i) list += null
+                list[i] = c
+                it.copy(chartColors = list)
+            }
+        }
     }
 }
 
