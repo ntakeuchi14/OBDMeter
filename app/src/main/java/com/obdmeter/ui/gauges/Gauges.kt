@@ -18,6 +18,7 @@ import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
@@ -40,6 +41,8 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import com.obdmeter.core.PidDef
+import com.obdmeter.data.FontEntry
+import com.obdmeter.data.GaugeFonts
 import com.obdmeter.data.GaugeImages
 import com.obdmeter.data.GaugeStyle
 import com.obdmeter.data.RingStyle
@@ -113,7 +116,26 @@ data class GaugeLook(
     val image: String? = null,
     val imageScale: Float = 1f,
     val showCard: Boolean = true,
+    /** 取り込んだフォントの id (null = 既定) */
+    val valueFont: String? = null,
+    val labelFont: String? = null,
 )
+
+/** 取り込んだフォントの一覧 (id → 項目)。アプリの最上位で渡す */
+val LocalFontLibrary = staticCompositionLocalOf<Map<String, FontEntry>> { emptyMap() }
+
+/** 描画に使うフォント。value は数値、label は目盛りの数字・名前・単位 */
+class GaugeFontSet(val value: FontFamily, val label: FontFamily?)
+
+@Composable
+fun rememberGaugeFonts(look: GaugeLook): GaugeFontSet {
+    val lib = LocalFontLibrary.current
+    val context = LocalContext.current
+    return remember(look.valueFont, look.labelFont, lib) {
+        fun resolve(id: String?) = id?.let { lib[it] }?.let { GaugeFonts.family(context, it) }
+        GaugeFontSet(resolve(look.valueFont) ?: FontFamily.Monospace, resolve(look.labelFont))
+    }
+}
 
 /** メーター 1 個分。スタイルに応じて描き分ける。 */
 @Composable
@@ -143,10 +165,11 @@ fun GaugeCard(
     ) {
         val v = rememberDisplayValue(def, if (unsupported) null else value)
         val image = rememberGaugeImage(look.image)
+        val fonts = rememberGaugeFonts(look)
         when (style) {
-            GaugeStyle.ANALOG -> AnalogGauge(def, v, unsupported, look, image, Modifier.fillMaxSize(), peak)
-            GaugeStyle.BAR -> BarGauge(def, v, unsupported, look, image, Modifier.fillMaxSize(), peak)
-            GaugeStyle.DIGITAL -> DigitalGauge(def, v, unsupported, look, image, Modifier.fillMaxSize(), peak)
+            GaugeStyle.ANALOG -> AnalogGauge(def, v, unsupported, look, image, Modifier.fillMaxSize(), peak, fonts)
+            GaugeStyle.BAR -> BarGauge(def, v, unsupported, look, image, Modifier.fillMaxSize(), peak, fonts)
+            GaugeStyle.DIGITAL -> DigitalGauge(def, v, unsupported, look, image, Modifier.fillMaxSize(), peak, fonts)
         }
     }
 }
@@ -233,6 +256,7 @@ fun AnalogGauge(
     image: ImageBitmap?,
     modifier: Modifier = Modifier,
     peak: Double? = null,
+    fonts: GaugeFontSet = GaugeFontSet(FontFamily.Monospace, null),
 ) {
     val tm = rememberTextMeasurer()
     val f = animated(def, value)
@@ -296,7 +320,7 @@ fun AnalogGauge(
                 val labelR = tickOuter - majorLen - d * 0.06f * look.labelSize
                 drawCenteredText(tm, scale.label(t),
                     Offset(center.x + labelR * cos(a).toFloat(), center.y + labelR * sin(a).toFloat()),
-                    TextStyle(color = look.labelColor, fontSize = labelSize))
+                    TextStyle(color = look.labelColor, fontFamily = fonts.label, fontSize = labelSize))
             }
             // 小目盛り
             if (look.minorDivisions > 0 && i < majors.lastIndex) {
@@ -367,7 +391,7 @@ fun AnalogGauge(
         // 名前・数値・単位
         if (look.showName) {
             drawCenteredText(tm, def.shortName, Offset(center.x, center.y - gaugeR * 0.38f),
-                TextStyle(color = look.labelColor, fontSize = (d * 0.07f).toSp(), fontWeight = FontWeight.Medium))
+                TextStyle(color = look.labelColor, fontFamily = fonts.label, fontSize = (d * 0.07f).toSp(), fontWeight = FontWeight.Medium))
         }
         val valueY = center.y + gaugeR * look.valuePosition
         if (look.showValue) {
@@ -375,17 +399,17 @@ fun AnalogGauge(
             drawCenteredText(tm, valueText, Offset(center.x, valueY),
                 TextStyle(color = if (warn) GaugeColors.Warn else look.valueColor,
                     fontSize = (d * (if (unsupported) 0.09f else 0.13f) * look.valueSize).toSp(),
-                    fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace))
+                    fontWeight = FontWeight.Bold, fontFamily = fonts.value))
         }
         if (look.showUnit) {
             drawCenteredText(tm, def.unit + scale.unitSuffix,
                 Offset(center.x, valueY + d * 0.1f * max(look.valueSize, 0.6f)),
-                TextStyle(color = look.labelColor, fontSize = (d * 0.055f).toSp()))
+                TextStyle(color = look.labelColor, fontFamily = fonts.label, fontSize = (d * 0.055f).toSp()))
         }
         if (peak != null && look.showPeakValue) {
             drawCenteredText(tm, "MAX " + def.format(peak),
                 Offset(center.x, valueY + d * 0.17f * max(look.valueSize, 0.6f)),
-                TextStyle(color = look.peakColor, fontSize = (d * 0.05f).toSp(), fontFamily = FontFamily.Monospace))
+                TextStyle(color = look.peakColor, fontSize = (d * 0.05f).toSp(), fontFamily = fonts.value))
         }
     }
 }
@@ -442,6 +466,7 @@ fun BarGauge(
     image: ImageBitmap?,
     modifier: Modifier = Modifier,
     peak: Double? = null,
+    fonts: GaugeFontSet = GaugeFontSet(FontFamily.Monospace, null),
 ) {
     val tm = rememberTextMeasurer()
     val f = animated(def, value)
@@ -453,7 +478,7 @@ fun BarGauge(
         val unit = min(h, w * 0.5f)
         if (look.showName) {
             val name = tm.measure(def.shortName,
-                TextStyle(color = look.labelColor, fontSize = (unit * 0.16f).toSp(), fontWeight = FontWeight.Medium))
+                TextStyle(color = look.labelColor, fontFamily = fonts.label, fontSize = (unit * 0.16f).toSp(), fontWeight = FontWeight.Medium))
             drawText(name, topLeft = Offset(4f, 0f))
         }
 
@@ -461,11 +486,11 @@ fun BarGauge(
             val valueStyle = TextStyle(
                 color = if (warn) GaugeColors.Warn else look.valueColor,
                 fontSize = (unit * (if (unsupported) 0.2f else 0.34f) * look.valueSize).toSp(),
-                fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace,
+                fontWeight = FontWeight.Bold, fontFamily = fonts.value,
             )
             val valueLayout = tm.measure(if (unsupported) "非対応" else def.format(value), valueStyle)
             val unitLayout = tm.measure(if (look.showUnit) def.unit else "",
-                TextStyle(color = look.labelColor, fontSize = (unit * 0.14f).toSp()))
+                TextStyle(color = look.labelColor, fontFamily = fonts.label, fontSize = (unit * 0.14f).toSp()))
             val valueY = h * 0.52f - valueLayout.size.height / 2f
             drawText(unitLayout, topLeft = Offset(w - unitLayout.size.width - 4f, valueY + valueLayout.size.height - unitLayout.size.height * 1.15f))
             drawText(valueLayout, topLeft = Offset(w - unitLayout.size.width - 10f - valueLayout.size.width, valueY))
@@ -498,7 +523,7 @@ fun BarGauge(
             drawLine(look.peakColor, Offset(px, barY - barH * 0.5f), Offset(px, barY + barH * 1.5f), max(3f, barH * 0.25f))
             if (look.showPeakValue) {
                 val t = tm.measure("MAX " + def.format(peak),
-                    TextStyle(color = look.peakColor, fontSize = (unit * 0.12f).toSp(), fontFamily = FontFamily.Monospace))
+                    TextStyle(color = look.peakColor, fontSize = (unit * 0.12f).toSp(), fontFamily = fonts.value))
                 drawText(t, topLeft = Offset(4f, barY - t.size.height - barH * 0.6f))
             }
         }
@@ -518,6 +543,7 @@ fun DigitalGauge(
     image: ImageBitmap?,
     modifier: Modifier = Modifier,
     peak: Double? = null,
+    fonts: GaugeFontSet = GaugeFontSet(FontFamily.Monospace, null),
 ) {
     val tm = rememberTextMeasurer()
     val warn = isWarn(def, value)
@@ -526,7 +552,7 @@ fun DigitalGauge(
         val unit = min(size.height, size.width * 0.6f)
         if (look.showName) {
             val name = tm.measure(def.shortName,
-                TextStyle(color = look.labelColor, fontSize = (unit * 0.14f).toSp(), fontWeight = FontWeight.Medium))
+                TextStyle(color = look.labelColor, fontFamily = fonts.label, fontSize = (unit * 0.14f).toSp(), fontWeight = FontWeight.Medium))
             drawText(name, topLeft = Offset(4f, 0f))
         }
         // valuePosition は中心からのずれ (アナログと共通の値を流用。既定 0.42 → 中央やや下)
@@ -536,15 +562,15 @@ fun DigitalGauge(
                 Offset(size.width / 2, cy),
                 TextStyle(color = if (warn) GaugeColors.Warn else look.valueColor,
                     fontSize = (unit * (if (unsupported) 0.2f else 0.38f) * look.valueSize).toSp(),
-                    fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace))
+                    fontWeight = FontWeight.Bold, fontFamily = fonts.value))
         }
         if (look.showUnit) {
             drawCenteredText(tm, def.unit, Offset(size.width / 2, cy + unit * 0.3f * max(look.valueSize, 0.6f)),
-                TextStyle(color = look.labelColor, fontSize = (unit * 0.13f).toSp()))
+                TextStyle(color = look.labelColor, fontFamily = fonts.label, fontSize = (unit * 0.13f).toSp()))
         }
         if (peak != null) {
             val t = tm.measure("MAX " + def.format(peak),
-                TextStyle(color = look.peakColor, fontSize = (unit * 0.12f).toSp(), fontFamily = FontFamily.Monospace))
+                TextStyle(color = look.peakColor, fontSize = (unit * 0.12f).toSp(), fontFamily = fonts.value))
             drawText(t, topLeft = Offset(size.width - t.size.width - 4f, 0f))
         }
     }

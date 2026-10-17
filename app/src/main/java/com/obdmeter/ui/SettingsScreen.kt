@@ -261,7 +261,7 @@ private fun BackupSection(vm: MainViewModel) {
     }
 
     Text(
-        "ダッシュボード (メーターの配置・色・角度・背景画像など) とカスタム PID を 1 つのファイル (zip) に保存します。" +
+        "ダッシュボード (メーターの配置・色・角度・背景画像など)、カスタム PID、取り込んだフォントを 1 つのファイル (zip) に保存します。" +
             "機種変更や再インストールのときに、画像も含めてそのまま戻せます。",
         color = GaugeColors.SubText, fontSize = 12.sp,
     )
@@ -293,7 +293,8 @@ private fun BackupSection(vm: MainViewModel) {
                     Text(
                         "ページ ${b.pageCount} (メーター ${b.gaugeCount})\n" +
                             "カスタム PID ${b.customPidCount}\n" +
-                            "背景画像 ${b.imageCount}" +
+                            "背景画像 ${b.imageCount}\n" +
+                            "フォント ${b.fontCount}" +
                             (if (b.manifest.exportedAt.isNotBlank()) "\n作成日時 ${b.manifest.exportedAt}" else "") +
                             (if (b.manifest.appVersion.isNotBlank()) "  (バージョン ${b.manifest.appVersion})" else ""),
                     )

@@ -21,6 +21,8 @@ import com.obdmeter.data.Dashboard
 import com.obdmeter.data.Defaults
 import com.obdmeter.data.GaugeConfig
 import com.obdmeter.data.GaugeImages
+import com.obdmeter.data.FontEntry
+import com.obdmeter.data.GaugeFonts
 import com.obdmeter.data.GaugeStyle
 import com.obdmeter.data.Layout
 import com.obdmeter.data.Repository
@@ -100,9 +102,11 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                     exportedAt = SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.JAPAN).format(Date()),
                     dashboards = repo.dashboards.first(),
                     customPids = repo.customPids.first(),
+                    fonts = repo.fonts.first(),
                 )
                 val images = BackupFiles.export(app, uri, manifest)
-                "エクスポートしました (ページ ${manifest.dashboards.size}、カスタム PID ${manifest.customPids.size}、画像 $images)"
+                "エクスポートしました (ページ ${manifest.dashboards.size}、カスタム PID ${manifest.customPids.size}、" +
+                    "画像 $images、フォント ${manifest.fonts.size})"
             }.onSuccess { _backupMessage.value = it }
                 .onFailure { _backupMessage.value = "エクスポートに失敗しました: ${it.message}" }
             _backupBusy.value = false
@@ -128,6 +132,13 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             _backupBusy.value = true
             runCatching {
                 val rename = BackupFiles.saveImages(getApplication(), backup)
+                // フォントはライブラリに追加する (置き換えのときも既存のフォントは残す)
+                val fontRename = fontLock.withLock {
+                    val library = repo.fonts.first()
+                    val (map, added) = BackupFiles.saveFonts(getApplication(), backup, library)
+                    if (added.isNotEmpty()) repo.saveFonts(library + added)
+                    map
+                }
                 var seq = System.currentTimeMillis()
                 // 編集中の保存と競合しないよう、両方のロックを取ってから書く
                 editLock.withLock {
@@ -139,6 +150,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                             imageRename = rename,
                             mode = mode,
                             newId = { seq++ },
+                            fontRename = fontRename,
                         )
                         repo.saveCustomPids(result.customPids)
                         repo.saveDashboards(result.dashboards)
@@ -147,12 +159,64 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 val missing = BackupLogic.referencedImages(backup.manifest.dashboards).size - rename.size
                 buildString {
                     append(if (mode == ImportMode.REPLACE) "置き換えました" else "追加しました")
-                    append(" (ページ ${backup.pageCount}、カスタム PID ${backup.customPidCount}、画像 ${rename.size})")
+                    append(" (ページ ${backup.pageCount}、カスタム PID ${backup.customPidCount}、画像 ${rename.size}、フォント ${fontRename.size})")
                     if (missing > 0) append("。画像 $missing 枚はファイルに含まれていなかったため外しました")
                 }
             }.onSuccess { _backupMessage.value = it }
                 .onFailure { _backupMessage.value = "インポートに失敗しました: ${it.message}" }
             _backupBusy.value = false
+        }
+    }
+
+    // ---- フォント ----
+
+    val fonts: StateFlow<List<FontEntry>> =
+        repo.fonts.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+    private val fontLock = Mutex()
+
+    /** フォントファイルを取り込み、ライブラリに追加する。結果 (id かエラー) を [onResult] に返す */
+    fun importFont(uri: Uri, onResult: (Result<FontEntry>) -> Unit) {
+        viewModelScope.launch {
+            val r = runCatching {
+                fontLock.withLock {
+                    val current = repo.fonts.first()
+                    val entry = GaugeFonts.import(getApplication(), uri, current)
+                    if (current.none { it.id == entry.id }) repo.saveFonts(current + entry)
+                    entry
+                }
+            }
+            onResult(r)
+        }
+    }
+
+    fun renameFont(id: String, name: String) {
+        viewModelScope.launch {
+            fontLock.withLock {
+                repo.saveFonts(repo.fonts.first().map { if (it.id == id) it.copy(name = name) else it })
+            }
+        }
+    }
+
+    /** フォントを削除する。使っていたメーターは既定のフォントに戻す */
+    fun deleteFont(id: String) {
+        viewModelScope.launch {
+            fontLock.withLock {
+                val list = repo.fonts.first()
+                list.firstOrNull { it.id == id }?.let { GaugeFonts.delete(getApplication(), it) }
+                repo.saveFonts(list.filterNot { it.id == id })
+            }
+        }
+        editDashboards { pages ->
+            pages.map { d ->
+                d.copy(gauges = d.gauges.map { g ->
+                    if (g.design.valueFont == id || g.design.labelFont == id) {
+                        g.copy(design = g.design.copy(
+                            valueFont = g.design.valueFont.takeIf { it != id },
+                            labelFont = g.design.labelFont.takeIf { it != id },
+                        ))
+                    } else g
+                })
+            }
         }
     }
 

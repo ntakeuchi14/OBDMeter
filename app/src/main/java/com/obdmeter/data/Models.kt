@@ -142,6 +142,12 @@ data class GaugeDesign(
     val showName: Boolean = true,
     val showUnit: Boolean = true,
 
+    // ---- フォント (取り込んだフォントの id。null = 既定) ----
+    /** 数値 (現在値・最大値) のフォント。既定は等幅 */
+    val valueFont: String? = null,
+    /** 文字 (目盛りの数字・名前・単位) のフォント */
+    val labelFont: String? = null,
+
     // ---- 背景 ----
     /** アプリ内に保存した背景画像のファイル名。null = 画像なし */
     val backgroundImage: String? = null,

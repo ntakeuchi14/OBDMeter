@@ -4,6 +4,15 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material3.RadioButton
+import androidx.compose.ui.text.font.FontFamily
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.obdmeter.data.FontEntry
+import com.obdmeter.data.GaugeFonts
+import com.obdmeter.ui.gauges.LocalFontLibrary
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -74,6 +83,7 @@ import kotlin.math.roundToInt
  */
 @Composable
 fun GaugeSettingsDialog(
+    vm: MainViewModel,
     gauge: GaugeConfig,
     catalog: PidCatalog,
     supported: Set<Int>?,
@@ -101,6 +111,8 @@ fun GaugeSettingsDialog(
     var tab by remember { mutableIntStateOf(0) }
     var showPicker by remember { mutableStateOf(false) }
     var showFallbackPicker by remember { mutableStateOf(false) }
+    /** フォント選択ダイアログの対象 ("value" / "label")。null = 閉じる */
+    var fontPickerFor by remember { mutableStateOf<String?>(null) }
     var confirmDelete by remember { mutableStateOf(false) }
 
     val def = draft.resolvedDef(catalog)
@@ -158,7 +170,7 @@ fun GaugeSettingsDialog(
                                 0 -> BasicTab(draft, catalog, ::update, { draft = it }, { showPicker = true },
                                     { showFallbackPicker = true }, onBringToFront) { confirmDelete = true }
                                 1 -> AngleTab(draft, ::update)
-                                2 -> ColorTab(draft, ::update)
+                                2 -> ColorTab(draft, ::update) { target -> fontPickerFor = target }
                                 3 -> ImageTab(draft, ::update)
                             }
                             Spacer(Modifier.height(24.dp))
@@ -185,6 +197,18 @@ fun GaugeSettingsDialog(
             }
         }
 
+        fontPickerFor?.let { target ->
+            FontPickerDialog(
+                vm = vm,
+                title = if (target == "value") "数値のフォント" else "文字のフォント",
+                selected = if (target == "value") draft.design.valueFont else draft.design.labelFont,
+                onPick = { id ->
+                    update { if (target == "value") it.copy(valueFont = id) else it.copy(labelFont = id) }
+                    fontPickerFor = null
+                },
+                onDismiss = { fontPickerFor = null },
+            )
+        }
         if (showFallbackPicker) {
             ItemPickerDialog(
                 catalog = catalog,
@@ -401,8 +425,15 @@ private fun AngleTab(g: GaugeConfig, update: ((GaugeDesign) -> GaugeDesign) -> U
 // ---------------------------------------------------------------------------
 
 @Composable
-private fun ColorTab(g: GaugeConfig, update: ((GaugeDesign) -> GaugeDesign) -> Unit) {
+private fun ColorTab(g: GaugeConfig, update: ((GaugeDesign) -> GaugeDesign) -> Unit, onPickFont: (String) -> Unit) {
     val d = g.design
+    val lib = LocalFontLibrary.current
+
+    Head("フォント")
+    Hint("取り込んだフォントは、ほかのメーターでもそのまま選べます")
+    FontLine("数値 (現在値・最大値)", d.valueFont?.let { lib[it]?.name ?: "(削除されたフォント)" } ?: "既定 (等幅)") { onPickFont("value") }
+    FontLine("文字 (目盛りの数字・名前・単位)", d.labelFont?.let { lib[it]?.name ?: "(削除されたフォント)" } ?: "既定") { onPickFont("label") }
+
     ColorLine("メーターの色 (現在値の弧・バー)", d.color, GaugeColors.Accent) { c -> update { it.copy(color = c) } }
 
     Head("外周リング")
@@ -597,3 +628,119 @@ private val EXTRA_COLORS: List<Pair<String, Long>> = listOf(
     "赤みのオレンジ" to 0xFFFF5A36,
     "半透明の赤" to 0x66FF5A36L,
 )
+
+
+@Composable
+private fun FontLine(label: String, current: String, onClick: () -> Unit) {
+    Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+        Column(Modifier.weight(1f)) {
+            Text(label)
+            Text(current, color = GaugeColors.SubText, fontSize = 12.sp)
+        }
+        OutlinedButton(onClick = onClick) { Text("変更") }
+    }
+}
+
+/**
+ * フォントの選択。ライブラリのフォントを、そのフォントで描いた見本付きで一覧する。
+ * 「フォントを追加」で .ttf / .otf を取り込むと、ライブラリに入り、以後どのメーターでも選べる。
+ */
+@Composable
+private fun FontPickerDialog(
+    vm: MainViewModel,
+    title: String,
+    selected: String?,
+    onPick: (String?) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val fonts by vm.fonts.collectAsStateWithLifecycle()
+    val context = LocalContext.current
+    var busy by remember { mutableStateOf(false) }
+    var error by remember { mutableStateOf<String?>(null) }
+    var renaming by remember { mutableStateOf<FontEntry?>(null) }
+    var deleting by remember { mutableStateOf<FontEntry?>(null) }
+
+    val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri == null) return@rememberLauncherForActivityResult
+        busy = true
+        vm.importFont(uri) { r ->
+            busy = false
+            r.onSuccess { entry -> error = null; onPick(entry.id) }
+                .onFailure { error = it.message ?: "読み込めませんでした" }
+        }
+    }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(title) },
+        text = {
+            Column(Modifier.verticalScroll(rememberScrollState())) {
+                FontRow("既定", null, selected == null, sample = "0123 回転数") { onPick(null) }
+                fonts.forEach { f ->
+                    val family = remember(f.id) { GaugeFonts.family(context, f) }
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Box(Modifier.weight(1f)) {
+                            FontRow(f.name, family, selected == f.id, sample = "0123 回転数") { onPick(f.id) }
+                        }
+                        IconButton(onClick = { renaming = f }) { Icon(Icons.Default.Edit, "名前変更") }
+                        IconButton(onClick = { deleting = f }) { Icon(Icons.Default.Delete, "削除") }
+                    }
+                }
+                Spacer(Modifier.height(8.dp))
+                FilledTonalButton(
+                    enabled = !busy,
+                    onClick = {
+                        picker.launch(arrayOf("font/ttf", "font/otf", "font/sfnt", "application/x-font-ttf",
+                            "application/x-font-otf", "application/font-sfnt", "application/vnd.ms-opentype",
+                            "application/octet-stream", "*/*"))
+                    },
+                ) { Text(if (busy) "読み込み中…" else "フォントを追加 (.ttf / .otf)") }
+                error?.let { Text("⚠ $it", color = GaugeColors.Warn, fontSize = 13.sp) }
+                Hint("日本語を表示する場合は、日本語を含むフォントを選んでください。含まれない文字は既定のフォントで表示されます。")
+            }
+        },
+        confirmButton = { TextButton(onClick = onDismiss) { Text("閉じる") } },
+    )
+
+    renaming?.let { f ->
+        var name by remember(f.id) { mutableStateOf(f.name) }
+        AlertDialog(
+            onDismissRequest = { renaming = null },
+            title = { Text("フォント名を変更") },
+            text = { OutlinedTextField(name, { name = it }, singleLine = true) },
+            confirmButton = {
+                TextButton(onClick = { vm.renameFont(f.id, name.trim().ifEmpty { f.name }); renaming = null }) { Text("OK") }
+            },
+            dismissButton = { TextButton(onClick = { renaming = null }) { Text("キャンセル") } },
+        )
+    }
+    deleting?.let { f ->
+        AlertDialog(
+            onDismissRequest = { deleting = null },
+            title = { Text("「${f.name}」を削除しますか？") },
+            text = { Text("このフォントを使っているメーターは既定のフォントに戻ります。") },
+            confirmButton = {
+                TextButton(onClick = {
+                    if (selected == f.id) onPick(null)
+                    vm.deleteFont(f.id)
+                    deleting = null
+                }) { Text("削除", color = GaugeColors.Warn) }
+            },
+            dismissButton = { TextButton(onClick = { deleting = null }) { Text("キャンセル") } },
+        )
+    }
+}
+
+@Composable
+private fun FontRow(name: String, family: FontFamily?, selected: Boolean, sample: String, onClick: () -> Unit) {
+    Row(
+        Modifier.fillMaxWidth().clickable(onClick = onClick).padding(vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        RadioButton(selected = selected, onClick = onClick)
+        Column {
+            Text(name, fontSize = 13.sp, color = GaugeColors.SubText)
+            Text(sample, fontSize = 22.sp, fontFamily = family)
+        }
+    }
+}

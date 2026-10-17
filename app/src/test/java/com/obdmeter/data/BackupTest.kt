@@ -121,6 +121,32 @@ class BackupTest {
     }
 
     @Test
+    fun fontReferencesAreRemappedOrDropped() {
+        val font = FontEntry(id = "font_old1", name = "Digital", file = "font_old1.ttf", sha = "abc")
+        val g = designed.copy(design = designed.design.copy(valueFont = "font_old1", labelFont = "font_missing"))
+        val m = BackupManifest(dashboards = listOf(page(1, "P", g)), customPids = listOf(oilTemp), fonts = listOf(font))
+        // マニフェストにフォントが残ること
+        assertEquals(listOf(font), BackupLogic.decode(BackupLogic.encode(m)).fonts)
+        val r = BackupLogic.apply(
+            current = emptyList(), currentPids = emptyList(), incoming = m,
+            imageRename = emptyMap(), mode = ImportMode.REPLACE, newId = { 0 },
+            fontRename = mapOf("font_old1" to "font_new1"),
+        )
+        val d = r.dashboards.single().gauges.single().design
+        assertEquals("font_new1", d.valueFont)
+        assertNull(d.labelFont) // ファイルに含まれていないフォントは既定に戻す
+    }
+
+    @Test
+    fun safeFontNames() {
+        assertTrue(BackupLogic.SAFE_FONT_NAME.matches("font_1a2b3c4d5e6f.ttf"))
+        assertTrue(BackupLogic.SAFE_FONT_NAME.matches("font_x.otf"))
+        for (bad in listOf("../font.ttf", "a/b.ttf", "font.woff", "font.ttf.exe")) {
+            assertTrue("should reject $bad", !BackupLogic.SAFE_FONT_NAME.matches(bad))
+        }
+    }
+
+    @Test
     fun safeImageNames() {
         assertTrue(BackupLogic.SAFE_IMAGE_NAME.matches("bg_1a2b3c.png"))
         for (bad in listOf("../x.png", "a/b.png", "x.jpg", "", "..png/..")) {

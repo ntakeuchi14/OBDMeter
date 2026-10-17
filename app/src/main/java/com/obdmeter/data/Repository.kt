@@ -33,6 +33,7 @@ class Repository(private val context: Context) {
         val KEEP_SCREEN_ON = booleanPreferencesKey("keep_screen_on")
         val DASHBOARDS = stringPreferencesKey("dashboards_json")
         val CUSTOM_PIDS = stringPreferencesKey("custom_pids_json")
+        val FONTS = stringPreferencesKey("fonts_json")
     }
 
     private val json = Json { ignoreUnknownKeys = true; encodeDefaults = true }
@@ -51,6 +52,17 @@ class Repository(private val context: Context) {
         p[Keys.CUSTOM_PIDS]
             ?.let { runCatching { json.decodeFromString<List<CustomPid>>(it) }.getOrNull() }
             .orEmpty()
+    }
+
+    /** 取り込んだフォントの一覧 */
+    val fonts: Flow<List<FontEntry>> = context.dataStore.data.map { p ->
+        p[Keys.FONTS]
+            ?.let { runCatching { json.decodeFromString<List<FontEntry>>(it) }.getOrNull() }
+            .orEmpty()
+    }
+
+    suspend fun saveFonts(list: List<FontEntry>) {
+        context.dataStore.edit { it[Keys.FONTS] = json.encodeToString(list) }
     }
 
     suspend fun saveCustomPids(list: List<CustomPid>) {

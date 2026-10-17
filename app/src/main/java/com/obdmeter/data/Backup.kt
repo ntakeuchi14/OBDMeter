@@ -24,6 +24,8 @@ data class BackupManifest(
     val exportedAt: String = "",
     val dashboards: List<Dashboard> = emptyList(),
     val customPids: List<CustomPid> = emptyList(),
+    /** 取り込んだフォントの一覧 (ファイルは zip の fonts/ に入る) */
+    val fonts: List<FontEntry> = emptyList(),
 ) {
     companion object {
         const val FORMAT = "obdmeter-backup"
@@ -43,7 +45,10 @@ enum class ImportMode {
 class LoadedBackup(
     val manifest: BackupManifest,
     val images: Map<String, ByteArray>,
+    /** フォントファイル (ファイル名 → 中身) */
+    val fonts: Map<String, ByteArray> = emptyMap(),
 ) {
+    val fontCount get() = manifest.fonts.count { it.file in fonts }
     val pageCount get() = manifest.dashboards.size
     val gaugeCount get() = manifest.dashboards.sumOf { it.gauges.size }
     val customPidCount get() = manifest.customPids.size
@@ -61,6 +66,9 @@ object BackupLogic {
 
     /** 背景画像のファイル名として受け付ける形 (zip の中のパス攻撃を防ぐ) */
     val SAFE_IMAGE_NAME = Regex("^[A-Za-z0-9_.-]{1,80}\\.png$")
+
+    /** フォントのファイル名として受け付ける形 */
+    val SAFE_FONT_NAME = Regex("^[A-Za-z0-9_-]{1,60}\\.(ttf|otf)$")
 
     fun encode(manifest: BackupManifest): String = json.encodeToString(manifest)
 
@@ -94,11 +102,15 @@ object BackupLogic {
         imageRename: Map<String, String>,
         mode: ImportMode,
         newId: () -> Long,
+        fontRename: Map<String, String> = emptyMap(),
     ): MergeResult {
-        // 画像の参照を付け替える (取り込めなかった画像は外す)
+        // 画像・フォントの参照を付け替える (取り込めなかったものは外して既定に戻す)
         fun fixImages(d: Dashboard) = d.copy(gauges = d.gauges.map { g ->
-            val img = g.design.backgroundImage ?: return@map g
-            g.copy(design = g.design.copy(backgroundImage = imageRename[img]))
+            g.copy(design = g.design.copy(
+                backgroundImage = g.design.backgroundImage?.let { imageRename[it] },
+                valueFont = g.design.valueFont?.let { fontRename[it] },
+                labelFont = g.design.labelFont?.let { fontRename[it] },
+            ))
         })
 
         if (mode == ImportMode.REPLACE) {

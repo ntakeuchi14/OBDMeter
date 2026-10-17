@@ -92,6 +92,8 @@ fun GaugeDesign.toLook(def: PidDef, style: GaugeStyle): GaugeLook {
         showUnit = showUnit,
         image = backgroundImage,
         imageScale = imageScale.coerceIn(0.3f, 2f),
+        valueFont = valueFont,
+        labelFont = labelFont,
         showCard = showCard,
     )
 }

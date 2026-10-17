@@ -25,6 +25,7 @@ import androidx.compose.ui.Modifier
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.obdmeter.session.ConnectionState
 import com.obdmeter.ui.gauges.GaugeColors
+import com.obdmeter.ui.gauges.LocalFontLibrary
 
 enum class Screen { DASHBOARD, EDIT, SETTINGS, LOG, CUSTOM_PIDS }
 
@@ -81,7 +82,11 @@ fun App(vm: MainViewModel, onKeepScreenOn: (Boolean) -> Unit) {
     BackHandler(enabled = screen != Screen.DASHBOARD) { back() }
 
     // 文字・アイコンの既定色を明るい色にする (指定しないと黒になり、暗い背景で見えない)
-    CompositionLocalProvider(LocalContentColor provides GaugeColors.Text) {
+    val fontLibrary by vm.fonts.collectAsStateWithLifecycle()
+    CompositionLocalProvider(
+        LocalContentColor provides GaugeColors.Text,
+        LocalFontLibrary provides fontLibrary.associateBy { it.id },
+    ) {
     Box(
         Modifier
             .fillMaxSize()

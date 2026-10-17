@@ -14,9 +14,11 @@ import java.util.zip.ZipOutputStream
 object BackupFiles {
     private const val MANIFEST = "manifest.json"
     private const val IMAGE_DIR = "images/"
+    private const val FONT_DIR = "fonts/"
+    private const val MAX_FONT = 40 * 1024 * 1024
     private const val MAX_MANIFEST = 2 * 1024 * 1024
     private const val MAX_IMAGE = 12 * 1024 * 1024
-    private const val MAX_TOTAL = 80 * 1024 * 1024
+    private const val MAX_TOTAL = 240 * 1024 * 1024
 
     /** 書き出した画像の数を返す */
     suspend fun export(context: Context, uri: Uri, manifest: BackupManifest): Int = withContext(Dispatchers.IO) {
@@ -35,6 +37,13 @@ object BackupFiles {
                 zip.closeEntry()
                 images++
             }
+            for (font in manifest.fonts) {
+                val f = GaugeFonts.file(context, font)
+                if (!f.exists() || !BackupLogic.SAFE_FONT_NAME.matches(font.file)) continue
+                zip.putNextEntry(ZipEntry(FONT_DIR + font.file))
+                f.inputStream().use { it.copyTo(zip) }
+                zip.closeEntry()
+            }
         }
         images
     }
@@ -44,6 +53,7 @@ object BackupFiles {
             ?: throw IllegalStateException("ファイルを開けませんでした")
         var manifestText: String? = null
         val images = mutableMapOf<String, ByteArray>()
+        val fonts = mutableMapOf<String, ByteArray>()
         var total = 0L
         ZipInputStream(input.buffered()).use { zip ->
             while (true) {
@@ -61,6 +71,15 @@ object BackupFiles {
                             images[name] = bytes
                         }
                     }
+                    e.name.startsWith(FONT_DIR) -> {
+                        val name = e.name.removePrefix(FONT_DIR)
+                        if (BackupLogic.SAFE_FONT_NAME.matches(name)) {
+                            val bytes = readLimited(zip, MAX_FONT)
+                            total += bytes.size
+                            if (total > MAX_TOTAL) throw IllegalArgumentException("ファイルが大きすぎます")
+                            fonts[name] = bytes
+                        }
+                    }
                 }
                 zip.closeEntry()
             }
@@ -68,7 +87,26 @@ object BackupFiles {
         val text = manifestText ?: throw IllegalArgumentException(
             "OBD Meter の設定ファイルではありません (manifest.json がありません)"
         )
-        LoadedBackup(BackupLogic.decode(text), images)
+        LoadedBackup(BackupLogic.decode(text), images, fonts)
+    }
+
+    /**
+     * フォントを端末のライブラリに保存する。同じ内容のフォントが既にあればそれを使う。
+     * @return 「ファイル内のフォント id → 端末の id」と、ライブラリに新しく加わったフォント
+     */
+    suspend fun saveFonts(context: Context, backup: LoadedBackup, library: List<FontEntry>): Pair<Map<String, String>, List<FontEntry>> {
+        val rename = mutableMapOf<String, String>()
+        val added = mutableListOf<FontEntry>()
+        for (entry in backup.manifest.fonts) {
+            val bytes = backup.fonts[entry.file] ?: continue
+            val ext = entry.file.substringAfterLast('.')
+            val saved = runCatching { GaugeFonts.save(context, bytes, "${entry.name}.$ext", library + added) }.getOrNull() ?: continue
+            rename[entry.id] = saved.id
+            if (library.none { it.id == saved.id } && added.none { it.id == saved.id }) {
+                added += saved.copy(name = entry.name)
+            }
+        }
+        return rename to added
     }
 
     /** 画像を端末に保存し、「ファイル内の名前 → 保存した名前」を返す */

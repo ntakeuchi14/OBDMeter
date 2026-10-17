@@ -197,6 +197,7 @@ fun DashboardScreen(vm: MainViewModel, onNavigate: (Screen) -> Unit, onCreateCus
     val gaugeInSettings = current?.gauges?.firstOrNull { it.id == settingsFor }
     if (current != null && gaugeInSettings != null) {
         GaugeSettingsDialog(
+            vm = vm,
             gauge = gaugeInSettings,
             catalog = catalog,
             supported = supported,
