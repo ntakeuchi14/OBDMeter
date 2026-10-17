@@ -44,13 +44,19 @@ class BmwFastProtocol(
         return "K+DCAN / BMW-FAST → ECU 0x%02X (PID00=%s)".format(options.targetAddress, Hex.of(data))
     }
 
+    override var lastFailure: String? = null
+        private set
+
     override fun readPid(pid: Int): IntArray? {
-        val resp = request(intArrayOf(0x01, pid)) ?: return null
+        val resp = request(intArrayOf(0x01, pid)) ?: run { lastFailure = "応答なし"; return null }
         if (resp.size >= 2 && resp[0] == 0x41 && resp[1] == pid) {
+            lastFailure = null
             return resp.copyOfRange(2, resp.size)
         }
-        if (resp.isNotEmpty() && resp[0] == 0x7F) {
-            logger.log(CommLogger.Direction.INFO, "否定応答: ${Hex.of(resp)} (NRC=%02X)".format(resp.getOrElse(2) { 0 }))
+        lastFailure = if (resp.isNotEmpty() && resp[0] == 0x7F) {
+            "否定応答 ${Hex.of(resp)} (NRC=%02X)".format(resp.getOrElse(2) { 0 })
+        } else {
+            "想定外の応答 ${Hex.of(resp)}"
         }
         return null
     }

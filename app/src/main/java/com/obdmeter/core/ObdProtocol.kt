@@ -15,6 +15,9 @@ interface ObdProtocol {
      */
     fun readPid(pid: Int): IntArray?
 
+    /** 直近の readPid が失敗した理由 (ログ表示用)。 */
+    val lastFailure: String? get() = null
+
     /** アダプター自身が測るバッテリー電圧 (ELM327 の ATRV)。非対応なら null。 */
     fun readAdapterVoltage(): Double? = null
 
@@ -27,11 +30,7 @@ interface ObdProtocol {
         while (base <= 0xA0) {
             val data = readPid(base) ?: break
             if (data.size < 4) break
-            for (i in 0 until 32) {
-                val byte = data[i / 8]
-                val bit = 7 - (i % 8)
-                if ((byte shr bit) and 1 == 1) result += base + i + 1
-            }
+            result += decodeBitmap(base, data)
             // 次のブロック (base+0x20) に対応していなければ終了
             if (!result.contains(base + 0x20)) break
             base += 0x20
@@ -56,6 +55,15 @@ internal fun Transport.readExact(n: Int, timeoutMs: Int): ByteArray? {
         if (r <= 0) continue
         System.arraycopy(tmp, 0, out, got, r)
         got += r
+    }
+    return out
+}
+
+/** PID 00/20/40... の 4 バイトのビットマップを PID 番号の集合に変換する。 */
+fun decodeBitmap(base: Int, data: IntArray): Set<Int> {
+    val out = mutableSetOf<Int>()
+    for (i in 0 until 32) {
+        if ((data[i / 8] shr (7 - i % 8)) and 1 == 1) out += base + i + 1
     }
     return out
 }

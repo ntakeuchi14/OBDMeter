@@ -109,11 +109,19 @@ class ObdSession(
             var deadCycles = 0
             var count = 0
             var windowStart = System.currentTimeMillis()
+            var lastPublish = 0L
             while (currentCoroutineContext().isActive) {
                 val defs = activePids
                 if (defs.isEmpty()) { delay(100); continue }
                 val r = reader.poll(defs, values)
-                _values.value = HashMap(values)
+                // 画面への反映は 10 回/秒まで (それ以上は描画負荷が増えるだけ)
+                val t = System.currentTimeMillis()
+                if (t - lastPublish >= 100) {
+                    _values.value = HashMap(values)
+                    lastPublish = t
+                }
+                // 「非対応」から実際に読めた項目へ昇格した場合に画面へ反映
+                if (reader.supported != _supported.value) _supported.value = reader.supported
                 count += r.ok + r.failed
                 deadCycles = if (r.ok == 0 && r.failed > 0) deadCycles + 1 else 0
                 if (deadCycles >= 5) throw IllegalStateException("車両からの応答が途絶えました (イグニッション OFF?)")

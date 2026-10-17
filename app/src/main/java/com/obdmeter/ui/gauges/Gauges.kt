@@ -1,5 +1,6 @@
 package com.obdmeter.ui.gauges
 
+import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
@@ -10,6 +11,12 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
@@ -27,6 +34,7 @@ import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.unit.dp
 import com.obdmeter.core.PidDef
 import com.obdmeter.data.GaugeStyle
+import kotlinx.coroutines.delay
 import kotlin.math.abs
 import kotlin.math.cos
 import kotlin.math.floor
@@ -64,13 +72,43 @@ fun GaugeCard(
             .border(1.dp, GaugeColors.CardBorder, RoundedCornerShape(14.dp))
             .padding(8.dp)
     ) {
-        val v = if (unsupported) null else value
+        val v = rememberDisplayValue(def, if (unsupported) null else value)
         when (style) {
             GaugeStyle.ANALOG -> AnalogGauge(def, v, unsupported, Modifier.fillMaxSize())
             GaugeStyle.BAR -> BarGauge(def, v, unsupported, Modifier.fillMaxSize())
             GaugeStyle.DIGITAL -> DigitalGauge(def, v, unsupported, Modifier.fillMaxSize())
         }
     }
+}
+
+/** 表示の更新間隔。通信は 100 回/秒近く値が来るが、人が読める速さに間引く。 */
+private const val DISPLAY_INTERVAL_MS = 200L
+
+/**
+ * 生の値をそのまま描くと、アイドリングの ±数 rpm の揺れで数字と針が震えて見える。
+ * 指数移動平均でならし、[DISPLAY_INTERVAL_MS] ごとに表示用の値を更新し、
+ * さらに [PidDef.displayStep] 単位 (回転数なら 10rpm) に丸める。
+ */
+@Composable
+private fun rememberDisplayValue(def: PidDef, value: Double?): Double? {
+    val latest by rememberUpdatedState(value)
+    var shown by remember(def.key) { mutableStateOf(value) }
+    LaunchedEffect(def.key) {
+        var ema = Double.NaN
+        while (true) {
+            val x = latest
+            if (x == null) {
+                ema = Double.NaN
+                shown = null
+            } else {
+                ema = if (ema.isNaN()) x else ema + (x - ema) * 0.5
+                val step = def.displayStep
+                shown = if (step > 0) Math.round(ema / step) * step else ema
+            }
+            delay(DISPLAY_INTERVAL_MS)
+        }
+    }
+    return shown
 }
 
 private fun isWarn(def: PidDef, v: Double?): Boolean =
@@ -81,8 +119,11 @@ private fun fraction(def: PidDef, v: Double): Float =
 
 @Composable
 private fun animated(def: PidDef, value: Double?): Float {
-    val target = value?.let { fraction(def, it) } ?: 0f
-    return animateFloatAsState(target, tween(180), label = "gauge").value
+    // 値が一瞬途切れても針を 0 に戻さず、最後の位置で止めておく (ちらつき防止)
+    val last = remember { floatArrayOf(0f) }
+    val target = value?.let { fraction(def, it) }?.also { last[0] = it } ?: last[0]
+    // 表示値の更新間隔と同じ長さで等速に動かし、次の値へ途切れなくつなぐ
+    return animateFloatAsState(target, tween(DISPLAY_INTERVAL_MS.toInt(), easing = LinearEasing), label = "gauge").value
 }
 
 // ---------------------------------------------------------------------------

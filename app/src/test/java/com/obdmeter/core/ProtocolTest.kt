@@ -164,6 +164,71 @@ class ProtocolTest {
     }
 
     @Test
+    fun elmParsesHeaderLines() {
+        assertArrayEquals(intArrayOf(0x1A, 0xF8), Elm327Protocol.parseMode01(listOf("7E8 04 41 0C 1A F8"), 0x0C))
+        assertArrayEquals(intArrayOf(0x32), Elm327Protocol.parseMode01(listOf("18DAF110 03 41 0D 32"), 0x0D))
+    }
+
+    @Test
+    fun supportedPidsMergeAllEcus() {
+        // EGS (先に返す) は回転数だけ、DME は車速・水温も対応、という状況
+        val fake = FakeElm(mapOf(
+            "0100" to "4100 00100000\r4100 081C0000", // EGS: 0C / DME: 05,0C,0D,0E
+            "0100 1" to "410000100000",
+        ))
+        val s = Elm327Protocol(fake).readSupportedPids()
+        assertTrue(s.containsAll(listOf(0x05, 0x0C, 0x0D)))
+    }
+
+    @Test
+    fun readerHoldsValueOnTransientFailure() {
+        var fail = false
+        val proto = object : ObdProtocol {
+            override fun initialize() = ""
+            override fun readPid(pid: Int): IntArray? = if (fail) null else intArrayOf(0x0F, 0xA0)
+            override fun close() {}
+        }
+        val reader = ObdReader(proto)
+        val values = mutableMapOf<String, Double>()
+        val rpm = listOf(Pids.get("RPM")!!)
+        reader.poll(rpm, values)
+        assertEquals(1000.0, values["RPM"]!!, 0.01)
+        fail = true
+        reader.poll(rpm, values); reader.poll(rpm, values)
+        assertEquals(1000.0, values["RPM"]!!, 0.01) // 2 回失敗までは保持
+        reader.poll(rpm, values)
+        assertNull(values["RPM"]) // 3 回連続で消える
+    }
+
+    @Test
+    fun readerRetriesPidMarkedUnsupported() {
+        val proto = object : ObdProtocol {
+            override fun initialize() = ""
+            override fun readPid(pid: Int): IntArray? = when (pid) {
+                0x00 -> intArrayOf(0x00, 0x10, 0x00, 0x00) // 0C だけ対応と申告
+                0x0D -> intArrayOf(80)                      // でも実は車速も読める
+                else -> intArrayOf(0x0F, 0xA0)
+            }
+            override fun close() {}
+        }
+        val reader = ObdReader(proto)
+        reader.detectSupported()
+        assertTrue(!reader.supported!!.contains(0x0D))
+        val values = mutableMapOf<String, Double>()
+        reader.poll(listOf(Pids.get("SPEED")!!), values)
+        assertEquals(80.0, values["SPEED"]!!, 0.01)
+        assertTrue(reader.supported!!.contains(0x0D))
+    }
+
+    @Test
+    fun voltageParsing() {
+        assertEquals(14.1, Elm327Protocol.parseVoltage(listOf("14.1V"))!!, 0.001)
+        assertEquals(12.6, Elm327Protocol.parseVoltage(listOf("12.6 V"))!!, 0.001)
+        assertNull(Elm327Protocol.parseVoltage(listOf("0.0V")))
+        assertNull(Elm327Protocol.parseVoltage(listOf("410C0B40")))
+    }
+
+    @Test
     fun pidFormulas() {
         assertEquals(90.0, Pids.get("COOLANT")!!.decode(intArrayOf(130)), 0.001)
         assertEquals(-3.125, Pids.get("STFT1")!!.decode(intArrayOf(124)), 0.001)

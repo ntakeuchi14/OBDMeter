@@ -50,27 +50,54 @@ class Elm327Protocol(
         return "$id / $desc (ATDPN=$dp)"
     }
 
+    override var lastFailure: String? = null
+        private set
+
     override fun readPid(pid: Int): IntArray? {
         val base = "01%02X".format(pid)
         if (hintSupported) {
             val lines = command("$base 1")
             val data = parseMode01(lines, pid)
-            if (data != null) return data
+            if (data != null) return ok(data)
             if (lines.any { it.trim() == "?" }) {
                 // 応答数指定に非対応なアダプター
                 logger.log(CommLogger.Direction.INFO, "応答数ヒントに非対応のため無効化")
                 hintSupported = false
             } else {
-                return null
+                return fail(lines)
             }
         }
-        return parseMode01(command(base), pid)
+        val lines = command(base)
+        return parseMode01(lines, pid)?.let(::ok) ?: fail(lines)
     }
 
-    override fun readAdapterVoltage(): Double? {
-        val line = command("ATRV").firstOrNull { it.any(Char::isDigit) } ?: return null
-        return line.filter { it.isDigit() || it == '.' }.toDoubleOrNull()
+    private fun ok(data: IntArray): IntArray { lastFailure = null; return data }
+
+    private fun fail(lines: List<String>): IntArray? {
+        lastFailure = checkError(lines) ?: lines.joinToString("|").ifEmpty { "応答なし" }
+        return null
     }
+
+    /**
+     * 対応 PID 一覧は複数 ECU (DME・EGS など) が返すので、応答数ヒントを付けずに全 ECU 分を受け取り合算する。
+     * ヒント付きだと最初に返した 1 台分しか取れず、本当は読める項目を「非対応」と誤判定してしまう。
+     */
+    override fun readSupportedPids(): Set<Int> {
+        val result = mutableSetOf<Int>()
+        var base = 0x00
+        while (base <= 0xA0) {
+            val lines = command("01%02X".format(base), 4000)
+            val bitmaps = parseMode01All(lines, base).filter { it.size >= 4 }
+            if (bitmaps.isEmpty()) break
+            logger.log(CommLogger.Direction.INFO, "PID %02X: %d 台の ECU が応答".format(base, bitmaps.size))
+            for (data in bitmaps) result += decodeBitmap(base, data)
+            if (!result.contains(base + 0x20)) break
+            base += 0x20
+        }
+        return result
+    }
+
+    override fun readAdapterVoltage(): Double? = parseVoltage(command("ATRV"))
 
     override fun close() {
         runCatching { transport.close() }
@@ -86,7 +113,14 @@ class Elm327Protocol(
             .filter { it.isNotEmpty() && !it.equals(cmd, ignoreCase = true) }
     }
 
+    /** 前回タイムアウトした場合、遅れて届いた応答が次の応答に混ざらないよう捨てる */
+    private var needsResync = false
+
     private fun sendRaw(cmd: String, timeoutMs: Int): String {
+        if (needsResync) {
+            transport.purge()
+            needsResync = false
+        }
         logger.log(CommLogger.Direction.TX, cmd.ifEmpty { "<CR>" })
         transport.write((cmd + "\r").toByteArray(Charsets.US_ASCII))
         val sb = StringBuilder()
@@ -96,6 +130,7 @@ class Elm327Protocol(
             val remaining = (deadline - System.currentTimeMillis()).toInt()
             if (remaining <= 0) {
                 logger.log(CommLogger.Direction.ERROR, "タイムアウト: $cmd (受信: ${sb.toString().replace('\r', '|')})")
+                needsResync = true
                 break
             }
             val n = transport.read(buf, minOf(remaining, 100))
@@ -126,17 +161,36 @@ class Elm327Protocol(
          * ヘッダー OFF・スペース OFF の応答行から "41 <pid> A B ..." を探し、データ部を返す。
          * 複数 ECU が応答した場合は最初の 1 件を使う。
          */
-        internal fun parseMode01(lines: List<String>, pid: Int): IntArray? {
+        private val VOLTAGE = Regex("""(\d{1,2}\.\d)\s*V""", RegexOption.IGNORE_CASE)
+
+        /**
+         * ATRV の応答 ("14.1V") を読む。"12V" 系の妥当な範囲 (5〜20V) 以外は無効扱い。
+         * 0.0V などは測れていないだけなので null にして「---」表示にする。
+         */
+        internal fun parseVoltage(lines: List<String>): Double? =
+            lines.firstNotNullOfOrNull { VOLTAGE.find(it)?.groupValues?.get(1)?.toDoubleOrNull() }
+                ?.takeIf { it in 5.0..20.0 }
+
+        internal fun parseMode01(lines: List<String>, pid: Int): IntArray? =
+            parseMode01All(lines, pid).firstOrNull()
+
+        /**
+         * 全 ECU 分の応答を返す。ヘッダー表示が有効なままの場合
+         * ("7E8 04 41 0C 1A F8" / 29bit "18DAF110 04 41 0C ...") にも対応する。
+         */
+        internal fun parseMode01All(lines: List<String>, pid: Int): List<IntArray> {
             val prefix = "41%02X".format(pid)
+            val result = mutableListOf<IntArray>()
             for (line in lines) {
                 val compact = line.replace(" ", "").uppercase()
-                // "SEARCHING..." "BUS INIT: ...OK" は別行で来るので、行頭一致だけを見る
-                if (!compact.startsWith(prefix)) continue
-                val bytes = Hex.parse(compact)
+                if (compact.any { !(it.isDigit() || it in 'A'..'F') }) continue // "SEARCHING..." など
+                // 行頭 (ヘッダーなし) か、11bit/29bit ヘッダー (+長さバイト) の直後だけを見る
+                val idx = listOf(0, 3, 5, 8, 10).firstOrNull { compact.startsWith(prefix, it) } ?: continue
+                val bytes = Hex.parse(compact.substring(idx))
                 if (bytes.size < 3) continue
-                return bytes.copyOfRange(2, bytes.size)
+                result += bytes.copyOfRange(2, bytes.size)
             }
-            return null
+            return result
         }
     }
 }

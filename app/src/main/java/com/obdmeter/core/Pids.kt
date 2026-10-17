@@ -19,6 +19,8 @@ data class PidDef(
     val kind: Kind = Kind.MODE01,
     val pid: Int = -1,
     val minBytes: Int = 1,
+    /** 表示の丸め単位 (0 なら丸めない)。回転数は 10rpm 単位にして数字の震えを抑える。 */
+    val displayStep: Double = 0.0,
     /** 変化が遅い項目は数サイクルに 1 回だけ読む (更新速度を稼ぐため)。 */
     val slow: Boolean = false,
     val decode: (IntArray) -> Double = { 0.0 },
@@ -36,7 +38,7 @@ object Pids {
     private fun ab(d: IntArray) = (d[0] * 256 + d[1]).toDouble()
 
     val ALL: List<PidDef> = listOf(
-        PidDef("RPM", "エンジン回転数", "回転数", "rpm", 0.0, 8000.0, warnAbove = 7000.0,
+        PidDef("RPM", "エンジン回転数", "回転数", "rpm", 0.0, 8000.0, warnAbove = 7000.0, displayStep = 10.0,
             pid = 0x0C, minBytes = 2, decode = { ab(it) / 4.0 }),
         PidDef("SPEED", "車速", "車速", "km/h", 0.0, 260.0, pid = 0x0D, decode = ::a),
         PidDef("COOLANT", "冷却水温", "水温", "°C", 40.0, 130.0, warnAbove = 110.0,
@@ -99,7 +101,11 @@ object Pids {
 
 /**
  * プロトコルを使って、表示中の項目を 1 サイクル分読み出す。
- * 対応していない PID はスキップし、連続失敗した PID は一時的に間引く。
+ *
+ * - 一時的な読み出し失敗では直前の値を保持する (失敗のたびに "---" に戻るとメーターがちらつくため)。
+ *   [HOLD_FAILS] 回連続で失敗したら値を消す。
+ * - 対応 PID 一覧で「非対応」の項目も、画面に置かれていれば時々試す。読めたら対応扱いに切り替える。
+ * - 成功⇔失敗が切り替わったときだけ、理由付きでログに出す。
  */
 class ObdReader(
     private val protocol: ObdProtocol,
@@ -110,6 +116,7 @@ class ObdReader(
         private set
 
     private val failStreak = mutableMapOf<String, Int>()
+    private val failing = mutableSetOf<String>()
     private var cycle = 0L
     private var adapterVoltageSupported = true
 
@@ -131,7 +138,7 @@ class ObdReader(
     }
 
     /**
-     * [defs] の値を読み、[values] を更新する。読めなかった項目は値を削除する。
+     * [defs] の値を読み、[values] を更新する。
      * @return 実際に通信して成功した件数と失敗した件数
      */
     fun poll(defs: Collection<PidDef>, values: MutableMap<String, Double>): Result {
@@ -148,12 +155,18 @@ class ObdReader(
         var ok = 0
         var failed = 0
         for (d in direct.values) {
-            if (!isAvailable(d)) { values.remove(d.key); continue }
-            // 遅い項目は 8 サイクルに 1 回 (値が無いうちは毎回)
-            if (d.slow && values.containsKey(d.key) && cycle % 8 != 0L) continue
-            // 連続 3 回失敗した項目は 20 サイクルに 1 回だけ再試行
             val streak = failStreak[d.key] ?: 0
-            if (streak >= 3 && cycle % 20 != 0L) continue
+            if (!isAvailable(d)) {
+                // 非対応扱いでも、最初と 50 サイクルごとに一度だけ試す
+                if (d.kind != PidDef.Kind.MODE01 || (cycle != 1L && cycle % 50 != 0L)) {
+                    values.remove(d.key); continue
+                }
+            } else {
+                // 遅い項目は 8 サイクルに 1 回 (値が無いうちは毎回)
+                if (d.slow && values.containsKey(d.key) && cycle % 8 != 0L) continue
+                // 連続 3 回失敗した項目は 20 サイクルに 1 回だけ再試行
+                if (streak >= HOLD_FAILS && cycle % 20 != 0L) continue
+            }
 
             val v: Double? = when (d.kind) {
                 PidDef.Kind.MODE01 -> protocol.readPid(d.pid)
@@ -167,10 +180,21 @@ class ObdReader(
             if (v != null) {
                 values[d.key] = v
                 failStreak[d.key] = 0
+                if (d.kind == PidDef.Kind.MODE01 && supported?.contains(d.pid) == false) {
+                    supported = supported.orEmpty() + d.pid
+                    logger.log(CommLogger.Direction.INFO, "${d.shortName} (PID %02X) は読めたので対応扱いにします".format(d.pid))
+                }
+                if (failing.remove(d.key)) logger.log(CommLogger.Direction.INFO, "${d.shortName}: 復帰")
                 ok++
             } else {
-                values.remove(d.key)
                 failStreak[d.key] = streak + 1
+                // 一時的な失敗では直前の値を残す
+                if (streak + 1 >= HOLD_FAILS) values.remove(d.key)
+                if (failing.add(d.key)) {
+                    val pidText = if (d.kind == PidDef.Kind.MODE01) " (PID %02X)".format(d.pid) else ""
+                    logger.log(CommLogger.Direction.ERROR,
+                        "${d.shortName}$pidText 読み出し失敗: ${protocol.lastFailure ?: "応答なし"}")
+                }
                 failed++
             }
         }
@@ -184,4 +208,8 @@ class ObdReader(
     }
 
     data class Result(val ok: Int, val failed: Int)
+
+    companion object {
+        const val HOLD_FAILS = 3
+    }
 }
