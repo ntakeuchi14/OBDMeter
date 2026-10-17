@@ -65,7 +65,7 @@ class BackupTest {
     @Test
     fun replaceDropsImagesThatWereNotInTheFile() {
         val incoming = BackupManifest(dashboards = listOf(page(1, "メイン", designed)))
-        val r = BackupLogic.apply(emptyList(), emptyList(), incoming, emptyMap(), ImportMode.REPLACE) { 0 }
+        val r = BackupLogic.apply(emptyList(), emptyList(), incoming, emptyMap(), ImportMode.REPLACE, newId = { 0 })
         assertNull(r.dashboards.single().gauges.single().design.backgroundImage)
     }
 
