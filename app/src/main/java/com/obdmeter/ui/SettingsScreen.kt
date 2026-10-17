@@ -157,6 +157,9 @@ fun SettingsScreen(vm: MainViewModel, onBack: () -> Unit, onOpenCustomPids: () -
             BackupSection(vm)
 
             Section("その他")
+            SwitchRow("起動時に自動接続", "アプリを開いたら「接続」を押さなくても接続を始めます", s.autoConnect) { v ->
+                vm.updateSettings { it.copy(autoConnect = v) }
+            }
             SwitchRow("自動再接続", "通信が切れたら 3 秒後に再接続", s.autoReconnect) { v ->
                 vm.updateSettings { it.copy(autoReconnect = v) }
             }

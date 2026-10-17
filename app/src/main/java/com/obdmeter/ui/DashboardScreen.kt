@@ -39,6 +39,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -270,6 +271,8 @@ private fun DashboardCanvas(
     onCommit: (GaugeConfig, Int, Int, Int, Int) -> Unit,
     onTap: (GaugeConfig) -> Unit,
 ) {
+    // メーターごとのピーク値リセット回数 (長押しで増やす)
+    val peakResets = remember { mutableStateMapOf<Long, Int>() }
     BoxWithConstraints(Modifier.fillMaxSize().padding(4.dp)) {
         val cellW = maxWidth / Layout.COLS
         val cellH = maxHeight / Layout.ROWS
@@ -306,6 +309,7 @@ private fun DashboardCanvas(
                     editing = editing,
                     onCommit = onCommit,
                     onTap = onTap,
+                    onLongPress = { peakResets[g.id] = (peakResets[g.id] ?: 0) + 1 },
                 ) {
                     if (def != null) {
                         GaugeCard(
@@ -316,6 +320,7 @@ private fun DashboardCanvas(
                             unsupported = isUnsupported(def, supported) && g.fallbackKey == null,
                             look = g.look(def),
                             modifier = Modifier.fillMaxSize(),
+                            peakResetKey = peakResets[g.id] ?: 0,
                         )
                     } else {
                         // 削除されたカスタム PID など
@@ -338,6 +343,7 @@ private fun GaugeOnGrid(
     editing: Boolean,
     onCommit: (GaugeConfig, Int, Int, Int, Int) -> Unit,
     onTap: (GaugeConfig) -> Unit,
+    onLongPress: () -> Unit,
     content: @Composable () -> Unit,
 ) {
     val g by rememberUpdatedState(gauge)
@@ -388,7 +394,10 @@ private fun GaugeOnGrid(
                             move += amount
                         }
                     }
-                else Modifier
+                else Modifier.pointerInput(gauge.id) {
+                    // 通常表示中は長押しでピーク値をリセット
+                    detectTapGestures(onLongPress = { onLongPress() })
+                }
             )
     ) {
         content()
@@ -429,7 +438,7 @@ fun isUnsupported(def: PidDef, supported: Set<Int>?): Boolean {
     if (supported == null) return false
     return when (def.kind) {
         PidDef.Kind.MODE01 -> def.pid !in supported
-        PidDef.Kind.ADAPTER_VOLTAGE, PidDef.Kind.CUSTOM -> false
+        PidDef.Kind.ADAPTER_VOLTAGE, PidDef.Kind.CUSTOM, PidDef.Kind.REQUEST -> false
         PidDef.Kind.DERIVED -> def.deps.mapNotNull { Pids.get(it) }.any { isUnsupported(it, supported) }
     }
 }
@@ -438,6 +447,7 @@ fun isUnsupported(def: PidDef, supported: Set<Int>?): Boolean {
 fun PidDef.sourceLabel(): String = when (kind) {
     PidDef.Kind.MODE01 -> "PID %02X".format(pid)
     PidDef.Kind.CUSTOM -> "カスタム $request"
+    PidDef.Kind.REQUEST -> "OBD Mode %02X MID %s".format(request?.mode ?: 0, request?.pid?.joinToString("") { "%02X".format(it) } ?: "")
     PidDef.Kind.ADAPTER_VOLTAGE -> "アダプター測定"
     PidDef.Kind.DERIVED -> "計算値"
 }

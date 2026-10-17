@@ -25,6 +25,7 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
@@ -60,11 +61,13 @@ object GaugeColors {
     val Track = Color(0xFF2A303A)
     val Tick = Color(0xFF8A93A0)
     val Text = Color(0xFFE8EAED)
-    val SubText = Color(0xFF8A93A0)
+    /** 補足説明の文字色。暗い背景でも読める明るさにする */
+    val SubText = Color(0xFFB3BAC5)
     val Accent = Color(0xFF4FC3F7)
     val Warn = Color(0xFFFF5A36)
     val WarnZone = Color(0x66FF5A36)
     val Ring = Color(0xFFB0B6BE)
+    val Peak = Color(0xFFFFCA28)
 }
 
 /**
@@ -92,6 +95,15 @@ data class GaugeLook(
     val showNeedle: Boolean = true,
     val needleColor: Color = GaugeColors.Text,
     val needleLength: Float = 1f,
+    val needleWidth: Float = 1f,
+    val needleTail: Float = 0.12f,
+    val knobColor: Color? = null,
+    val knobSize: Float = 1f,
+    val ringThickness: Float = 1f,
+    val ringDepth: Float = 0.6f,
+    val showPeak: Boolean = false,
+    val peakColor: Color = GaugeColors.Peak,
+    val showPeakValue: Boolean = false,
     val showValue: Boolean = true,
     val valueColor: Color = GaugeColors.Text,
     val valuePosition: Float = 0.42f,
@@ -112,8 +124,16 @@ fun GaugeCard(
     unsupported: Boolean,
     look: GaugeLook,
     modifier: Modifier = Modifier,
+    /** 値が変わるとピーク値をリセットする (メーターの長押しで増やす) */
+    peakResetKey: Int = 0,
 ) {
     val shape = RoundedCornerShape(14.dp)
+    // ピーク値 (生の値で記録する。表示用のならし前の値)
+    val peakHolder = remember(def.key, peakResetKey, def.min, def.max) { doubleArrayOf(Double.NaN) }
+    if (look.showPeak && value != null && !unsupported && (peakHolder[0].isNaN() || value > peakHolder[0])) {
+        peakHolder[0] = value
+    }
+    val peak = peakHolder[0].takeIf { look.showPeak && !it.isNaN() }
     Box(
         if (look.showCard) {
             modifier.background(GaugeColors.Card, shape).border(1.dp, GaugeColors.CardBorder, shape).padding(8.dp)
@@ -124,9 +144,9 @@ fun GaugeCard(
         val v = rememberDisplayValue(def, if (unsupported) null else value)
         val image = rememberGaugeImage(look.image)
         when (style) {
-            GaugeStyle.ANALOG -> AnalogGauge(def, v, unsupported, look, image, Modifier.fillMaxSize())
-            GaugeStyle.BAR -> BarGauge(def, v, unsupported, look, image, Modifier.fillMaxSize())
-            GaugeStyle.DIGITAL -> DigitalGauge(def, v, unsupported, look, image, Modifier.fillMaxSize())
+            GaugeStyle.ANALOG -> AnalogGauge(def, v, unsupported, look, image, Modifier.fillMaxSize(), peak)
+            GaugeStyle.BAR -> BarGauge(def, v, unsupported, look, image, Modifier.fillMaxSize(), peak)
+            GaugeStyle.DIGITAL -> DigitalGauge(def, v, unsupported, look, image, Modifier.fillMaxSize(), peak)
         }
     }
 }
@@ -212,6 +232,7 @@ fun AnalogGauge(
     look: GaugeLook,
     image: ImageBitmap?,
     modifier: Modifier = Modifier,
+    peak: Double? = null,
 ) {
     val tm = rememberTextMeasurer()
     val f = animated(def, value)
@@ -230,20 +251,8 @@ fun AnalogGauge(
             RingStyle.LINE -> d * 0.012f
             RingStyle.BOLD -> d * 0.035f
             RingStyle.METAL -> d * 0.05f
-        }
-        if (ringWidth > 0f) {
-            val r = outer - ringWidth / 2
-            if (look.ring == RingStyle.METAL) {
-                val c = look.ringColor
-                val brush = Brush.sweepGradient(
-                    listOf(c, Color.White, c.copy(alpha = 0.6f), Color.DarkGray, c, Color.White, c),
-                    center,
-                )
-                drawCircle(brush, r, center, style = Stroke(ringWidth))
-            } else {
-                drawCircle(look.ringColor, r, center, style = Stroke(ringWidth))
-            }
-        }
+        } * look.ringThickness
+        if (ringWidth > 0f) drawRing(look, center, outer, ringWidth)
 
         // 目盛り・弧の基準半径
         val gaugeR = (outer - ringWidth - d * 0.01f) * look.tickRadius
@@ -303,20 +312,56 @@ fun AnalogGauge(
             }
         }
 
-        // 針
+        // ピーク値の印 (目盛りの外側から内側に向いた三角形)
+        if (peak != null) {
+            val pa = Math.toRadians((start + sweep * fraction(def, peak)).toDouble())
+            val ca = cos(pa).toFloat()
+            val sa = sin(pa).toFloat()
+            val tip = gaugeR - stroke - d * 0.01f
+            val base = gaugeR + d * 0.005f
+            val half = d * 0.022f
+            val path = Path().apply {
+                moveTo(center.x + tip * ca, center.y + tip * sa)
+                lineTo(center.x + base * ca - half * sa, center.y + base * sa + half * ca)
+                lineTo(center.x + base * ca + half * sa, center.y + base * sa - half * ca)
+                close()
+            }
+            drawPath(path, look.peakColor)
+        }
+
+        // 針 (根元が太く先が細い形) と中心のノブ
         if (value != null && look.showNeedle) {
             val a = Math.toRadians((start + sweep * f).toDouble())
+            val ca = cos(a).toFloat()
+            val sa = sin(a).toFloat()
             val len = tickOuter * look.needleLength
+            val tail = len * look.needleTail
+            val baseW = d * 0.016f * look.needleWidth
+            val tipW = baseW * 0.35f
             val color = if (warn) GaugeColors.Warn else look.needleColor
-            drawLine(color, center,
-                Offset(center.x + len * cos(a).toFloat(), center.y + len * sin(a).toFloat()),
-                strokeWidth = d * 0.02f, cap = StrokeCap.Round)
-            // 反対側に少し出る尾
-            drawLine(color, center,
-                Offset(center.x - len * 0.12f * cos(a).toFloat(), center.y - len * 0.12f * sin(a).toFloat()),
-                strokeWidth = d * 0.03f, cap = StrokeCap.Round)
-            drawCircle(color, d * 0.035f, center)
-            drawCircle(Color(0xFF20242B), d * 0.015f, center)
+            val needle = Path().apply {
+                // 尾の端 → 根元 → 先端 → 根元 → 尾の端 (針の向きに垂直な方向へ幅を取る)
+                moveTo(center.x - tail * ca - baseW * sa, center.y - tail * sa + baseW * ca)
+                lineTo(center.x + len * ca - tipW * sa, center.y + len * sa + tipW * ca)
+                lineTo(center.x + len * ca + tipW * sa, center.y + len * sa - tipW * ca)
+                lineTo(center.x - tail * ca + baseW * sa, center.y - tail * sa - baseW * ca)
+                close()
+            }
+            drawPath(needle, color)
+        }
+        if (look.showNeedle && look.knobSize > 0f) {
+            val kr = d * 0.035f * look.knobSize
+            val kc = look.knobColor ?: look.needleColor
+            drawCircle(kc, kr, center)
+            // ノブの立体感 (左上が明るく右下が暗い)
+            drawCircle(
+                Brush.linearGradient(
+                    listOf(Color.White.copy(alpha = 0.35f), Color.Transparent, Color.Black.copy(alpha = 0.35f)),
+                    start = Offset(center.x - kr, center.y - kr), end = Offset(center.x + kr, center.y + kr),
+                ),
+                kr, center,
+            )
+            drawCircle(Color(0xFF20242B), kr * 0.4f, center)
         }
 
         // 名前・数値・単位
@@ -336,6 +381,11 @@ fun AnalogGauge(
             drawCenteredText(tm, def.unit + scale.unitSuffix,
                 Offset(center.x, valueY + d * 0.1f * max(look.valueSize, 0.6f)),
                 TextStyle(color = look.labelColor, fontSize = (d * 0.055f).toSp()))
+        }
+        if (peak != null && look.showPeakValue) {
+            drawCenteredText(tm, "MAX " + def.format(peak),
+                Offset(center.x, valueY + d * 0.17f * max(look.valueSize, 0.6f)),
+                TextStyle(color = look.peakColor, fontSize = (d * 0.05f).toSp(), fontFamily = FontFamily.Monospace))
         }
     }
 }
@@ -391,6 +441,7 @@ fun BarGauge(
     look: GaugeLook,
     image: ImageBitmap?,
     modifier: Modifier = Modifier,
+    peak: Double? = null,
 ) {
     val tm = rememberTextMeasurer()
     val f = animated(def, value)
@@ -442,6 +493,15 @@ fun BarGauge(
                 drawRoundRect(color, Offset(0f, barY), Size(w * f, barH), r)
             }
         }
+        if (peak != null) {
+            val px = w * fraction(def, peak)
+            drawLine(look.peakColor, Offset(px, barY - barH * 0.5f), Offset(px, barY + barH * 1.5f), max(3f, barH * 0.25f))
+            if (look.showPeakValue) {
+                val t = tm.measure("MAX " + def.format(peak),
+                    TextStyle(color = look.peakColor, fontSize = (unit * 0.12f).toSp(), fontFamily = FontFamily.Monospace))
+                drawText(t, topLeft = Offset(4f, barY - t.size.height - barH * 0.6f))
+            }
+        }
     }
 }
 
@@ -457,6 +517,7 @@ fun DigitalGauge(
     look: GaugeLook,
     image: ImageBitmap?,
     modifier: Modifier = Modifier,
+    peak: Double? = null,
 ) {
     val tm = rememberTextMeasurer()
     val warn = isWarn(def, value)
@@ -481,5 +542,70 @@ fun DigitalGauge(
             drawCenteredText(tm, def.unit, Offset(size.width / 2, cy + unit * 0.3f * max(look.valueSize, 0.6f)),
                 TextStyle(color = look.labelColor, fontSize = (unit * 0.13f).toSp()))
         }
+        if (peak != null) {
+            val t = tm.measure("MAX " + def.format(peak),
+                TextStyle(color = look.peakColor, fontSize = (unit * 0.12f).toSp(), fontFamily = FontFamily.Monospace))
+            drawText(t, topLeft = Offset(size.width - t.size.width - 4f, 0f))
+        }
+    }
+}
+
+
+/**
+ * 外周リング。メタル・太線は [GaugeLook.ringDepth] に応じて陰影を付け、
+ * 左上から光が当たったような立体感 (外側の縁の影・内側の縁のハイライト・文字盤への落ち影) を出す。
+ */
+private fun DrawScope.drawRing(look: GaugeLook, center: Offset, outer: Float, w: Float) {
+    val r = outer - w / 2
+    val c = look.ringColor
+    val depth = look.ringDepth.coerceIn(0f, 1f)
+    val tl = Offset(center.x - outer, center.y - outer)
+    val br = Offset(center.x + outer, center.y + outer)
+    when (look.ring) {
+        RingStyle.NONE -> return
+        RingStyle.LINE -> { drawCircle(c, r, center, style = Stroke(w)); return }
+        RingStyle.BOLD -> drawCircle(c, r, center, style = Stroke(w))
+        RingStyle.METAL -> {
+            // 金属の地: 回転方向の反射ムラ
+            drawCircle(
+                Brush.sweepGradient(
+                    listOf(c, Color.White, c.copy(alpha = 0.75f), Color.DarkGray, c, Color.White.copy(alpha = 0.9f), c),
+                    center,
+                ),
+                r, center, style = Stroke(w),
+            )
+        }
+    }
+    if (depth <= 0f) return
+    // 光: 左上が明るく右下が暗い
+    drawCircle(
+        Brush.linearGradient(
+            listOf(Color.White.copy(alpha = 0.55f * depth), Color.Transparent, Color.Black.copy(alpha = 0.65f * depth)),
+            start = tl, end = br,
+        ),
+        r, center, style = Stroke(w),
+    )
+    // 外側の縁 (暗い線)
+    drawCircle(Color.Black.copy(alpha = 0.55f * depth), outer - w * 0.04f, center, style = Stroke(w * 0.08f))
+    // 内側の縁: 左上は影、右下はハイライト (面取りされた縁に見える)
+    drawCircle(
+        Brush.linearGradient(
+            listOf(Color.Black.copy(alpha = 0.7f * depth), Color.Transparent, Color.White.copy(alpha = 0.6f * depth)),
+            start = tl, end = br,
+        ),
+        outer - w + w * 0.07f, center, style = Stroke(w * 0.14f),
+    )
+    // 文字盤への落ち影 (リングの内側をうっすら暗く)
+    val inner = outer - w
+    if (inner > 0f) {
+        drawCircle(
+            Brush.radialGradient(
+                0f to Color.Transparent,
+                0.86f to Color.Transparent,
+                1f to Color.Black.copy(alpha = 0.5f * depth),
+                center = center, radius = inner,
+            ),
+            inner, center,
+        )
     }
 }

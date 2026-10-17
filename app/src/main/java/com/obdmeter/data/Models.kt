@@ -29,6 +29,8 @@ data class AppSettings(
     val dcanEcho: Boolean = true,
     // --- 共通 ---
     val autoReconnect: Boolean = true,
+    /** アプリ起動時に自動で接続する */
+    val autoConnect: Boolean = false,
     /** イグニッション OFF でもアダプターに接続し、車両が応答するまで待つ */
     val waitForVehicle: Boolean = true,
     /** 待機の上限 (分)。0 = 無制限。待機中も車両に問い合わせるので、バッテリー保護のため */
@@ -92,6 +94,10 @@ data class GaugeDesign(
     // ---- リング・弧 ----
     val ring: RingStyle = RingStyle.NONE,
     val ringColor: Long? = null,
+    /** リングの太さ (1.0 = 標準) */
+    val ringThickness: Float = 1f,
+    /** リングの立体感 (0 = 平ら、1 = 強い陰影)。メタル・太線で使う */
+    val ringDepth: Float = 0.6f,
     /** 目盛りに沿った下地の弧 */
     val showTrack: Boolean = true,
     /** 現在値まで伸びる色付きの弧 */
@@ -111,6 +117,21 @@ data class GaugeDesign(
     val needleColor: Long? = null,
     /** 針の長さ (1.0 = 目盛りまで) */
     val needleLength: Float = 1f,
+    /** 針の太さ (1.0 = 標準) */
+    val needleWidth: Float = 1f,
+    /** 中心から反対側に出る尾の長さ (針の長さに対する比率) */
+    val needleTail: Float = 0.12f,
+    /** 中心のノブの色。null = 針と同じ色 */
+    val knobColor: Long? = null,
+    /** ノブの大きさ (1.0 = 標準、0 = なし) */
+    val knobSize: Float = 1f,
+
+    // ---- ピーク値 ----
+    /** これまでの最大値の位置に印を付ける (メーターを長押しでリセット) */
+    val showPeak: Boolean = false,
+    val peakColor: Long? = null,
+    /** 最大値を数字でも表示する */
+    val showPeakValue: Boolean = false,
 
     // ---- 数値・名前 ----
     val showValue: Boolean = true,

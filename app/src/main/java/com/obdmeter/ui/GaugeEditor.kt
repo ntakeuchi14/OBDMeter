@@ -413,16 +413,41 @@ private fun ColorTab(g: GaugeConfig, update: ((GaugeDesign) -> GaugeDesign) -> U
     }
     if (d.ring != RingStyle.NONE) {
         ColorLine("リングの色", d.ringColor, GaugeColors.Ring) { c -> update { it.copy(ringColor = c) } }
+        SliderLine("リングの太さ", d.ringThickness * 100, 30f..300f, "%.0f%%") { v ->
+            update { it.copy(ringThickness = snap(v, 5f) / 100f) }
+        }
+        if (d.ring == RingStyle.METAL || d.ring == RingStyle.BOLD) {
+            SliderLine("立体感 (陰影の強さ)", d.ringDepth * 100, 0f..100f, "%.0f%%") { v ->
+                update { it.copy(ringDepth = snap(v, 5f) / 100f) }
+            }
+        }
     }
 
     ColorLine("目盛りの色", d.tickColor, GaugeColors.Tick) { c -> update { it.copy(tickColor = c) } }
     ColorLine("文字の色 (目盛りの数字・名前・単位)", d.labelColor, GaugeColors.SubText) { c -> update { it.copy(labelColor = c) } }
 
-    Head("針")
+    Head("針 (ポインター)")
     SwitchLine("針を表示", null, d.showNeedle) { v -> update { it.copy(showNeedle = v) } }
     if (d.showNeedle) {
         ColorLine("針の色", d.needleColor, GaugeColors.Text) { c -> update { it.copy(needleColor = c) } }
         SliderLine("針の長さ", d.needleLength * 100, 30f..130f, "%.0f%%") { v -> update { it.copy(needleLength = snap(v, 5f) / 100f) } }
+        SliderLine("針の太さ", d.needleWidth * 100, 20f..400f, "%.0f%%") { v -> update { it.copy(needleWidth = snap(v, 5f) / 100f) } }
+        SliderLine("反対側の尾の長さ", d.needleTail * 100, 0f..60f, "%.0f%%") { v -> update { it.copy(needleTail = snap(v, 1f) / 100f) } }
+
+        Head("中心のノブ")
+        ColorLine("ノブの色 (既定 = 針と同じ)", d.knobColor, d.needleColor?.let { Color(it) } ?: GaugeColors.Text) { c ->
+            update { it.copy(knobColor = c) }
+        }
+        SliderLine("ノブの大きさ (0 = なし)", d.knobSize * 100, 0f..400f, "%.0f%%") { v -> update { it.copy(knobSize = snap(v, 5f) / 100f) } }
+    }
+
+    Head("ピーク値")
+    SwitchLine("最大値の位置に印を付ける", "ダッシュボードでメーターを長押しするとリセットします", d.showPeak) { v ->
+        update { it.copy(showPeak = v) }
+    }
+    if (d.showPeak) {
+        SwitchLine("最大値を数字でも表示", null, d.showPeakValue) { v -> update { it.copy(showPeakValue = v) } }
+        ColorLine("印の色", d.peakColor, GaugeColors.Peak) { c -> update { it.copy(peakColor = c) } }
     }
 
     Head("数値・名前")

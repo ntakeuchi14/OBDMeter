@@ -14,6 +14,8 @@ import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -78,6 +80,8 @@ fun App(vm: MainViewModel, onKeepScreenOn: (Boolean) -> Unit) {
     }
     BackHandler(enabled = screen != Screen.DASHBOARD) { back() }
 
+    // 文字・アイコンの既定色を明るい色にする (指定しないと黒になり、暗い背景で見えない)
+    CompositionLocalProvider(LocalContentColor provides GaugeColors.Text) {
     Box(
         Modifier
             .fillMaxSize()
@@ -107,5 +111,6 @@ fun App(vm: MainViewModel, onKeepScreenOn: (Boolean) -> Unit) {
             Screen.LOG -> LogScreen(vm, onBack = back)
             Screen.CUSTOM_PIDS -> CustomPidScreen(vm, startNew = customStartNew, onBack = back)
         }
+    }
     }
 }

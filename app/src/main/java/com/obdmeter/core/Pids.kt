@@ -29,7 +29,11 @@ data class PidDef(
     /** CUSTOM のときの問い合わせ内容 */
     val request: PidRequest? = null,
 ) {
-    enum class Kind { MODE01, ADAPTER_VOLTAGE, DERIVED, CUSTOM }
+    /**
+     * MODE01: 標準 PID / ADAPTER_VOLTAGE: アダプター測定 / DERIVED: 計算値 /
+     * CUSTOM: ユーザー登録のカスタム PID / REQUEST: Mode 01 以外の標準要求 (Mode 06 の失火カウンタなど)
+     */
+    enum class Kind { MODE01, ADAPTER_VOLTAGE, DERIVED, CUSTOM, REQUEST }
 
     val isCustom: Boolean get() = kind == Kind.CUSTOM
 
@@ -39,6 +43,31 @@ data class PidDef(
 
 object Pids {
     private fun a(d: IntArray) = d[0].toDouble()
+
+    /**
+     * OBD Mode 06 (SAE J1979) の失火モニター。MID A1 = 全体、A2〜AD = 気筒 1〜12。
+     * 応答は「TID・単位 ID・値(2)・下限(2)・上限(2)」の 8 バイト単位で並ぶ。
+     * TID 0C = 今回の運転サイクルの失火回数、0B = 直近 10 サイクルの平均 (EWMA)。
+     */
+    private fun misfire(key: String, name: String, short: String, mid: Int) = PidDef(
+        key = key, name = name, shortName = short, unit = "回", min = 0.0, max = 50.0,
+        kind = PidDef.Kind.REQUEST, request = PidRequest(0x06, intArrayOf(mid)),
+        minBytes = 8, slow = true, decode = ::decodeMisfire,
+    )
+
+    internal fun decodeMisfire(d: IntArray): Double {
+        var ewma: Double? = null
+        var i = 0
+        while (i + 8 <= d.size) {
+            val value = (d[i + 2] * 256 + d[i + 3]).toDouble()
+            when (d[i]) {
+                0x0C -> return value
+                0x0B -> ewma = value
+            }
+            i += 8
+        }
+        return ewma ?: throw IllegalArgumentException("失火カウンタの応答に該当するテストがありません")
+    }
     private fun ab(d: IntArray) = (d[0] * 256 + d[1]).toDouble()
 
     val ALL: List<PidDef> = listOf(
@@ -80,6 +109,13 @@ object Pids {
             pid = 0x42, minBytes = 2, slow = true, decode = { ab(it) / 1000 }),
         PidDef("RUNTIME", "始動後経過時間", "経過時間", "s", 0.0, 3600.0,
             pid = 0x1F, minBytes = 2, slow = true, decode = ::ab),
+        misfire("MISFIRE_TOTAL", "失火カウンタ 合計", "失火計", 0xA1),
+        misfire("MISFIRE_1", "失火カウンタ #1", "失火#1", 0xA2),
+        misfire("MISFIRE_2", "失火カウンタ #2", "失火#2", 0xA3),
+        misfire("MISFIRE_3", "失火カウンタ #3", "失火#3", 0xA4),
+        misfire("MISFIRE_4", "失火カウンタ #4", "失火#4", 0xA5),
+        misfire("MISFIRE_5", "失火カウンタ #5", "失火#5", 0xA6),
+        misfire("MISFIRE_6", "失火カウンタ #6", "失火#6", 0xA7),
         PidDef("BATTERY", "バッテリー電圧 (アダプター)", "バッテリー", "V", 10.0, 16.0, decimals = 1,
             warnBelow = 12.0, kind = PidDef.Kind.ADAPTER_VOLTAGE, slow = true),
         PidDef("BOOST", "ブースト圧 (MAP−大気圧)", "ブースト", "bar", -1.0, 1.5, decimals = 2,
@@ -172,7 +208,7 @@ class ObdReader(
         PidDef.Kind.MODE01 -> supported?.contains(def.pid) ?: true
         PidDef.Kind.ADAPTER_VOLTAGE -> adapterVoltageSupported
         PidDef.Kind.DERIVED -> def.deps.mapNotNull { Pids.get(it) }.all { isAvailable(it) }
-        PidDef.Kind.CUSTOM -> true
+        PidDef.Kind.CUSTOM, PidDef.Kind.REQUEST -> true
     }
 
     /**
@@ -252,7 +288,7 @@ class ObdReader(
             PidDef.Kind.ADAPTER_VOLTAGE -> protocol.readAdapterVoltage().also {
                 if (it == null && values["BATTERY"] == null && streak >= 2) adapterVoltageSupported = false
             }
-            PidDef.Kind.CUSTOM -> protocol.query(d.request!!)
+            PidDef.Kind.CUSTOM, PidDef.Kind.REQUEST -> protocol.query(d.request!!)
                 ?.let { data ->
                     runCatching { d.decode(data) }
                         .onFailure { e -> if (d.key !in failing) logger.log(CommLogger.Direction.ERROR, "${d.shortName}: ${e.message}") }
@@ -273,7 +309,7 @@ class ObdReader(
             c.ok++
             if (std) c.stdOk++
         } else {
-            if ((std || d.kind == PidDef.Kind.CUSTOM) && protocol.lastResponded) {
+            if ((std || d.kind == PidDef.Kind.CUSTOM || d.kind == PidDef.Kind.REQUEST) && protocol.lastResponded) {
                 c.refused++
                 if (std) c.stdRefused++
                 refusedKeys.add(d.key)
@@ -286,7 +322,7 @@ class ObdReader(
             if (failing.add(d.key)) {
                 val pidText = when (d.kind) {
                     PidDef.Kind.MODE01 -> " (PID %02X)".format(d.pid)
-                    PidDef.Kind.CUSTOM -> " (${d.request})"
+                    PidDef.Kind.CUSTOM, PidDef.Kind.REQUEST -> " (${d.request})"
                     else -> ""
                 }
                 logger.log(CommLogger.Direction.ERROR,

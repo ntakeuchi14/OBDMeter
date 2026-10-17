@@ -62,6 +62,11 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     val supported: StateFlow<Set<Int>?> = session.supported
 
     init {
+        // 起動時の自動接続 (ViewModel は画面回転などでは作り直されないので、アプリ起動時の 1 回だけ)
+        viewModelScope.launch {
+            val s = repo.settings.first()
+            if (s.autoConnect) session.connect(s)
+        }
         // どのメーターからも使われなくなった背景画像を消す
         viewModelScope.launch {
             val used = repo.dashboards.first().flatMap { it.gauges }.mapNotNull { it.design.backgroundImage }.toSet()

@@ -161,6 +161,24 @@ class ProtocolTest {
     }
 
     @Test
+    fun misfireCounterFromMode06MultiFrame() {
+        // 46 A2 | 0B 24 00 0A 00 00 FF FF | 0C 24 00 03 00 00 FF FF  (18 バイト = 0x012)
+        val fake = FakeElm(mapOf(
+            "06A2" to "012\r0:46A20B24000A\r1:0000FFFF0C2400\r2:030000FFFF0000",
+            "06A3" to "7F0612",
+        ))
+        val p = Elm327Protocol(fake)
+        val cyl1 = Pids.get("MISFIRE_1")!!
+        val cyl2 = Pids.get("MISFIRE_2")!!
+        val values = mutableMapOf<String, Double>()
+        ObdReader(p).poll(listOf(cyl1, cyl2), values)
+        assertEquals(3.0, values["MISFIRE_1"]!!, 0.0)   // TID 0C (今回のサイクル) を使う
+        assertNull(values["MISFIRE_2"])                  // 非対応 (7F 06 12)
+        // TID 0C が無ければ 0B (平均) を使う
+        assertEquals(10.0, Pids.decodeMisfire(intArrayOf(0x0B, 0x24, 0x00, 0x0A, 0, 0, 0xFF, 0xFF)), 0.0)
+    }
+
+    @Test
     fun elmNoDataIsNotAlive() {
         val fake = FakeElm(mapOf("0100" to "4100BE3EB811", "010C 1" to "NO DATA"))
         val p = Elm327Protocol(fake)
