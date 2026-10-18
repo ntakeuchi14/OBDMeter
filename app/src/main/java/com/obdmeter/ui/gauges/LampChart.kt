@@ -67,6 +67,7 @@ import kotlinx.coroutines.delay
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import kotlin.math.abs
 import kotlin.math.max
 import kotlin.math.min
 
@@ -288,6 +289,8 @@ internal fun ChartGauge(
     var span by remember(look.chartSpanMs) { mutableLongStateOf(look.chartSpanMs) }
     /** 表示の右端の時刻 (null = 現在に追従) */
     var endAt by remember { mutableStateOf<Long?>(null) }
+    /** タップで選んだ時刻 (null = 現在値を表示) */
+    var cursorAt by remember { mutableStateOf<Long?>(null) }
     var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
     LaunchedEffect(Unit) {
         while (true) {
@@ -312,14 +315,33 @@ internal fun ChartGauge(
         }
     }
 
+    // タップした時刻に一番近い記録の時刻にそろえ、各項目はその時刻に一番近い記録の値を出す
+    fun nearest(pts: List<Sample>, t: Long): Sample? = pts.minByOrNull { abs(it.t - t) }
+    val cursorTime: Long? = cursorAt?.let { c ->
+        data.values.mapNotNull { nearest(it, c) }.minByOrNull { abs(it.t - c) }?.t ?: c
+    }
+    val cursorValues: Map<String, Double?> = if (cursorTime == null) emptyMap() else
+        keys.associateWith { k ->
+            // 選んだ時刻から離れすぎた記録は出さない (1 画面の 1/20 まで)
+            nearest(data[k].orEmpty(), cursorTime)?.takeIf { abs(it.t - cursorTime) <= max(span / 20, 2_000L) }?.v?.toDouble()
+        }
+
     Column(modifier.padding(4.dp)) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Top) {
-            // 各項目の現在値
+            // 各項目の現在値 (時刻を選んでいるときはその時刻の値)
             FlowRow(
                 Modifier.weight(1f),
                 horizontalArrangement = Arrangement.spacedBy(10.dp),
             ) {
+                if (cursorTime != null) {
+                    Text(
+                        SimpleDateFormat("yyyy/MM/dd HH:mm:ss", Locale.getDefault()).format(Date(cursorTime)),
+                        color = GaugeColors.Accent, fontSize = (11 * look.labelSize).sp, maxLines = 1,
+                        fontWeight = FontWeight.Bold,
+                    )
+                }
                 series.forEachIndexed { i, s ->
+                    val shown = if (cursorTime != null) cursorValues[s.def.key] else s.value
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Box(Modifier.size(8.dp).clip(CircleShape).background(chartColor(look, i)))
                         Spacer(Modifier.width(4.dp))
@@ -329,7 +351,7 @@ internal fun ChartGauge(
                             fontSize = (11 * look.labelSize).sp, maxLines = 1, overflow = TextOverflow.Ellipsis,
                         )
                         Text(
-                            s.def.format(s.value) + if (look.showUnit) " ${s.def.unitText}" else "",
+                            s.def.format(shown) + if (look.showUnit) " ${s.def.unitText}" else "",
                             color = chartColor(look, i), fontFamily = fonts.value, fontWeight = FontWeight.Bold,
                             fontSize = (13 * look.valueSize).sp, maxLines = 1,
                         )
@@ -362,7 +384,17 @@ internal fun ChartGauge(
                             }
                         }
                         .pointerInput(look.chartSpanMs) {
-                            detectTapGestures(onDoubleTap = { endAt = null; span = look.chartSpanMs })
+                            detectTapGestures(
+                                // タップした位置の時刻の値を凡例に出す
+                                onTap = { p ->
+                                    if (size.width > 0) {
+                                        val e = endAt ?: System.currentTimeMillis()
+                                        cursorAt = e - span + (p.x / size.width * span).toLong()
+                                    }
+                                },
+                                // ダブルタップで現在に戻り、現在値を出す
+                                onDoubleTap = { endAt = null; cursorAt = null; span = look.chartSpanMs },
+                            )
                         }
                 )
         ) {
@@ -414,13 +446,27 @@ internal fun ChartGauge(
                         }
                     }
                 }
+                // 選んだ時刻の縦線
+                cursorTime?.let { ct ->
+                    if (ct in start..end) {
+                        val cx = (ct - start).toFloat() / span * w
+                        drawLine(GaugeColors.Accent, Offset(cx, 0f), Offset(cx, plotH), 1.5.dp.toPx())
+                        series.forEachIndexed { i, s ->
+                            val v = cursorValues[s.def.key] ?: return@forEachIndexed
+                            val range = (s.def.max - s.def.min).takeIf { it > 0 } ?: 1.0
+                            val cy = plotH - ((v - s.def.min) / range).toFloat().coerceIn(-0.02f, 1.02f) * plotH
+                            drawCircle(chartColor(look, i), 4.dp.toPx(), Offset(cx, cy))
+                            drawCircle(GaugeColors.Text, 4.dp.toPx(), Offset(cx, cy), style = Stroke(1.dp.toPx()))
+                        }
+                    }
+                }
                 if (!any) {
                     drawCenteredText(tm, if (history == null) "" else "この期間の記録はありません", Offset(w / 2, plotH / 2), labelStyle)
                 }
             }
-            if (endAt != null) {
+            if (endAt != null || cursorAt != null) {
                 Text(
-                    "過去を表示中 (ダブルタップで現在へ)",
+                    if (endAt != null) "過去を表示中 (ダブルタップで現在へ)" else "時刻を選択中 (ダブルタップで現在値へ)",
                     Modifier.align(Alignment.TopStart).background(Color.Black.copy(alpha = 0.5f), RoundedCornerShape(4.dp))
                         .padding(horizontal = 4.dp, vertical = 1.dp),
                     color = GaugeColors.Text, fontSize = 10.sp,
