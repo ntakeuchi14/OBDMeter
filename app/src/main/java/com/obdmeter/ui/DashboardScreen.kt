@@ -141,7 +141,7 @@ fun DashboardScreen(vm: MainViewModel, onNavigate: (Screen) -> Unit, onCreateCus
     // ---- 上部バー (接続状態・接続ボタン・編集・ログ・設定) ----
     val topBar: @Composable (Modifier) -> Unit = { modifier ->
         Row(
-            modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp),
+            modifier.fillMaxWidth().padding(start = 8.dp, end = 20.dp, top = 4.dp, bottom = 4.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             if (editing) {
@@ -160,9 +160,11 @@ fun DashboardScreen(vm: MainViewModel, onNavigate: (Screen) -> Unit, onCreateCus
                 } else {
                     OutlinedButton(onClick = vm::disconnect) { Text("切断") }
                 }
-                IconButton(onClick = { editing = true }) { Icon(Icons.Default.Edit, "レイアウト編集") }
-                IconButton(onClick = { onNavigate(Screen.LOG) }) { Icon(Icons.AutoMirrored.Filled.List, "通信ログ") }
-                IconButton(onClick = { onNavigate(Screen.SETTINGS) }) { Icon(Icons.Default.Settings, "設定") }
+                // 車載の画面でも押しやすいよう大きめに
+                val big = Modifier.padding(start = 6.dp).size(56.dp)
+                IconButton(onClick = { editing = true }, big) { Icon(Icons.Default.Edit, "レイアウト編集", Modifier.size(32.dp)) }
+                IconButton(onClick = { onNavigate(Screen.LOG) }, big) { Icon(Icons.AutoMirrored.Filled.List, "通信ログ", Modifier.size(32.dp)) }
+                IconButton(onClick = { onNavigate(Screen.SETTINGS) }, big) { Icon(Icons.Default.Settings, "設定", Modifier.size(32.dp)) }
             }
         }
     }
@@ -292,7 +294,7 @@ fun DashboardScreen(vm: MainViewModel, onNavigate: (Screen) -> Unit, onCreateCus
                 topBar(Modifier.align(Alignment.TopCenter).background(GaugeColors.Background.copy(alpha = 0.92f)))
                 bottomBar(Modifier.align(Alignment.BottomCenter).background(GaugeColors.Background.copy(alpha = 0.92f)))
             } else {
-                MenuButton(connection, Modifier.align(Alignment.TopEnd).padding(6.dp)) { barsShown = true }
+                MenuButton(connection, Modifier.align(Alignment.TopEnd).padding(top = 8.dp, end = 20.dp)) { barsShown = true }
             }
         }
     }
@@ -339,14 +341,14 @@ private fun MenuButton(state: ConnectionState, modifier: Modifier, onClick: () -
     val dot = statusColor(state)
     Box(
         modifier
-            .size(40.dp)
+            .size(56.dp)
             .clip(CircleShape)
             .background(GaugeColors.Card.copy(alpha = 0.55f))
             .clickable(onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {
-        Icon(Icons.Default.MoreVert, "メニュー", tint = GaugeColors.Text.copy(alpha = 0.8f))
-        Box(Modifier.align(Alignment.TopEnd).padding(6.dp).size(9.dp).clip(CircleShape).background(dot))
+        Icon(Icons.Default.MoreVert, "メニュー", Modifier.size(34.dp), tint = GaugeColors.Text.copy(alpha = 0.8f))
+        Box(Modifier.align(Alignment.TopEnd).padding(8.dp).size(12.dp).clip(CircleShape).background(dot))
     }
 }
 

@@ -116,6 +116,9 @@ object Pids {
         decode = { d -> d[2] * OIL_LEVEL_STEP },
     )
 
+    /** BMW 固有の項目 (DME の測定値・オイルレベルなど)。項目を選ぶ一覧で先頭に出す */
+    fun isBmwSpecific(d: PidDef): Boolean = d.kind == PidDef.Kind.BMW_BLOCK || d.name.contains("BMW")
+
     private val BMW_ITEMS: List<PidDef> by lazy {
         (1..6).map { misfireLife(it) } + listOf(
             bmw("OIL_LEVEL_LONG", "オイルレベル 長期平均 (BMW)", "オイル量平均", "mm", 0.0, 75.0, 0x4400, 1, decimals = 1) { it[0] * OIL_LEVEL_STEP },

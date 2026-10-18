@@ -137,8 +137,13 @@ fun ItemPickerDialog(
                         }
                         HorizontalDivider()
                     }
+                    val (bmw, std) = com.obdmeter.core.Pids.ALL.filter(::matches).partition(com.obdmeter.core.Pids::isBmwSpecific)
+                    if (bmw.isNotEmpty()) {
+                        item { SectionHeader("BMW 固有の項目") }
+                        items(bmw, key = { it.key }) { d -> PickerRow(d, isUnsupported(d, supported)) { onPick(d) } }
+                    }
                     item { SectionHeader("標準の項目") }
-                    items(com.obdmeter.core.Pids.ALL.filter(::matches), key = { it.key }) { d ->
+                    items(std, key = { it.key }) { d ->
                         PickerRow(d, isUnsupported(d, supported)) { onPick(d) }
                     }
                 }
