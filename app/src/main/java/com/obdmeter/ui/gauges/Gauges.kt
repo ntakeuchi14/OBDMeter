@@ -31,6 +31,7 @@ import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.withTransform
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.TextMeasurer
@@ -142,6 +143,15 @@ data class GaugeLook(
     val barAngle: Float = 0f,
     val barSegments: Int = 0,
     val barSegmentGap: Float = 0.25f,
+    val barArc: Boolean = false,
+    val barTaper: Float = 0f,
+    val barOffColor: Color? = null,
+    val barZoneColors: Boolean = false,
+    val barMidColor: Color = Color(0xFFFFC107),
+    val barMidFrom: Double? = null,
+    val glow: Float = 0f,
+    val ghostDigits: Boolean = false,
+    val ghostAlpha: Float = 0.15f,
     val chartIntervalMs: Long = 60_000L,
     val chartSkipGaps: Boolean = true,
     /** 折れ線グラフの線の色 (項目の順。足りない分は自動) */
@@ -565,10 +575,12 @@ fun BarGauge(
         }
 
         if (look.showValue) {
+            val vColor = if (warn) GaugeColors.Warn else look.valueColor
             val valueStyle = TextStyle(
-                color = if (warn) GaugeColors.Warn else look.valueColor,
+                color = vColor,
                 fontSize = (unit * (if (unsupported) 0.2f else 0.34f) * look.valueSize).toSp(),
                 fontWeight = FontWeight.Bold, fontFamily = fonts.value,
+                shadow = glowShadow(vColor, look.glow, unit * 0.34f * look.valueSize),
             )
             val valueLayout = tm.measure(if (unsupported) "非対応" else def.format(value), valueStyle)
             val unitLayout = tm.measure(if (look.showUnit) def.unitText else "",
@@ -580,82 +592,245 @@ fun BarGauge(
                 w - unitLayout.size.width - 4f + dx + w * look.unitOffsetX,
                 valueY + valueLayout.size.height - unitLayout.size.height * 1.15f + h * look.unitOffsetY,
             ))
-            drawText(valueLayout, topLeft = Offset(w - unitLayout.size.width - 10f - valueLayout.size.width + dx, valueY))
+            val valueRight = w - unitLayout.size.width - 10f + dx
+            if (look.ghostDigits && !unsupported) {
+                // 消えている 7 セグ (8) を後ろにうっすら
+                val ghost = tm.measure(ghostText(def), valueStyle.copy(color = look.valueColor.copy(alpha = look.ghostAlpha), shadow = null))
+                drawText(ghost, topLeft = Offset(valueRight - ghost.size.width, valueY))
+            }
+            drawText(valueLayout, topLeft = Offset(valueRight - valueLayout.size.width, valueY))
         }
 
-        // バー (角度を付けるときはメーターの中央を軸に回し、枠に収まる長さにする)
-        val barHidden = !look.showValueArc || look.arcWidth <= 0f
-        val barH = if (look.arcWidth <= 0f) 0f else max(h * 0.12f * look.arcWidth, 4f)
-        // バーが無いときのレッドゾーンは細い帯で描く
-        val zoneH = if (barHidden) max(h * 0.04f, 3f) else barH
-        val thick = max(barH, zoneH)
+        drawBar(def, value, f, warn, look, peak, tm, fonts, unit)
+    }
+}
+
+/** 消えている 7 セグ表示の文字列 (範囲の最小・最大の桁数で、数字を 8 にしたもの) */
+internal fun ghostText(def: PidDef): String {
+    val a = def.format(def.min)
+    val b = def.format(def.max)
+    val t = if (a.length > b.length) a else b
+    return t.map { if (it.isDigit() || it == '-') '8' else it }.joinToString("")
+}
+
+/** 発光のにじみ (文字の影) */
+internal fun glowShadow(color: Color, glow: Float, size: Float): androidx.compose.ui.graphics.Shadow? =
+    if (glow <= 0f) null else androidx.compose.ui.graphics.Shadow(color.copy(alpha = 0.9f), Offset.Zero, size * 0.12f * glow + 2f)
+
+/**
+ * バー本体。直線 (角度付き) か弧、実線か破線 (マス)、先細り、範囲ごとの色分け、発光に対応する。
+ * 位置 p (0〜1) ごとに太さ・色が決まり、[p0, p1] の帯を 1 つの Path として塗る。
+ */
+private fun DrawScope.drawBar(
+    def: PidDef, value: Double?, f: Float, warn: Boolean, look: GaugeLook, peak: Double?,
+    tm: TextMeasurer, fonts: GaugeFontSet, unit: Float,
+) {
+    val w = size.width
+    val h = size.height
+    val barHidden = !look.showValueArc || look.arcWidth <= 0f
+    val arc = look.barArc
+    val baseThick = if (look.arcWidth <= 0f) 0f else
+        if (arc) max(min(w, h) * 0.14f * look.arcWidth, 4f) else max(h * 0.12f * look.arcWidth, 4f)
+    // バーが無いときのレッドゾーンは細い帯で描く
+    val zoneH = if (barHidden) max(h * 0.04f, 3f) else baseThick
+    val thick = max(baseThick, zoneH)
+    val taper = look.taperOrZero()
+    fun th(p: Float) = baseThick * (1f - taper * (1f - p))
+    val segs = look.barSegments
+    val gapFrac = if (segs > 0) look.barSegmentGap / segs else 0f
+
+    // ---- 形ごとの帯の Path ----
+    val bandPath: (Float, Float, Float?) -> Path
+    var pointAt: (Float, Float) -> Offset   // (位置, 内側からの距離) → 座標
+    var lineLen = w
+    if (!arc) {
         val angle = look.barAngle
         val rad = Math.toRadians(angle.toDouble())
         val pivot = if (angle == 0f) Offset(w / 2, h - thick / 2 - h * 0.08f) else Offset(w / 2, h / 2)
-        val len = if (angle == 0f) w else {
+        lineLen = if (angle == 0f) w else {
             val c = abs(cos(rad)).toFloat()
             val sn = abs(sin(rad)).toFloat()
-            // 太さの分も含めて枠に収まる長さ
             val byW = if (c > 1e-3f) (w - thick * sn) / c else Float.MAX_VALUE
             val byH = if (sn > 1e-3f) (h - thick * c) / sn else Float.MAX_VALUE
             min(byW, byH) * 0.94f
         }.coerceAtLeast(4f)
-        val segs = look.barSegments
-        val gap = if (segs > 0) len / segs * look.barSegmentGap else 0f
-        val r = if (segs > 0) CornerRadius(min(barH / 6, 4f), min(barH / 6, 4f)) else CornerRadius(barH / 2, barH / 2)
-        /** [from]〜[to] (0〜1) の範囲を、破線ならマスごとに、実線なら 1 本で塗る (バーの座標: 左端 0) */
-        fun DrawScope.fillRange(color: Color, from: Float, to: Float, top: Float, height: Float, minWidth: Float = 0f) {
-            val lo = min(from, to); val hi = max(from, to)
-            if (segs <= 0) {
-                drawRoundRect(color, Offset(len * lo, top), Size((len * (hi - lo)).coerceAtLeast(minWidth), height), r)
-            } else {
-                val cell = len / segs
-                for (i in 0 until segs) {
-                    // マスの中心が範囲に入っていれば点ける
-                    val mid = (i + 0.5f) / segs
-                    if (mid < lo || mid > hi) continue
-                    drawRoundRect(color, Offset(cell * i + gap / 2, top), Size(cell - gap, height), r)
-                }
+        val ux = cos(rad).toFloat(); val uy = sin(rad).toFloat()
+        // 帯の「下側」(太さの基準) は進行方向の右手 (横向きなら下)
+        val nx = -uy; val ny = ux
+        val origin = Offset(pivot.x - ux * lineLen / 2 + nx * thick / 2, pivot.y - uy * lineLen / 2 + ny * thick / 2)
+        pointAt = { p, d -> Offset(origin.x + ux * lineLen * p - nx * d, origin.y + uy * lineLen * p - ny * d) }
+        bandPath = { p0, p1, fixed ->
+            Path().apply {
+                val t0 = fixed ?: th(p0); val t1 = fixed ?: th(p1)
+                val off0 = (thick - (fixed ?: baseThick)) / 2
+                val o0 = if (taper > 0f && fixed == null) 0f else off0
+                moveTo(pointAt(p0, o0).x, pointAt(p0, o0).y)
+                lineTo(pointAt(p1, o0).x, pointAt(p1, o0).y)
+                lineTo(pointAt(p1, o0 + t1).x, pointAt(p1, o0 + t1).y)
+                lineTo(pointAt(p0, o0 + t0).x, pointAt(p0, o0 + t0).y)
+                close()
             }
         }
+    } else {
+        // 弧: 開始〜終了角度の範囲が枠いっぱいに収まる中心と半径を求める
+        val start = look.startAngle
+        val sweep = look.sweep
+        var minX = Float.MAX_VALUE; var maxX = -Float.MAX_VALUE; var minY = Float.MAX_VALUE; var maxY = -Float.MAX_VALUE
+        var k = 0
+        while (k <= 90) {
+            val a = Math.toRadians((start + sweep * k / 90f).toDouble())
+            val x = cos(a).toFloat(); val y = sin(a).toFloat()
+            minX = min(minX, x); maxX = max(maxX, x); minY = min(minY, y); maxY = max(maxY, y)
+            k++
+        }
+        val bw = (maxX - minX).coerceAtLeast(0.2f)
+        val bh = (maxY - minY).coerceAtLeast(0.2f)
+        val margin = thick * 0.6f + 2f
+        val r = min((w - margin * 2) / bw, (h - margin * 2) / bh).coerceAtLeast(8f)
+        val cx = w / 2 - (minX + maxX) / 2 * r
+        val cy = h / 2 - (minY + maxY) / 2 * r
+        val rIn = r - thick / 2
+        pointAt = { p, d ->
+            val a = Math.toRadians((start + sweep * p).toDouble())
+            Offset(cx + cos(a).toFloat() * (rIn + d), cy + sin(a).toFloat() * (rIn + d))
+        }
+        bandPath = { p0, p1, fixed ->
+            Path().apply {
+                val n = max(2, ((p1 - p0) * sweep / 3f).toInt() + 1)
+                val o0 = if (taper > 0f && fixed == null) 0f else (thick - (fixed ?: baseThick)) / 2
+                for (i in 0..n) {
+                    val p = p0 + (p1 - p0) * i / n
+                    val pt = pointAt(p, o0)
+                    if (i == 0) moveTo(pt.x, pt.y) else lineTo(pt.x, pt.y)
+                }
+                for (i in n downTo 0) {
+                    val p = p0 + (p1 - p0) * i / n
+                    val pt = pointAt(p, o0 + (fixed ?: th(p)))
+                    lineTo(pt.x, pt.y)
+                }
+                close()
+            }
+        }
+    }
+
+    // ---- 色 ----
+    val litBase = if (warn && !look.barZoneColors) GaugeColors.Warn else look.accent
+    fun zoneColor(p: Float): Color {
+        if (!look.barZoneColors) return litBase
+        val v = def.min + (def.max - def.min) * p
+        val z = look.redZone
+        if (z != null && v >= z.start && v <= z.endInclusive) return look.redZoneColor
+        val m = look.barMidFrom
+        if (m != null && v >= m) return look.barMidColor
+        return look.accent
+    }
+    fun offColor(p: Float): Color = look.barOffColor ?: if (look.barZoneColors || look.glow > 0f) zoneColor(p).copy(alpha = 0.13f) else GaugeColors.Track
+    fun lit(path: Path, color: Color) {
+        if (look.glow > 0f) {
+            val gw = baseThick * 0.5f * look.glow + 2f
+            drawPath(path, color.copy(alpha = 0.18f * look.glow), style = Stroke(gw * 2, join = StrokeJoin.Round))
+            drawPath(path, color.copy(alpha = 0.30f * look.glow), style = Stroke(gw, join = StrokeJoin.Round))
+        }
+        drawPath(path, color)
+    }
+    /** [lo, hi] を塗る (破線ならマスごと)。[colorAt] は位置ごとの色 */
+    fun fill(lo0: Float, hi0: Float, colorAt: (Float) -> Color, glowOn: Boolean, fixed: Float? = null) {
+        val lo = min(lo0, hi0); val hi = max(lo0, hi0)
+        if (segs > 0) {
+            for (i in 0 until segs) {
+                val mid = (i + 0.5f) / segs
+                if (mid < lo || mid > hi) continue
+                val path = bandPath(i.toFloat() / segs + gapFrac / 2, (i + 1f) / segs - gapFrac / 2, fixed)
+                if (glowOn) lit(path, colorAt(mid)) else drawPath(path, colorAt(mid))
+            }
+        } else if (hi > lo) {
+            // 実線: 色の切れ目ごとに分けて塗る
+            val cuts = mutableListOf(lo, hi)
+            if (look.barZoneColors) {
+                look.barMidFrom?.let { cuts += fraction(def, it) }
+                look.redZone?.let { cuts += fraction(def, it.start); cuts += fraction(def, it.endInclusive) }
+            }
+            val pts = cuts.filter { it in lo..hi }.distinct().sorted()
+            for (j in 0 until pts.size - 1) {
+                if (pts[j + 1] - pts[j] <= 1e-4f) continue
+                val path = bandPath(pts[j], pts[j + 1], fixed)
+                val c = colorAt((pts[j] + pts[j + 1]) / 2)
+                if (glowOn) lit(path, c) else drawPath(path, c)
+            }
+        }
+    }
+
+    // 横の実線 (先細りなし) は今までどおり角丸で描く
+    val simpleLine = !arc && segs <= 0 && taper <= 0f
+    if (simpleLine) {
+        val angle = look.barAngle
+        val pivot = if (angle == 0f) Offset(w / 2, h - thick / 2 - h * 0.08f) else Offset(w / 2, h / 2)
+        val len = lineLen
+        val r = CornerRadius(baseThick / 2, baseThick / 2)
         withTransform({
             translate(pivot.x - len / 2, pivot.y - thick / 2)
             rotate(angle, Offset(len / 2, thick / 2))
         }) {
-            val barTop = (thick - barH) / 2
-            if (look.showTrack && barH > 0f) fillRange(GaugeColors.Track, 0f, 1f, barTop, barH)
+            val top = (thick - baseThick) / 2
+            if (look.showTrack && baseThick > 0f) drawRoundRect(look.barOffColor ?: GaugeColors.Track, Offset(0f, top), Size(len, baseThick), r)
             look.redZone?.let { z ->
-                val s0 = fraction(def, z.start)
-                val e0 = fraction(def, z.endInclusive)
-                if (e0 > s0) {
-                    if (segs > 0 && !barHidden) fillRange(look.redZoneColor, s0, e0, (thick - zoneH) / 2, zoneH)
-                    else drawRect(look.redZoneColor, Offset(len * s0, (thick - zoneH) / 2), Size(len * (e0 - s0), zoneH))
-                }
+                val s0 = fraction(def, z.start); val e0 = fraction(def, z.endInclusive)
+                if (e0 > s0 && !look.barZoneColors) drawRect(look.redZoneColor, Offset(len * s0, (thick - zoneH) / 2), Size(len * (e0 - s0), zoneH))
             }
             if (value != null && !barHidden) {
-                val color = if (warn) GaugeColors.Warn else look.accent
                 if (def.min < 0 && def.max > 0) {
-                    // 燃調のような ± 値は 0 から伸ばす
                     val zero = fraction(def, 0.0)
-                    fillRange(color, zero, f, barTop, barH, minWidth = 3f)
-                    drawLine(look.tickColor, Offset(len * zero, barTop - 4f), Offset(len * zero, barTop + barH + 4f), 2f)
+                    val x0 = len * min(zero, f)
+                    drawRoundRect(litBase, Offset(x0, top), Size((len * abs(f - zero)).coerceAtLeast(3f), baseThick), r)
+                    drawLine(look.tickColor, Offset(len * zero, top - 4f), Offset(len * zero, top + baseThick + 4f), 2f)
+                } else if (look.barZoneColors) {
+                    // 色分けは帯ごと
                 } else {
-                    fillRange(color, 0f, f, barTop, barH)
+                    if (look.glow > 0f) {
+                        drawRoundRect(litBase.copy(alpha = 0.25f * look.glow), Offset(-4f, top - 4f), Size(len * f + 8f, baseThick + 8f),
+                            CornerRadius(baseThick / 2 + 4f, baseThick / 2 + 4f))
+                    }
+                    drawRoundRect(litBase, Offset(0f, top), Size(len * f, baseThick), r)
                 }
             }
-            if (peak != null) {
-                val px = len * fraction(def, peak)
-                drawLine(look.peakColor, Offset(px, barTop - barH * 0.5f), Offset(px, barTop + barH * 1.5f), max(3f, barH * 0.25f))
+        }
+        if (value != null && !barHidden && look.barZoneColors && !(def.min < 0 && def.max > 0)) fill(0f, f, ::zoneColor, true)
+    } else {
+        if (look.showTrack && baseThick > 0f) fill(0f, 1f, ::offColor, false)
+        // レッドゾーンの帯 (色分けするときはマスの色で表すので描かない)
+        if (!look.barZoneColors) look.redZone?.let { z ->
+            val s0 = fraction(def, z.start); val e0 = fraction(def, z.endInclusive)
+            if (e0 > s0) {
+                if (barHidden) fill(s0, e0, { look.redZoneColor }, false, fixed = zoneH)
+                else if (segs <= 0) fill(s0, e0, { look.redZoneColor.copy(alpha = 0.55f) }, false)
+                else fill(s0, e0, { look.redZoneColor.copy(alpha = 0.35f) }, false)
             }
         }
-        if (peak != null && look.showPeakValue) {
+        if (value != null && !barHidden) {
+            if (def.min < 0 && def.max > 0) {
+                val zero = fraction(def, 0.0)
+                fill(zero, f, ::zoneColor, true)
+                val a = pointAt(zero, -4f); val b = pointAt(zero, thick + 4f)
+                drawLine(look.tickColor, a, b, 2f)
+            } else {
+                fill(0f, f, ::zoneColor, true)
+            }
+        }
+    }
+    if (peak != null) {
+        val pp = fraction(def, peak)
+        val a = pointAt(pp, if (simpleLine) -baseThick * 0.5f + (thick - baseThick) / 2 else -baseThick * 0.3f)
+        val b = pointAt(pp, if (simpleLine) baseThick * 1.5f + (thick - baseThick) / 2 else thick + baseThick * 0.3f)
+        drawLine(look.peakColor, a, b, max(3f, baseThick * 0.25f))
+        if (look.showPeakValue) {
             val t = tm.measure("MAX " + def.format(peak),
                 TextStyle(color = look.peakColor, fontSize = (unit * 0.12f).toSp(), fontFamily = fonts.value))
-            val ty = if (angle == 0f) pivot.y - thick / 2 - t.size.height - barH * 0.6f else 0f
-            drawText(t, topLeft = Offset(4f, ty.coerceAtLeast(0f)))
+            drawText(t, topLeft = Offset(4f, 0f))
         }
     }
 }
+
+private fun GaugeLook.taperOrZero() = barTaper.coerceIn(0f, 1f)
 
 // ---------------------------------------------------------------------------
 // デジタル (数値) 表示
@@ -690,13 +865,32 @@ fun DigitalGauge(
         val cy = size.height * (0.5f + (look.valuePosition - 0.42f) * 0.5f)
         val cx = size.width * (0.5f + look.valueOffsetX * 0.5f)
         if (look.showValue) {
-            // 幅に収まらないときは縮める (メーターの形によってはみ出さないように)
-            drawCenteredTextFit(tm, if (unsupported) "非対応" else def.format(value),
-                Offset(cx, cy),
-                TextStyle(color = if (warn) GaugeColors.Warn else look.valueColor,
-                    fontSize = (unit * (if (unsupported) 0.2f else 0.38f) * look.valueSize).toSp(),
-                    fontWeight = FontWeight.Bold, fontFamily = fonts.value),
-                maxWidth = size.width * 0.96f)
+            val vColor = if (warn) GaugeColors.Warn else look.valueColor
+            val style = TextStyle(color = vColor,
+                fontSize = (unit * (if (unsupported) 0.2f else 0.38f) * look.valueSize).toSp(),
+                fontWeight = FontWeight.Bold, fontFamily = fonts.value,
+                shadow = glowShadow(vColor, look.glow, unit * 0.38f * look.valueSize))
+            val text = if (unsupported) "非対応" else def.format(value)
+            if (look.ghostDigits && !unsupported) {
+                // 消えている 7 セグ (8) を中央に置き、数値はその右端にそろえる
+                val gs = style.copy(color = look.valueColor.copy(alpha = look.ghostAlpha), shadow = null)
+                var ghost = tm.measure(ghostText(def), gs)
+                var vs = style
+                val maxW = size.width * 0.96f
+                if (ghost.size.width > maxW && maxW > 0f) {
+                    val k = maxW / ghost.size.width
+                    ghost = tm.measure(ghostText(def), gs.copy(fontSize = gs.fontSize * k))
+                    vs = style.copy(fontSize = style.fontSize * k)
+                }
+                val gx = cx - ghost.size.width / 2f
+                val gy = cy - ghost.size.height / 2f
+                drawText(ghost, topLeft = Offset(gx, gy))
+                val vl = tm.measure(text, vs)
+                drawText(vl, topLeft = Offset(gx + ghost.size.width - vl.size.width, gy))
+            } else {
+                // 幅に収まらないときは縮める (メーターの形によってはみ出さないように)
+                drawCenteredTextFit(tm, text, Offset(cx, cy), style, maxWidth = size.width * 0.96f)
+            }
         }
         if (look.showUnit) {
             drawCenteredText(tm, def.unitText,

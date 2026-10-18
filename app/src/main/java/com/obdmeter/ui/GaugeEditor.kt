@@ -192,7 +192,7 @@ fun GaugeSettingsDialog(
                                         vm.copyGauge(draft)
                                         Toast.makeText(context, "コピーしました。下の「貼り付け」で、このページや別のページに貼り付けられます", Toast.LENGTH_LONG).show()
                                     }, onBringToFront) { confirmDelete = true }
-                                1 -> AngleTab(draft, ::update)
+                                1 -> AngleTab(draft, def, ::update)
                                 2 -> ColorTab(draft, ::update) { target -> fontPickerFor = target }
                                 3 -> ImageTab(draft, ::update)
                             }
@@ -440,9 +440,35 @@ private fun BasicTab(
 // ---------------------------------------------------------------------------
 
 @Composable
-private fun AngleTab(g: GaugeConfig, update: ((GaugeDesign) -> GaugeDesign) -> Unit) {
+private fun AngleTab(g: GaugeConfig, def: com.obdmeter.core.PidDef?, update: ((GaugeDesign) -> GaugeDesign) -> Unit) {
     val d = g.design
     if (g.style == GaugeStyle.BAR) {
+        Head("デジパネ風")
+        Hint("昔のソアラや 86 のデジタルメーターのような、弧を描いて伸びる蛍光管風のバーにします (あとから個別に調整できます)。")
+        OutlinedButton(onClick = {
+            update {
+                it.copy(
+                    barArc = true, startAngle = -100f, endAngle = 70f, barSegments = 32, barSegmentGap = 0.35f,
+                    barTaper = 0.65f, arcWidth = 1.2f, showTrack = true, showValueArc = true,
+                    barZoneColors = true, color = 0xFF39FF7AL, barMidColor = 0xFFFFC21AL,
+                    barMidFrom = def?.let { d0 -> d0.min + (d0.max - d0.min) * 0.7 },
+                    redZoneColor = 0xFFFF3B30L, barOffColor = null,
+                    glow = 0.6f, ghostDigits = true, ghostAlpha = 0.12f,
+                    valueColor = 0xFF5CFFB0L, faceColor = it.faceColor ?: 0xFF050805L,
+                )
+            }
+        }) { Text("デジパネ風にする") }
+
+        Head("バーの形")
+        Row {
+            FilterChip(!d.barArc, { update { it.copy(barArc = false) } }, { Text("直線") }, Modifier.padding(end = 6.dp))
+            FilterChip(d.barArc, { update { it.copy(barArc = true) } }, { Text("弧") })
+        }
+        if (d.barArc) Hint("弧の範囲は下の「開始・終了角度」で決めます。枠いっぱいに収まる大きさで描きます。")
+        SliderLine("先細り", d.barTaper * 100, 0f..100f, "%.0f%%") { v -> update { it.copy(barTaper = snap(v, 5f) / 100f) } }
+        Hint("始まりを細く、終わりに向かって太くします (デジパネのタコメーター風)。")
+    }
+    if (g.style == GaugeStyle.BAR && !d.barArc) {
         Head("バーの角度 (時計回り)")
         Row(Modifier.horizontalScroll(rememberScrollState())) {
             listOf(
@@ -461,10 +487,38 @@ private fun AngleTab(g: GaugeConfig, update: ((GaugeDesign) -> GaugeDesign) -> U
             FilterChip(d.barSegments > 0, { update { it.copy(barSegments = if (it.barSegments > 0) it.barSegments else 20) } },
                 { Text("破線") })
         }
+    }
+    if (g.style == GaugeStyle.BAR && d.barArc) {
+        Head("バーの線")
+        Row {
+            FilterChip(d.barSegments == 0, { update { it.copy(barSegments = 0) } }, { Text("実線") }, Modifier.padding(end = 6.dp))
+            FilterChip(d.barSegments > 0, { update { it.copy(barSegments = if (it.barSegments > 0) it.barSegments else 20) } },
+                { Text("破線") })
+        }
+    }
+    if (g.style == GaugeStyle.BAR) {
         if (d.barSegments > 0) {
             SliderLine("マスの数", d.barSegments.toFloat(), 3f..60f, "%.0f") { v -> update { it.copy(barSegments = v.roundToInt()) } }
             SliderLine("マスの間のすき間", d.barSegmentGap * 100, 5f..80f, "%.0f%%") { v -> update { it.copy(barSegmentGap = snap(v, 1f) / 100f) } }
         }
+        SliderLine("バーの太さ", d.arcWidth * 100, 0f..300f, "%.0f%%") { v -> update { it.copy(arcWidth = snap(v, 5f) / 100f) } }
+
+        Head("マスの色")
+        SwitchLine("範囲で色分けする", "通常の色 → 中間の色 → レッドゾーンの色 の順に、位置ごとに塗り分けます", d.barZoneColors) { v ->
+            update { it.copy(barZoneColors = v) }
+        }
+        if (d.barZoneColors) {
+            ColorLine("中間の色", d.barMidColor, Color(0xFFFFC107)) { c -> update { it.copy(barMidColor = c) } }
+            if (def != null && def.max > def.min) {
+                val from = (d.barMidFrom ?: (def.min + (def.max - def.min) * 0.7)).toFloat()
+                SliderLine("中間の色にする値", from, def.min.toFloat()..def.max.toFloat(), "%.0f") { v ->
+                    update { it.copy(barMidFrom = v.toDouble()) }
+                }
+            }
+            Hint("レッドゾーンの範囲と色は下の「レッドゾーン」の設定を使います。")
+        }
+        ColorLine("消えているマス・背景の色 (既定 = 自動)", d.barOffColor, GaugeColors.Track) { c -> update { it.copy(barOffColor = c) } }
+        Hint("自動のときは、色分けか発光を使うと各マスの色をうっすら、それ以外は灰色で描きます。")
     }
     if (g.style != GaugeStyle.ANALOG) Hint("以下の角度・目盛りはアナログ表示のときに使われます。レッドゾーンはバー表示でも使われます。")
 
@@ -537,6 +591,16 @@ private fun ColorTab(g: GaugeConfig, update: ((GaugeDesign) -> GaugeDesign) -> U
     FontLine("文字 (目盛りの数字・名前・単位)", d.labelFont?.let { lib[it]?.name ?: "(削除されたフォント)" } ?: "既定") { onPickFont("label") }
 
     ColorLine("メーターの色 (現在値の弧・バー)", d.color, GaugeColors.Accent) { c -> update { it.copy(color = c) } }
+    if (g.style == GaugeStyle.BAR || g.style == GaugeStyle.DIGITAL) {
+        Head("蛍光管風")
+        SliderLine("発光 (にじみ)", d.glow * 100, 0f..100f, "%.0f%%") { v -> update { it.copy(glow = snap(v, 5f) / 100f) } }
+        SwitchLine("消えている 7 セグを薄く表示", "数値の後ろに「888」をうっすら出します (7 セグ風のフォントと合わせて使います)", d.ghostDigits) { v ->
+            update { it.copy(ghostDigits = v) }
+        }
+        if (d.ghostDigits) {
+            SliderLine("薄さ", d.ghostAlpha * 100, 3f..60f, "%.0f%%") { v -> update { it.copy(ghostAlpha = snap(v, 1f) / 100f) } }
+        }
+    }
     ColorLine("メーターの背景色 (既定 = なし)", d.faceColor, Color.Transparent) { c -> update { it.copy(faceColor = c) } }
     if (d.faceColor != null) {
         SliderLine("背景色の大きさ", d.faceScale * 100, 20f..150f, "%.0f%%") { v -> update { it.copy(faceScale = snap(v, 1f) / 100f) } }

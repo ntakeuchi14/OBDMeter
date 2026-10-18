@@ -204,6 +204,22 @@ data class GaugeDesign(
     /** バー表示: 破線のマスの数 (0 = 実線) と、マスの間のすき間 (マスの幅に対する比率) */
     val barSegments: Int = 0,
     val barSegmentGap: Float = 0.25f,
+    /** バー表示: 弧の形にする (開始・終了角度はアナログと共通) */
+    val barArc: Boolean = false,
+    /** バー表示: 先細り (0 = 一定の太さ、1 = 始まりが細く終わりに向かって太くなる) */
+    val barTaper: Float = 0f,
+    /** バー表示: 消えているマス・背景の色 (null = 自動) */
+    val barOffColor: Long? = null,
+    /** バー表示: マスの色を範囲で塗り分ける (通常 → 中間 → レッドゾーン) */
+    val barZoneColors: Boolean = false,
+    val barMidColor: Long? = null,
+    /** 中間の色にする値 (null = 中間の色なし) */
+    val barMidFrom: Double? = null,
+    /** 発光 (にじみ) の強さ (0〜1) */
+    val glow: Float = 0f,
+    /** 数値の後ろに消えている 7 セグ (8) をうっすら出す */
+    val ghostDigits: Boolean = false,
+    val ghostAlpha: Float = 0.15f,
     /** 背景画像の位置のずれ (メーターの大きさに対する比率。右・下が正) */
     val imageOffsetX: Float = 0f,
     val imageOffsetY: Float = 0f,
