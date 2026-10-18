@@ -235,9 +235,6 @@ data class GaugeDesign(
     val historyHours: Int = 0,
     /** 記録する間隔 (秒、1〜600)。接続した直後に 1 回記録し、その後この間隔で記録する */
     val recordIntervalSec: Float = 60f,
-    /** 記録を残す期間 (ミリ秒) */
-    val historyRetentionMs: Long
-        get() = if (historyHours > 0) historyHours * 3_600_000L else historyMonths.coerceIn(1, 24) * 2_629_746_000L
     /** 項目ごとの線の色 (並びは「表示する項目」→ 追加した項目の順。null = 自動) */
     val chartColors: List<Long?> = emptyList(),
 )
@@ -297,6 +294,10 @@ data class GaugeConfig(
 data class FloatPlacement(val x: Int, val y: Int, val widthDp: Int)
 
 /** メーターが使っている画像ファイル名 (背景画像・値テーブルの値の背景) */
+/** 記録を残す期間 (ミリ秒) */
+val GaugeDesign.historyRetentionMs: Long
+    get() = if (historyHours > 0) historyHours * 3_600_000L else historyMonths.coerceIn(1, 24) * 2_629_746_000L
+
 fun GaugeDesign.imageNames(): List<String> = listOfNotNull(backgroundImage, tableValueImage)
 
 @Serializable

@@ -1,6 +1,7 @@
 package com.obdmeter.ui
 
 import com.obdmeter.data.HistoryStore
+import com.obdmeter.data.historyRetentionMs
 import android.widget.Toast
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape

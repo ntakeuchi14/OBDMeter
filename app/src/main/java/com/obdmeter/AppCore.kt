@@ -11,6 +11,7 @@ import com.obdmeter.data.Defaults
 import com.obdmeter.data.FontEntry
 import com.obdmeter.data.GaugeStyle
 import com.obdmeter.data.HistoryStore
+import com.obdmeter.data.historyRetentionMs
 import com.obdmeter.data.Repository
 import com.obdmeter.session.LogBuffer
 import com.obdmeter.session.ObdSession
