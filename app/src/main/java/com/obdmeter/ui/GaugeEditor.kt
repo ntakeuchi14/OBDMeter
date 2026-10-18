@@ -796,8 +796,14 @@ private fun TableSettings(
     SliderLine("1 段の最大行数", d.tableMaxRows.toFloat(), 1f..15f, "%.0f 行") { v ->
         update { it.copy(tableMaxRows = v.roundToInt().coerceIn(1, 15)) }
     }
-    SliderLine("項目名の幅", d.tableNameRatio * 100, 0f..70f, "%.0f%%") { v -> update { it.copy(tableNameRatio = snap(v, 1f) / 100f) } }
-    SliderLine("単位の幅", d.tableUnitRatio * 100, 0f..50f, "%.0f%%") { v -> update { it.copy(tableUnitRatio = snap(v, 1f) / 100f) } }
+    SwitchLine("項目名を表示", "OFF にすると値と単位だけを並べます", d.showName) { v -> update { it.copy(showName = v) } }
+    if (d.showName) {
+        SliderLine("項目名の幅", d.tableNameRatio * 100, 0f..70f, "%.0f%%") { v -> update { it.copy(tableNameRatio = snap(v, 1f) / 100f) } }
+    }
+    SwitchLine("単位を表示", "OFF にすると単位の欄をなくして、値の部分を広げます", d.showUnit) { v -> update { it.copy(showUnit = v) } }
+    if (d.showUnit) {
+        SliderLine("単位の幅", d.tableUnitRatio * 100, 0f..50f, "%.0f%%") { v -> update { it.copy(tableUnitRatio = snap(v, 1f) / 100f) } }
+    }
     Hint("項目名は右寄せ、単位は左寄せで表示します。残りの幅が値の部分です。文字の色・大きさ・フォントは「色・針・数値」タブで変えられます。")
 
     Head("値の部分の背景")
