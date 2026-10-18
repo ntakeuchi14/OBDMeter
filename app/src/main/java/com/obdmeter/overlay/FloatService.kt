@@ -72,7 +72,8 @@ object FloatController {
 fun floatUnitKey(page: Dashboard, g: GaugeConfig): Long = g.floatGroup?.let { -(page.id * 100 + it) } ?: g.id
 
 /** ページのメーターを、フロート表示のウィンドウ単位にまとめる (並び順は保つ) */
-fun Dashboard.floatUnits(): Map<Long, List<GaugeConfig>> = gauges.groupBy { floatUnitKey(this, it) }
+fun Dashboard.floatUnits(): Map<Long, List<GaugeConfig>> =
+    gauges.filter { it.floatShow }.groupBy { floatUnitKey(this, it) }
 
 /** メーターを囲む範囲 (x, y, 列数, 行数) */
 fun List<GaugeConfig>.cellBounds(): IntArray {
@@ -239,7 +240,7 @@ class FloatService : LifecycleService(), SavedStateRegistryOwner {
         gadgets.keys.filter { it !in want.keys }.forEach { k -> gadgets.remove(k)?.let { remove(it) } }
         if (want.isEmpty()) {
             // 全部閉じたらフロート表示を終える (次にアプリを開いたとき、また待機する)
-            if (page != null && page.gauges.isNotEmpty()) stopSelf()
+            if (page != null && page.gauges.any { it.floatShow }) stopSelf()
             return
         }
         val keepOn = s.keepScreenOn && core.session.state.value !is ConnectionState.Disconnected

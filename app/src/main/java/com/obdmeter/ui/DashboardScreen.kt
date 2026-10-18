@@ -564,7 +564,14 @@ private fun GaugeOnGrid(
             )
     ) {
         content()
-        if (editing && gauge.floatGroup != null) {
+        if (editing && !gauge.floatShow) {
+            // フロート表示しないメーター (左上)
+            Box(
+                Modifier.align(Alignment.TopStart).padding(4.dp).clip(RoundedCornerShape(11.dp))
+                    .background(GaugeColors.SubText).padding(horizontal = 6.dp, vertical = 2.dp),
+                contentAlignment = Alignment.Center,
+            ) { Text("フロートなし", color = GaugeColors.Background, fontSize = 11.sp, fontWeight = FontWeight.Bold) }
+        } else if (editing && gauge.floatGroup != null) {
             // フロート表示のグループ (左上)
             Box(
                 Modifier.align(Alignment.TopStart).padding(4.dp).size(22.dp).clip(CircleShape)

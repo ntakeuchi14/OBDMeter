@@ -356,6 +356,10 @@ private fun BasicTab(
         else -> {}
     }
 
+    Head("フロート表示")
+    SwitchLine("フロート表示する", "OFF にすると、このメーターはダッシュボードだけに表示し、フロート表示には出しません",
+        g.floatShow) { replace(g.copy(floatShow = it)) }
+    if (g.floatShow) {
     Head("フロート表示のグループ")
     Hint(
         "同じページで同じグループにしたメーターは、フロート表示のとき 1 つのウィンドウにまとめて、" +
@@ -367,6 +371,7 @@ private fun BasicTab(
             FilterChip(g.floatGroup == n, { replace(g.copy(floatGroup = n)) }, { Text(GaugeConfig.groupLabel(n)) },
                 Modifier.padding(end = 6.dp))
         }
+    }
     }
 
     Head("表示名 (空欄で「${base?.shortName ?: ""}」)")

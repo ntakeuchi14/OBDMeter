@@ -262,6 +262,8 @@ data class GaugeConfig(
      * フロート表示で 1 つのウィンドウにまとめて、ダッシュボードと同じ並びで表示する。null = 単独
      */
     val floatGroup: Int? = null,
+    /** フロート表示に出すか (false = ダッシュボードだけに表示) */
+    val floatShow: Boolean = true,
     /** 折れ線グラフで、[pidKey] に加えて表示する項目のキー */
     val chartKeys: List<String> = emptyList(),
 ) {
