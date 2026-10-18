@@ -513,10 +513,12 @@ private fun ColorTab(g: GaugeConfig, update: ((GaugeDesign) -> GaugeDesign) -> U
     FontLine("文字 (目盛りの数字・名前・単位)", d.labelFont?.let { lib[it]?.name ?: "(削除されたフォント)" } ?: "既定") { onPickFont("label") }
 
     ColorLine("メーターの色 (現在値の弧・バー)", d.color, GaugeColors.Accent) { c -> update { it.copy(color = c) } }
-    if (d.backgroundImage == null) {
-        ColorLine("メーターの背景色 (既定 = なし)", d.faceColor, Color.Transparent) { c -> update { it.copy(faceColor = c) } }
-    } else {
-        Hint("メーターの背景色は、背景画像を使わないときに指定できます")
+    ColorLine("メーターの背景色 (既定 = なし)", d.faceColor, Color.Transparent) { c -> update { it.copy(faceColor = c) } }
+    if (d.faceColor != null) {
+        SliderLine("背景色の大きさ", d.faceScale * 100, 20f..150f, "%.0f%%") { v -> update { it.copy(faceScale = snap(v, 1f) / 100f) } }
+        if (d.backgroundImage != null) {
+            Hint("背景色は背景画像の下に塗ります。画像の透過した部分から見えるので、大きさを画像の内側に合わせてください。")
+        }
     }
 
     Head("外周リング")

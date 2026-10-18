@@ -112,6 +112,7 @@ data class GaugeLook(
     val imageOffsetY: Float = 0f,
     /** 文字盤の背景色 (背景画像が無いときだけ塗る) */
     val faceColor: Color? = null,
+    val faceScale: Float = 1f,
     /** 名前・単位の位置のずれ (メーターの大きさに対する比率) と色 */
     val nameOffsetX: Float = 0f,
     val nameOffsetY: Float = 0f,
@@ -313,11 +314,13 @@ fun AnalogGauge(
 
         val ringWidth = ringWidthFor(look, d)
 
-        // 背景画像 (目盛りや針は上から描く)。画像が無ければ指定の背景色で文字盤を塗る
+        // 背景色で文字盤を塗り、その上に背景画像 (透過した画像なら背景色が透けて見える)。目盛りや針は上から描く
+        look.faceColor?.let { c ->
+            val fc = if (image != null) Offset(center.x + d * look.imageOffsetX, center.y + d * look.imageOffsetY) else center
+            drawCircle(c, (outer - ringWidth / 2) * look.faceScale, fc)
+        }
         if (image != null) {
             drawImageFit(image, Offset(center.x + d * look.imageOffsetX, center.y + d * look.imageOffsetY), d * look.imageScale)
-        } else {
-            look.faceColor?.let { drawCircle(it, outer - ringWidth / 2, center) }
         }
 
         // 外周リング
@@ -544,7 +547,7 @@ fun BarGauge(
     Canvas(modifier) {
         val h = size.height
         val w = size.width
-        if (image == null) drawFace(look)
+        drawFace(look)
         image?.let { drawImageFit(it, Offset(w / 2 + w * look.imageOffsetX, h / 2 + h * look.imageOffsetY), max(w, h) * look.imageScale) }
         val unit = min(h, w * 0.5f)
         if (look.showName) {
@@ -627,7 +630,7 @@ fun DigitalGauge(
     val tm = rememberTextMeasurer()
     val warn = isWarn(def, value)
     Canvas(modifier) {
-        if (image == null) drawFace(look)
+        drawFace(look)
         image?.let {
             drawImageFit(it, Offset(size.width * (0.5f + look.imageOffsetX), size.height * (0.5f + look.imageOffsetY)),
                 max(size.width, size.height) * look.imageScale)
@@ -667,8 +670,11 @@ fun DigitalGauge(
 /** バー・デジタル表示の背景色 (角丸の四角) */
 internal fun DrawScope.drawFace(look: GaugeLook) {
     val c = look.faceColor ?: return
-    val r = min(size.width, size.height) * 0.08f
-    drawRoundRect(c, cornerRadius = CornerRadius(r, r))
+    val s = look.faceScale
+    val r = min(size.width, size.height) * 0.08f * s
+    val sz = androidx.compose.ui.geometry.Size(size.width * s, size.height * s)
+    drawRoundRect(c, topLeft = Offset((size.width - sz.width) / 2, (size.height - sz.height) / 2), size = sz,
+        cornerRadius = CornerRadius(r, r))
 }
 
 /**

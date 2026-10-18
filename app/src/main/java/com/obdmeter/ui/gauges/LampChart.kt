@@ -104,7 +104,7 @@ internal fun LampGauge(
     val tm = rememberTextMeasurer()
     val on = !unsupported && value != null && (look.lampCondition?.test(value) ?: isWarn(def, value))
     Canvas(modifier) {
-        if (image == null) drawFace(look)
+        drawFace(look)
         image?.let {
             drawImageFit(it, Offset(size.width * (0.5f + look.imageOffsetX), size.height * (0.5f + look.imageOffsetY)),
                 max(size.width, size.height) * look.imageScale)

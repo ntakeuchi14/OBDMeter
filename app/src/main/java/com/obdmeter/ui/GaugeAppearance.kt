@@ -86,6 +86,7 @@ fun GaugeDesign.toLook(def: PidDef, style: GaugeStyle): GaugeLook {
         imageOffsetX = imageOffsetX.coerceIn(-0.6f, 0.6f),
         imageOffsetY = imageOffsetY.coerceIn(-0.6f, 0.6f),
         faceColor = faceColor?.let { Color(it) },
+        faceScale = faceScale.coerceIn(0.2f, 1.5f),
         nameOffsetX = nameOffsetX.coerceIn(-0.6f, 0.6f),
         nameOffsetY = nameOffsetY.coerceIn(-0.6f, 0.6f),
         nameColor = nameColor.color(labelColor.color(GaugeColors.SubText)),
