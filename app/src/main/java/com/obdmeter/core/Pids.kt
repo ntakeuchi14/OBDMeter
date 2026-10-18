@@ -28,12 +28,15 @@ data class PidDef(
     val derive: (Map<String, Double>) -> Double? = { null },
     /** CUSTOM のときの問い合わせ内容 */
     val request: PidRequest? = null,
+    /** BMW_BLOCK: DME の測定値 ID とバイト数 ([decode] にはこの項目のバイトだけを渡す) */
+    val blockId: Int = 0,
+    val blockSize: Int = 0,
 ) {
     /**
      * MODE01: 標準 PID / ADAPTER_VOLTAGE: アダプター測定 / DERIVED: 計算値 /
      * CUSTOM: ユーザー登録のカスタム PID / REQUEST: Mode 01 以外の標準要求 (Mode 06 の失火カウンタなど)
      */
-    enum class Kind { MODE01, ADAPTER_VOLTAGE, DERIVED, CUSTOM, REQUEST }
+    enum class Kind { MODE01, ADAPTER_VOLTAGE, DERIVED, CUSTOM, REQUEST, BMW_BLOCK }
 
     val isCustom: Boolean get() = kind == Kind.CUSTOM
 
@@ -64,68 +67,68 @@ object Pids {
     private val MISFIRE_LIFE_CYL = listOf(1, 5, 3, 6, 2, 4)
 
     /**
-     * BMW 測定値ブロック F0 に登録する測定値 (ID, バイト数)。DME が覚えられる登録は 1 つなので、
-     * ブロックで読む項目はすべてここにまとめ、21 F0 の応答から自分の位置を取り出す。
-     * 4850〜4855 = 生涯失火数 (2 バイト) / 4400 = オイルレベル 長期平均 (1 バイト)
+     * BMW の DME 測定値 (MSD80/81)。測定値ブロック F0 に読みたい測定値を登録 (2C F0 …) してから
+     * 21 F0 でまとめて読む。登録する測定値は、その時に読む項目から [bmwBlockRequest] で組み立てる。
+     * BMW 方式 (6F1 + 拡張アドレス 12)
      */
-    private val BMW_BLOCK: List<Pair<Int, Int>> = MISFIRE_LIFE_IDS.map { it to 2 } + listOf(0x4400 to 1)
-
-    /** [id] の値が 21 F0 の応答の何バイト目から入っているか */
-    private fun blockOffset(id: Int): Int {
-        var off = 0
-        for ((i, size) in BMW_BLOCK) { if (i == id) return off; off += size }
-        error("not in block")
-    }
-
-    val BMW_BLOCK_SETUP: List<IntArray> = listOf(
-        intArrayOf(0x2C, 0xF0, 0x04),
-        run {
-            val out = mutableListOf(0x2C, 0xF0)
-            var pos = 1
-            for ((id, size) in BMW_BLOCK) {
-                out += listOf(0x02, pos, size, id shr 8, id and 0xFF, 0x01)
-                pos += size
-            }
-            out.toIntArray()
-        },
-    )
-    val MISFIRE_LIFE_SETUP: List<IntArray> get() = BMW_BLOCK_SETUP
-
-    private val BMW_BLOCK_REQUEST = PidRequest(0x21, intArrayOf(0xF0), header = "6F1", canExtAddress = "12", setup = BMW_BLOCK_SETUP)
-
-    private fun misfireLife(cyl: Int): PidDef {
-        val off = blockOffset(MISFIRE_LIFE_IDS[MISFIRE_LIFE_CYL.indexOf(cyl)])
-        return PidDef(
-            key = "MISFIRE_LIFE_$cyl", name = "生涯失火数 #$cyl (BMW)", shortName = "生涯失火#$cyl", unit = "回",
-            min = 0.0, max = 100.0,
-            kind = PidDef.Kind.REQUEST,
-            request = BMW_BLOCK_REQUEST,
-            minBytes = 12, slow = true,
-            decode = { d -> (d[off] * 256 + d[off + 1]).toDouble() },
+    fun bmwBlockRequest(items: List<PidDef>): PidRequest {
+        val define = mutableListOf(0x2C, 0xF0)
+        var pos = 1
+        for (d in items) {
+            define += listOf(0x02, pos, d.blockSize, d.blockId shr 8, d.blockId and 0xFF, 0x01)
+            pos += d.blockSize
+        }
+        return PidRequest(
+            0x21, intArrayOf(0xF0), header = "6F1", canExtAddress = "12",
+            setup = listOf(intArrayOf(0x2C, 0xF0, 0x04), define.toIntArray()),
         )
     }
 
-    /** オイルレベル (DME のオイルセンサー。mm)。現在値は 30 0E 01 (STATUS_OEL)、長期平均は測定値 4400 */
-    private val OIL_LEVEL_STEP = 0.29296875
+    private fun u16(b: IntArray) = (b[0] * 256 + b[1]).toDouble()
+    private fun s16(b: IntArray) = ((b[0] * 256 + b[1]).let { if (it >= 0x8000) it - 0x10000 else it }).toDouble()
 
+    private fun bmw(
+        key: String, name: String, short: String, unit: String, min: Double, max: Double,
+        id: Int, size: Int, decimals: Int = 0, warnAbove: Double? = null, warnBelow: Double? = null,
+        decode: (IntArray) -> Double,
+    ) = PidDef(
+        key = key, name = name, shortName = short, unit = unit, min = min, max = max, decimals = decimals,
+        warnAbove = warnAbove, warnBelow = warnBelow,
+        kind = PidDef.Kind.BMW_BLOCK, blockId = id, blockSize = size, minBytes = size, decode = decode,
+    )
+
+    /** 生涯失火数 (DME の測定値 0x4850〜0x4855 は点火順 1-5-3-6-2-4 で並ぶ) */
+    private fun misfireLife(cyl: Int): PidDef {
+        val id = 0x4850 + listOf(1, 5, 3, 6, 2, 4).indexOf(cyl)
+        return bmw("MISFIRE_LIFE_$cyl", "生涯失火数 #$cyl (BMW)", "生涯失火#$cyl", "回", 0.0, 100.0, id, 2) { u16(it) }
+    }
+
+    /** オイルセンサーのレベル (1 = 0.293 mm) */
+    private const val OIL_LEVEL_STEP = 0.29296875
+
+    /** オイルレベル (現在値): STATUS_OEL (30 0E 01) の応答 = 油温 2 / レベル 1 / 品質 2 バイト */
     private fun oilLevelNow() = PidDef(
         key = "OIL_LEVEL", name = "オイルレベル (BMW)", shortName = "オイル量", unit = "mm",
         min = 0.0, max = 75.0, decimals = 1,
         kind = PidDef.Kind.REQUEST,
-        // 応答 70 0E 01 の後: 油温 (2 バイト ×0.1) / オイルレベル (1 バイト ×0.293 mm) / オイル品質 (2 バイト)
         request = PidRequest(0x30, intArrayOf(0x0E, 0x01), header = "7E0"),
         minBytes = 3, slow = true,
         decode = { d -> d[2] * OIL_LEVEL_STEP },
     )
 
-    private fun oilLevelLong(): PidDef {
-        val off = blockOffset(0x4400)
-        return PidDef(
-            key = "OIL_LEVEL_LONG", name = "オイルレベル 長期平均 (BMW)", shortName = "オイル量平均", unit = "mm",
-            min = 0.0, max = 75.0, decimals = 1,
-            kind = PidDef.Kind.REQUEST, request = BMW_BLOCK_REQUEST,
-            minBytes = 13, slow = true,
-            decode = { d -> d[off] * OIL_LEVEL_STEP },
+    private val BMW_ITEMS: List<PidDef> by lazy {
+        (1..6).map { misfireLife(it) } + listOf(
+            bmw("OIL_LEVEL_LONG", "オイルレベル 長期平均 (BMW)", "オイル量平均", "mm", 0.0, 75.0, 0x4400, 1, decimals = 1) { it[0] * OIL_LEVEL_STEP },
+            bmw("BMW_COOLANT", "水温 (BMW)", "水温", "°C", 40.0, 130.0, 0x581F, 1, warnAbove = 112.0) { it[0] * 0.75 - 48 },
+            bmw("BMW_BATTERY", "バッテリー電圧 (BMW)", "電圧", "V", 10.0, 16.0, 0x460A, 2, decimals = 1, warnBelow = 12.0) { u16(it) * 0.015 },
+            bmw("BMW_RPM", "エンジン回転数 (BMW)", "回転数", "rpm", 0.0, 8000.0, 0x4807, 2, warnAbove = 7000.0) { u16(it) },
+            bmw("BMW_IAT", "吸気温度 (BMW)", "吸気温", "°C", -20.0, 80.0, 0x4200, 1, warnAbove = 60.0) { it[0] * 0.75 - 48 },
+            bmw("BMW_IAT_CHARGE", "吸気温度 過給側 (BMW)", "吸気温(過給)", "°C", -20.0, 100.0, 0x58D5, 1, warnAbove = 70.0) { it[0] - 48.0 },
+            bmw("BMW_AFR1", "空燃比 バンク1 (BMW)", "AFR1", "", 10.0, 20.0, 0x5A50, 2, decimals = 1) { u16(it) / 1024.0 * 14.7 },
+            bmw("BMW_AFR2", "空燃比 バンク2 (BMW)", "AFR2", "", 10.0, 20.0, 0x5A51, 2, decimals = 1) { u16(it) / 1024.0 * 14.7 },
+            bmw("BMW_LAMBDA1", "ラムダ バンク1 (BMW)", "λ1", "λ", 0.7, 1.3, 0x5A50, 2, decimals = 2) { u16(it) / 1024.0 },
+            bmw("BMW_LAMBDA2", "ラムダ バンク2 (BMW)", "λ2", "λ", 0.7, 1.3, 0x5A51, 2, decimals = 2) { u16(it) / 1024.0 },
+            bmw("BMW_OIL_PRESSURE", "油圧 (BMW)", "油圧", "bar", 0.0, 6.0, 0x5A25, 2, decimals = 1) { s16(it) / 1000.0 },
         )
     }
 
@@ -192,8 +195,7 @@ object Pids {
         misfire("MISFIRE_4", "失火カウンタ 今回の運転 #4", "失火#4", 0xA5),
         misfire("MISFIRE_5", "失火カウンタ 今回の運転 #5", "失火#5", 0xA6),
         misfire("MISFIRE_6", "失火カウンタ 今回の運転 #6", "失火#6", 0xA7),
-        misfireLife(1), misfireLife(2), misfireLife(3), misfireLife(4), misfireLife(5), misfireLife(6),
-        oilLevelNow(), oilLevelLong(),
+        oilLevelNow(),
         PidDef("BATTERY", "バッテリー電圧 (アダプター)", "バッテリー", "V", 10.0, 16.0, decimals = 1,
             warnBelow = 12.0, kind = PidDef.Kind.ADAPTER_VOLTAGE, slow = true),
         PidDef("BOOST", "ブースト圧 (MAP−大気圧)", "ブースト", "bar", -1.0, 1.5, decimals = 2,
@@ -210,7 +212,7 @@ object Pids {
                 if (maf == null || spd == null || maf < 0.1) null
                 else (spd / (maf * 3600 / 14.7 / 745)).coerceAtMost(99.9)
             }),
-    )
+    ) + BMW_ITEMS
 
     private val byKey = ALL.associateBy { it.key }
 
@@ -269,6 +271,8 @@ class ObdReader(
     /** 直近の失敗が「ECU の拒否」だった項目 */
     private val refusedKeys = mutableSetOf<String>()
     private var cycle = 0L
+    /** 1 サイクル内で同じ要求 (測定値ブロックなど) を何度も送らないための控え */
+    private val requestCache = HashMap<PidRequest, IntArray?>()
     private var adapterVoltageSupported = true
 
     fun detectSupported() {
@@ -286,7 +290,7 @@ class ObdReader(
         PidDef.Kind.MODE01 -> supported?.contains(def.pid) ?: true
         PidDef.Kind.ADAPTER_VOLTAGE -> adapterVoltageSupported
         PidDef.Kind.DERIVED -> def.deps.mapNotNull { Pids.get(it) }.all { isAvailable(it) }
-        PidDef.Kind.CUSTOM, PidDef.Kind.REQUEST -> true
+        PidDef.Kind.CUSTOM, PidDef.Kind.REQUEST, PidDef.Kind.BMW_BLOCK -> true
     }
 
     /**
@@ -303,6 +307,7 @@ class ObdReader(
         forceAll: Boolean = false,
     ): Result {
         cycle++
+        requestCache.clear()
         // 派生項目の依存先も読む
         val direct = LinkedHashMap<String, PidDef>()
         for (d in defs) {
@@ -313,7 +318,10 @@ class ObdReader(
             }
         }
         val c = Counter()
-        for (d in direct.values) readItem(d, values, c, forceAll)
+        // BMW の測定値はまとめて 1 回で読む
+        val block = direct.values.filter { it.kind == PidDef.Kind.BMW_BLOCK }
+        for (d in direct.values) if (d.kind != PidDef.Kind.BMW_BLOCK) readItem(d, values, c, forceAll)
+        if (block.isNotEmpty()) readBlock(block, values, c, forceAll)
         for (d in defs) {
             if (d.kind == PidDef.Kind.DERIVED) {
                 val v = d.derive(values)
@@ -345,7 +353,62 @@ class ObdReader(
         var stdRefused = 0
     }
 
+    /** DME が登録を断った測定値 (キー → 断られたサイクル)。しばらくまとめ読みから外す */
+    private val blockRejected = mutableMapOf<String, Long>()
+
+    /**
+     * BMW の測定値をまとめて読む。登録が断られたら 1 つずつ試し、断られた測定値だけを外す
+     * (DME のソフトによって対応している測定値が違うため)
+     */
+    private fun readBlock(items: List<PidDef>, values: MutableMap<String, Double>, c: Counter, forceAll: Boolean) {
+        val use = items.filter { d -> blockRejected[d.key]?.let { forceAll || cycle - it >= 300 } ?: true }
+        for (d in items - use.toSet()) values.remove(d.key)
+        if (use.isEmpty()) return
+        // 同じ測定値は 1 回だけ登録し、ID 順に並べる (ページの並びが変わっても登録をやり直さない)
+        val ids = use.distinctBy { it.blockId }.sortedBy { it.blockId }
+        val offsets = HashMap<Int, Int>()
+        var total = 0
+        for (d in ids) { offsets[d.blockId] = total; total += d.blockSize }
+        val data = protocol.query(Pids.bmwBlockRequest(ids))
+        if (data != null && data.size >= total) {
+            for (d in use) {
+                val off = offsets.getValue(d.blockId)
+                val v = runCatching { d.decode(data.copyOfRange(off, off + d.blockSize)) }.getOrNull()
+                if (v != null) {
+                    values[d.key] = v
+                    blockRejected.remove(d.key)
+                    failStreak[d.key] = 0
+                    c.ok++
+                } else {
+                    values.remove(d.key); c.failed++
+                }
+            }
+            return
+        }
+        val refused = protocol.lastResponded
+        if (!refused) {
+            // 応答なし (通信の一時的な失敗など): 直前の値は残し、次のサイクルでまた試す
+            for (d in use) {
+                val s = (failStreak[d.key] ?: 0) + 1
+                failStreak[d.key] = s
+                if (s >= HOLD_FAILS) values.remove(d.key)
+            }
+            c.failed += use.size
+            return
+        }
+        c.refused += use.size
+        if (use.size == 1) {
+            blockRejected[use[0].key] = cycle
+            values.remove(use[0].key)
+            logger.log(CommLogger.Direction.ERROR, "${use[0].shortName}: この DME は測定値 %04X に対応していません".format(use[0].blockId))
+            return
+        }
+        // どれが断られたかを 1 つずつ確かめる
+        for (d in use) readBlock(listOf(d), values, c, forceAll)
+    }
+
     private fun readItem(d: PidDef, values: MutableMap<String, Double>, c: Counter, forceAll: Boolean = false) {
+        if (d.kind == PidDef.Kind.BMW_BLOCK) { readBlock(listOf(d), values, c, forceAll); return }
         val streak = failStreak[d.key] ?: 0
         if (forceAll) {
             // 間引きなし
@@ -370,13 +433,13 @@ class ObdReader(
             PidDef.Kind.ADAPTER_VOLTAGE -> protocol.readAdapterVoltage().also {
                 if (it == null && values["BATTERY"] == null && streak >= 2) adapterVoltageSupported = false
             }
-            PidDef.Kind.CUSTOM, PidDef.Kind.REQUEST -> protocol.query(d.request!!)
+            PidDef.Kind.CUSTOM, PidDef.Kind.REQUEST -> requestCache.getOrPut(d.request!!) { protocol.query(d.request) }
                 ?.let { data ->
                     runCatching { d.decode(data) }
                         .onFailure { e -> if (d.key !in failing) logger.log(CommLogger.Direction.ERROR, "${d.shortName}: ${e.message}") }
                         .getOrNull()
                 }
-            PidDef.Kind.DERIVED -> null
+            PidDef.Kind.DERIVED, PidDef.Kind.BMW_BLOCK -> null
         }
         val std = d.kind == PidDef.Kind.MODE01
         if (v != null) {

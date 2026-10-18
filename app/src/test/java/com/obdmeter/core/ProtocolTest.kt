@@ -499,7 +499,9 @@ class ProtocolTest {
     @Test
     fun bmwLifetimeMisfireViaDdli() {
         // 実車のログに合わせた応答 (BMW 方式・ヘッダー表示 ON)。登録は 2C F0 … を手で分割して送る
-        val define = Pids.MISFIRE_LIFE_SETUP[1]
+        // 登録は測定値 ID の順 (4400 オイルレベル, 4850〜4855 = 1, 5, 3, 6, 2, 4 番)
+        val items = (1..6).map { Pids.get("MISFIRE_LIFE_$it")!! } + Pids.get("OIL_LEVEL_LONG")!!
+        val define = Pids.bmwBlockRequest(items.sortedBy { it.blockId }).setup[1]
         val ff = "1210%02X".format(define.size) + define.take(5).joinToString("") { "%02X".format(it) }
         val cfs = mutableListOf<String>()
         var idx = 5; var sn = 1
@@ -514,13 +516,14 @@ class ProtocolTest {
             "2CF004" to "612F1026CF0FFFFFFFF",
             ff to "612F1300000FFFFFFFF",
             cfs.last() to "612F1026CF0FFFFFFFF",
-            "21F0" to "612F1100F61F0000E00\r612F12147001B002500\r612F12232001B90FFFF",
+            "21F0" to "612F1100F61F090000E\r612F1210047001B0025\r612F12200320 01BFFFFFF".replace(" ", ""),
         )
         val fake = FakeElm(replies)
         val p = Elm327Protocol(fake)
         p.initAdapter()
         val values = mutableMapOf<String, Double>()
-        ObdReader(p).poll((1..6).map { Pids.get("MISFIRE_LIFE_$it")!! }, values)
+        val reader = ObdReader(p)
+        reader.poll((1..6).map { Pids.get("MISFIRE_LIFE_$it")!! } + Pids.get("OIL_LEVEL_LONG")!!, values)
         assertEquals(14.0, values["MISFIRE_LIFE_1"]!!, 0.0)
         assertEquals(50.0, values["MISFIRE_LIFE_2"]!!, 0.0)
         assertEquals(27.0, values["MISFIRE_LIFE_3"]!!, 0.0)
@@ -528,10 +531,47 @@ class ProtocolTest {
         assertEquals(71.0, values["MISFIRE_LIFE_5"]!!, 0.0)
         assertEquals(37.0, values["MISFIRE_LIFE_6"]!!, 0.0)
         // 同じブロックのオイルレベル長期平均 (0x90 × 0.293 = 42.2 mm)
-        val v2 = mutableMapOf<String, Double>()
-        ObdReader(p).poll(listOf(Pids.get("OIL_LEVEL_LONG")!!), v2)
-        assertEquals(0x90 * 0.29296875, v2["OIL_LEVEL_LONG"]!!, 1e-9)
+        assertEquals(0x90 * 0.29296875, values["OIL_LEVEL_LONG"]!!, 1e-9)
+        // 次のサイクルは登録し直さずに読む
+        reader.poll((1..6).map { Pids.get("MISFIRE_LIFE_$it")!! } + Pids.get("OIL_LEVEL_LONG")!!, values)
         // 登録は 1 回だけ
         assertEquals(1, fake.sent.count { String(it).trim() == "2CF004" })
+    }
+
+    /** DME の代わり: 対応している測定値だけ登録を受け付け、21 F0 で登録順に値を返す */
+    private class FakeDme(private val supported: Map<Int, IntArray>) : ObdProtocol {
+        private var defined: List<Int>? = null
+        override var lastResponded = false
+        override fun initAdapter() = "fake"
+        override fun connectVehicle() = "fake"
+        override fun readPid(pid: Int): IntArray? = null
+        override fun close() {}
+        override fun query(request: PidRequest): IntArray? {
+            val define = request.setup.lastOrNull() ?: return null
+            // 2C F0 [02 pos size idH idL 01]...
+            val ids = (2 until define.size step 6).map { define[it + 3] * 256 + define[it + 4] }
+            if (ids.any { it !in supported }) { defined = null; lastResponded = true; return null }
+            defined = ids
+            lastResponded = false
+            return ids.flatMap { supported.getValue(it).toList() }.toIntArray()
+        }
+    }
+
+    @Test
+    fun bmwBlockSkipsRejectedMeasurement() {
+        // 油圧 (5A25) に対応していない DME
+        val dme = FakeDme(mapOf(0x4807 to intArrayOf(0x02, 0xEE), 0x581F to intArrayOf(0xA0)))
+        val items = listOf("BMW_RPM", "BMW_COOLANT", "BMW_OIL_PRESSURE").map { Pids.get(it)!! }
+        val reader = ObdReader(dme)
+        val values = mutableMapOf<String, Double>()
+        reader.poll(items, values)
+        assertEquals(750.0, values["BMW_RPM"]!!, 0.0)
+        assertEquals(0xA0 * 0.75 - 48, values["BMW_COOLANT"]!!, 1e-9)
+        assertNull(values["BMW_OIL_PRESSURE"])
+        // 次のサイクルからは油圧を外してまとめて読める
+        values.clear()
+        reader.poll(items, values)
+        assertEquals(750.0, values["BMW_RPM"]!!, 0.0)
+        assertNull(values["BMW_OIL_PRESSURE"])
     }
 }

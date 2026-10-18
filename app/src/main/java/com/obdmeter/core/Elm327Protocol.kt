@@ -120,10 +120,13 @@ class Elm327Protocol(
     override fun query(request: PidRequest): IntArray? {
         if (request.isPlainMode01 && currentHeader.isEmpty() && currentCea.isEmpty()) return readPid(request.pid[0])
         applyAddressing(request.header, request.canExtAddress)
+        val addr = request.header + "/" + request.canExtAddress
         val key = setupKey(request)
-        if (request.setup.isNotEmpty() && key !in setupDone) {
+        if (request.setup.isNotEmpty() && setupDone[addr] != key) {
+            // ECU が覚えられる登録は 1 つなので、違う登録を送ったら前の登録は無効になる
+            setupDone.remove(addr)
             if (!runSetup(request.setup)) return null
-            setupDone += key
+            setupDone[addr] = key
         }
         val cmd = buildString {
             append("%02X".format(request.mode))
@@ -137,7 +140,7 @@ class Elm327Protocol(
             if (msg != null && msg.size >= echo.size && echo.indices.all { msg[it] == echo[it] }) {
                 return ok(msg.copyOfRange(echo.size, msg.size))
             }
-            setupDone.remove(key)
+            if (request.setup.isNotEmpty()) setupDone.remove(addr)
             if (msg != null && msg.isNotEmpty() && msg[0] == 0x7F) {
                 lastResponded = true
                 lastFailure = "否定応答 ${Hex.of(msg)} (NRC=%02X)".format(msg.getOrElse(2) { 0 })
@@ -147,12 +150,12 @@ class Elm327Protocol(
         }
         val data = parseResponseAll(lines, request.mode, request.pid).firstOrNull()
         if (data != null) return ok(data)
-        setupDone.remove(key)
+        if (request.setup.isNotEmpty()) setupDone.remove(addr)
         return fail(lines, request.mode)
     }
 
-    /** 準備の要求を送り済みのもの (アダプターの初期化で消える) */
-    private val setupDone = mutableSetOf<String>()
+    /** 宛先ごとに、いま ECU に送ってある準備の要求 (アダプターの初期化で消える) */
+    private val setupDone = mutableMapOf<String, String>()
 
     private fun setupKey(r: PidRequest): String =
         r.header + "/" + r.canExtAddress + "/" + r.setup.joinToString(";") { Hex.of(it) }

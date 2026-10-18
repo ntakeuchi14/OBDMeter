@@ -86,8 +86,9 @@ class BmwFastProtocol(
         val target = request.header.takeIf { it.isNotEmpty() }?.toIntOrNull(16)?.takeIf { it in 0..0xFF }
             ?: options.targetAddress
         // 読む前の準備 (測定値ブロックの登録など)。BMW-FAST は長い要求もそのまま送れる
-        val key = "$target/" + request.setup.joinToString(";") { Hex.of(it) }
-        if (request.setup.isNotEmpty() && key !in setupDone) {
+        val key = request.setup.joinToString(";") { Hex.of(it) }
+        if (request.setup.isNotEmpty() && setupDone[target] != key) {
+            setupDone.remove(target)
             for ((i, p) in request.setup.withIndex()) {
                 val r = request(p, target)
                 if (i == request.setup.lastIndex && (r == null || r.isEmpty() || r[0] != p[0] + 0x40)) {
@@ -96,7 +97,7 @@ class BmwFastProtocol(
                     return null
                 }
             }
-            setupDone += key
+            setupDone[target] = key
         }
         val resp = request(intArrayOf(request.mode) + request.pid, target)
             ?: run { lastFailure = "応答なし"; lastResponded = false; return null }
@@ -106,7 +107,7 @@ class BmwFastProtocol(
             lastFailure = null
             return resp.copyOfRange(echo.size, resp.size)
         }
-        setupDone.remove(key)
+        if (request.setup.isNotEmpty()) setupDone.remove(target)
         lastFailure = if (resp.isNotEmpty() && resp[0] == 0x7F) {
             "否定応答 ${Hex.of(resp)} (NRC=%02X)".format(resp.getOrElse(2) { 0 })
         } else {
@@ -119,8 +120,8 @@ class BmwFastProtocol(
         runCatching { transport.close() }
     }
 
-    /** 準備の要求を送り済みのもの */
-    private val setupDone = mutableSetOf<String>()
+    /** 宛先ごとに、いま ECU に送ってある準備の要求 */
+    private val setupDone = mutableMapOf<Int, String>()
 
     /**
      * サービスデータ (例: 01 0C) を送り、応答のサービスデータ部を返す。
