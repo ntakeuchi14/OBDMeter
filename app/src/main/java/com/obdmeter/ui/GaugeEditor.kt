@@ -521,6 +521,29 @@ private fun AngleTab(g: GaugeConfig, def: com.obdmeter.core.PidDef?, update: ((G
         Hint("自動のときは、色分けか発光を使うと各マスの色をうっすら、それ以外は灰色で描きます。")
     }
     if (g.style != GaugeStyle.ANALOG) Hint("以下の角度・目盛りはアナログ表示のときに使われます。レッドゾーンはバー表示でも使われます。")
+    if (g.style == GaugeStyle.ANALOG) {
+        Head("シンプルな扇形")
+        Hint("針・目盛りを消して、端の丸い太い弧と中央の大きな数値だけのシンプルなメーターにします (あとから個別に調整できます)。")
+        OutlinedButton(onClick = {
+            update {
+                it.copy(
+                    startAngle = -135f, endAngle = 135f, showNeedle = false, showTicks = false, showLabels = false,
+                    ring = RingStyle.NONE, showTrack = true, showValueArc = true, arcWidth = 2.2f, tickRadius = 1f,
+                    arcRoundCap = true, arcTipDot = true, trackColor = 0xFF2A2F37L, color = it.color ?: 0xFF2F9BFFL,
+                    valuePosition = 0.05f, valueOffsetX = 0f, valueSize = 2.2f,
+                    nameOffsetX = 0f, nameOffsetY = 0.51f, unitOffsetX = 0f, unitOffsetY = 0f,
+                    showName = true, showUnit = true,
+                )
+            }
+        }) { Text("シンプルな扇形にする") }
+
+        Head("弧")
+        SwitchLine("弧の端を丸くする", null, d.arcRoundCap) { v -> update { it.copy(arcRoundCap = v) } }
+        SwitchLine("弧の先に丸い点を付ける", null, d.arcTipDot) { v -> update { it.copy(arcTipDot = v) } }
+        if (d.arcTipDot) ColorLine("点の色", d.arcTipColor, Color.White) { c -> update { it.copy(arcTipColor = c) } }
+        ColorLine("背景の弧の色 (既定 = 灰色)", d.trackColor, GaugeColors.Track) { c -> update { it.copy(trackColor = c) } }
+        SwitchLine("目盛りの線を表示", "OFF にすると目盛りの線を描きません (数字は下の設定)", d.showTicks) { v -> update { it.copy(showTicks = v) } }
+    }
 
     Head("開始・終了角度 (12 時 = 0°、時計回り)")
     Row(Modifier.horizontalScroll(rememberScrollState())) {

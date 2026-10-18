@@ -215,6 +215,15 @@ data class GaugeDesign(
     val barMidColor: Long? = null,
     /** 中間の色にする値 (null = 中間の色なし) */
     val barMidFrom: Double? = null,
+    /** アナログ: 目盛りの線を表示する */
+    val showTicks: Boolean = true,
+    /** アナログ: 弧の端を丸くする */
+    val arcRoundCap: Boolean = false,
+    /** アナログ: 背景の弧の色 (null = 既定の灰色) */
+    val trackColor: Long? = null,
+    /** アナログ: 現在値の弧の先に丸い点を付ける */
+    val arcTipDot: Boolean = false,
+    val arcTipColor: Long? = null,
     /** 発光 (にじみ) の強さ (0〜1) */
     val glow: Float = 0f,
     /** 数値の後ろに消えている 7 セグ (8) をうっすら出す */

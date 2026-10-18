@@ -150,6 +150,11 @@ data class GaugeLook(
     val barMidColor: Color = Color(0xFFFFC107),
     val barMidFrom: Double? = null,
     val glow: Float = 0f,
+    val showTicks: Boolean = true,
+    val arcRoundCap: Boolean = false,
+    val trackColor: Color? = null,
+    val arcTipDot: Boolean = false,
+    val arcTipColor: Color = Color.White,
     val ghostDigits: Boolean = false,
     val ghostAlpha: Float = 0.15f,
     val chartIntervalMs: Long = 60_000L,
@@ -354,11 +359,15 @@ fun AnalogGauge(
         val arcR = gaugeR - stroke / 2
         val arcTopLeft = Offset(center.x - arcR, center.y - arcR)
         val arcSize = Size(arcR * 2, arcR * 2)
-        val start = look.startAngle
-        val sweep = look.sweep
+        // 端を丸くするときは、丸みの分だけ角度を内側に詰めて全体の範囲を変えない
+        val capInset = if (look.arcRoundCap && arcR > 0f) Math.toDegrees((stroke / 2 / arcR).toDouble()).toFloat()
+            .coerceAtMost(look.sweep / 4) else 0f
+        val start = look.startAngle + capInset
+        val sweep = look.sweep - capInset * 2
+        val cap = if (look.arcRoundCap) StrokeCap.Round else StrokeCap.Butt
 
         if (look.showTrack && stroke > 0f) {
-            drawArc(GaugeColors.Track, start, sweep, false, arcTopLeft, arcSize, style = Stroke(stroke, cap = StrokeCap.Butt))
+            drawArc(look.trackColor ?: GaugeColors.Track, start, sweep, false, arcTopLeft, arcSize, style = Stroke(stroke, cap = cap))
         }
         // 目盛りの位置 (レッドゾーンを内側に描くときにも使う)
         val tickOuter = gaugeR - stroke - d * 0.008f
@@ -382,8 +391,15 @@ fun AnalogGauge(
             }
         }
         if (value != null && look.showValueArc && stroke > 0f) {
-            drawArc(if (warn) GaugeColors.Warn else look.accent, start, sweep * f, false,
-                arcTopLeft, arcSize, style = Stroke(stroke, cap = StrokeCap.Butt))
+            val arcColor = if (warn) GaugeColors.Warn else look.accent
+            drawArc(arcColor, start, sweep * f, false,
+                arcTopLeft, arcSize, style = Stroke(stroke, cap = cap))
+            // 弧の先の丸い点
+            if (look.arcTipDot) {
+                val ta = Math.toRadians((start + sweep * f).toDouble())
+                val tp = Offset(center.x + arcR * cos(ta).toFloat(), center.y + arcR * sin(ta).toFloat())
+                drawCircle(look.arcTipColor, stroke * 0.32f, tp)
+            }
         }
 
         // 目盛り (主・小) と数字
@@ -392,7 +408,7 @@ fun AnalogGauge(
         val majors = scale.values(def.max)
         for ((i, t) in majors.withIndex()) {
             val a = Math.toRadians((start + sweep * fraction(def, t)).toDouble())
-            drawLine(look.tickColor,
+            if (look.showTicks) drawLine(look.tickColor,
                 Offset(center.x + (tickOuter - majorLen) * cos(a).toFloat(), center.y + (tickOuter - majorLen) * sin(a).toFloat()),
                 Offset(center.x + tickOuter * cos(a).toFloat(), center.y + tickOuter * sin(a).toFloat()),
                 strokeWidth = d * 0.012f)
@@ -403,7 +419,7 @@ fun AnalogGauge(
                     TextStyle(color = look.labelColor, fontFamily = fonts.label, fontSize = labelSize))
             }
             // 小目盛り
-            if (look.minorDivisions > 0 && i < majors.lastIndex) {
+            if (look.showTicks && look.minorDivisions > 0 && i < majors.lastIndex) {
                 val next = majors[i + 1]
                 for (k in 1..look.minorDivisions) {
                     val tv = t + (next - t) * k / (look.minorDivisions + 1)
