@@ -134,6 +134,8 @@ data class GaugeLook(
     val tableNameInline: Boolean = false,
     val tableNameSize: Float = 1f,
     val tableUnitSize: Float = 1f,
+    val tableMarginBottom: Float = 0f,
+    val tableMarginRight: Float = 0f,
     /** 折れ線グラフの 1 画面の期間 (ミリ秒) */
     val chartSpanMs: Long = 3_600_000L,
     /** 折れ線グラフの線の色 (項目の順。足りない分は自動) */

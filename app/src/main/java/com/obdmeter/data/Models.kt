@@ -226,6 +226,9 @@ data class GaugeDesign(
     /** 値テーブルの項目名・単位の文字の大きさ (倍率) */
     val tableNameSize: Float = 1f,
     val tableUnitSize: Float = 1f,
+    /** 値テーブルの各行の下・各段の右の余白 (行の高さ・段の幅に対する比率) */
+    val tableMarginBottom: Float = 0f,
+    val tableMarginRight: Float = 0f,
     // --- 折れ線グラフ ---
     /** 1 画面に表示する期間 (秒)。左右のスクロールで記録の全期間を見られる */
     val chartSpanSec: Int = 3600,

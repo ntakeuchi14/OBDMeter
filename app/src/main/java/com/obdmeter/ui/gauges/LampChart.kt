@@ -171,7 +171,7 @@ internal fun TableGauge(series: List<ChartSeries>, look: GaugeLook, fonts: Gauge
         val colW = maxWidth / cols
         val rowH = maxHeight / rows
         // 文字の大きさは行の高さから決める (幅が足りなければ 1 行に収まるよう省略)
-        val base = with(density) { (rowH.toPx() * 0.42f).toSp() }
+        val base = with(density) { (rowH.toPx() * (1f - look.tableMarginBottom) * 0.42f).toSp() }
         val inlineName = look.showName && look.tableNameInline
         val nameW = if (look.showName && !inlineName) look.tableNameRatio else 0f
         val nameSize = base * 0.8f * look.labelSize * look.tableNameSize
@@ -186,7 +186,10 @@ internal fun TableGauge(series: List<ChartSeries>, look: GaugeLook, fonts: Gauge
                         val i = c * rows + r
                         val s = series.getOrNull(i)
                         Row(
-                            Modifier.height(rowH).fillMaxWidth().padding(horizontal = 2.dp, vertical = 1.dp),
+                            Modifier.height(rowH).fillMaxWidth()
+                                .padding(start = 2.dp, top = 1.dp)
+                                // 下と右の余白 (行の高さ・段の幅に対する比率)
+                                .padding(end = 2.dp + colW * look.tableMarginRight, bottom = 1.dp + rowH * look.tableMarginBottom),
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
                             if (s == null) return@Row

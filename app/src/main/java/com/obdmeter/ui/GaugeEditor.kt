@@ -841,6 +841,8 @@ private fun TableSettings(
         SliderLine("単位の文字の大きさ", d.tableUnitSize * 100, 30f..300f, "%.0f%%") { v -> update { it.copy(tableUnitSize = snap(v, 5f) / 100f) } }
     }
     SliderLine("値の文字の大きさ", d.valueSize * 100, 30f..300f, "%.0f%%") { v -> update { it.copy(valueSize = snap(v, 5f) / 100f) } }
+    SliderLine("各行の下の余白", d.tableMarginBottom * 100, 0f..60f, "%.0f%%") { v -> update { it.copy(tableMarginBottom = snap(v, 1f) / 100f) } }
+    SliderLine("各段の右の余白", d.tableMarginRight * 100, 0f..60f, "%.0f%%") { v -> update { it.copy(tableMarginRight = snap(v, 1f) / 100f) } }
     Hint("項目名は右寄せ、単位は左寄せで表示します。残りの幅が値の部分です。文字の色・大きさ・フォントは「色・針・数値」タブで変えられます。")
 
     Head("値の部分の背景")
