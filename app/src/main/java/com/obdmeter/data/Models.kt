@@ -82,6 +82,8 @@ enum class GaugeStyle(val label: String) {
     LAMP("ランプ"),
     /** 折れ線グラフ: 複数項目の推移 */
     CHART("折れ線グラフ"),
+    /** 値テーブル: 項目名・値・単位を縦に並べる (最大行数を超えたら段組み) */
+    TABLE("値テーブル"),
 }
 
 /**
@@ -206,6 +208,15 @@ data class GaugeDesign(
     /** 点灯時・消灯時の色 (null = 既定: 赤 / 暗い灰色) */
     val lampOnColor: Long? = null,
     val lampOffColor: Long? = null,
+    // --- 値テーブル ---
+    /** 1 段に並べる最大の行数 (超えたら右に段を増やす) */
+    val tableMaxRows: Int = 5,
+    /** 値の部分の背景色・背景画像 (null = なし) */
+    val tableValueBg: Long? = null,
+    val tableValueImage: String? = null,
+    /** 1 行の中の項目名・単位の幅 (行の幅に対する比率。残りが値) */
+    val tableNameRatio: Float = 0.4f,
+    val tableUnitRatio: Float = 0.2f,
     // --- 折れ線グラフ ---
     /** 1 画面に表示する期間 (秒)。左右のスクロールで記録の全期間を見られる */
     val chartSpanSec: Int = 3600,
@@ -260,6 +271,8 @@ data class GaugeConfig(
     companion object {
         /** 折れ線グラフに追加できる項目の数 */
         const val MAX_CHART_EXTRA = 5
+        /** 値テーブルに追加できる項目の数 */
+        const val MAX_TABLE_EXTRA = 29
         const val FLOAT_GROUPS = 6
         fun groupLabel(group: Int): String = ('A' + (group - 1)).toString()
     }
@@ -268,6 +281,9 @@ data class GaugeConfig(
 /** フロート表示したメーター 1 つの位置 (画面左上からの px) と幅 (dp)。高さはメーターの形で決まる */
 @Serializable
 data class FloatPlacement(val x: Int, val y: Int, val widthDp: Int)
+
+/** メーターが使っている画像ファイル名 (背景画像・値テーブルの値の背景) */
+fun GaugeDesign.imageNames(): List<String> = listOfNotNull(backgroundImage, tableValueImage)
 
 @Serializable
 data class Dashboard(

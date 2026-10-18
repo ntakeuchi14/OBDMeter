@@ -158,7 +158,7 @@ fun GaugeSettingsDialog(
                                     unsupported = false,
                                     look = draft.look(def),
                                     modifier = Modifier.aspectRatio(ratio),
-                                    series = if (draft.style == GaugeStyle.CHART) {
+                                    series = if (draft.style == GaugeStyle.CHART || draft.style == GaugeStyle.TABLE) {
                                         chartSeries(draft, def, mapOf(def.key to (previewValue ?: 0.0)), catalog)
                                     } else emptyList(),
                                 )
@@ -352,6 +352,7 @@ private fun BasicTab(
     when (g.style) {
         GaugeStyle.LAMP -> LampSettings(g, update)
         GaugeStyle.CHART -> ChartSettings(g, catalog, update, replace, onAddChartItem)
+        GaugeStyle.TABLE -> TableSettings(g, catalog, update, replace, onAddChartItem)
         else -> {}
     }
 
@@ -728,6 +729,79 @@ private fun LampSettings(g: GaugeConfig, update: ((GaugeDesign) -> GaugeDesign) 
     )
     ColorLine("点灯時の色", d.lampOnColor, GaugeColors.Warn) { c -> update { it.copy(lampOnColor = c) } }
     ColorLine("消灯時の色", d.lampOffColor, Color(0xFF2A2F36)) { c -> update { it.copy(lampOffColor = c) } }
+}
+
+/** 値テーブルの設定 (並べる項目・段組み・幅・値の背景) */
+@Composable
+private fun TableSettings(
+    g: GaugeConfig,
+    catalog: PidCatalog,
+    update: ((GaugeDesign) -> GaugeDesign) -> Unit,
+    replace: (GaugeConfig) -> Unit,
+    onAddItem: () -> Unit,
+) {
+    val d = g.design
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    var loading by remember { mutableStateOf(false) }
+    val latestUpdate by rememberUpdatedState(update)
+
+    Head("表に並べる項目")
+    Hint("上から順に並べ、1 段の最大行数を超えたら右に段を増やします。先頭は上の「表示する項目」です。")
+    val keys = g.chartAllKeys
+    fun reorder(from: Int, to: Int) {
+        val list = keys.toMutableList()
+        val k = list.removeAt(from); list.add(to, k)
+        val newMain = list[0]
+        // 先頭 (表示する項目) が変わったら、その項目用の表示名・範囲の上書きは外す
+        val design = if (newMain != g.pidKey) d.copy(label = null, min = null, max = null, decimals = null) else d
+        replace(g.copy(pidKey = newMain, chartKeys = list.drop(1), design = design))
+    }
+    keys.forEachIndexed { i, key ->
+        val def = catalog.get(key)
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Text("${i + 1}. " + (def?.name ?: "(見つかりません: $key)"), Modifier.weight(1f), fontSize = 14.sp)
+            TextButton(onClick = { reorder(i, i - 1) }, enabled = i > 0) { Text("▲") }
+            TextButton(onClick = { reorder(i, i + 1) }, enabled = i < keys.lastIndex) { Text("▼") }
+            if (i > 0) TextButton(onClick = {
+                replace(g.copy(chartKeys = g.chartKeys.toMutableList().also { it.removeAt(i - 1) }))
+            }) { Text("外す") }
+        }
+    }
+    if (g.chartKeys.size < GaugeConfig.MAX_TABLE_EXTRA) {
+        OutlinedButton(onClick = onAddItem) { Text("項目を追加") }
+    }
+
+    Head("並べ方")
+    SliderLine("1 段の最大行数", d.tableMaxRows.toFloat(), 1f..15f, "%.0f 行") { v ->
+        update { it.copy(tableMaxRows = v.roundToInt().coerceIn(1, 15)) }
+    }
+    SliderLine("項目名の幅", d.tableNameRatio * 100, 0f..70f, "%.0f%%") { v -> update { it.copy(tableNameRatio = snap(v, 1f) / 100f) } }
+    SliderLine("単位の幅", d.tableUnitRatio * 100, 0f..50f, "%.0f%%") { v -> update { it.copy(tableUnitRatio = snap(v, 1f) / 100f) } }
+    Hint("項目名は右寄せ、単位は左寄せで表示します。残りの幅が値の部分です。文字の色・大きさ・フォントは「色・針・数値」タブで変えられます。")
+
+    Head("値の部分の背景")
+    ColorLine("背景色 (既定 = なし)", d.tableValueBg, Color.Transparent) { c -> update { it.copy(tableValueBg = c) } }
+    val picker = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
+        if (uri == null) return@rememberLauncherForActivityResult
+        loading = true
+        scope.launch {
+            runCatching { GaugeImages.import(context, uri) }
+                .onSuccess { name -> latestUpdate { it.copy(tableValueImage = name) } }
+                .onFailure { Toast.makeText(context, it.message ?: "画像を読み込めませんでした", Toast.LENGTH_LONG).show() }
+            loading = false
+        }
+    }
+    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(vertical = 8.dp)) {
+        FilledTonalButton(enabled = !loading, onClick = {
+            val ok = runCatching { picker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) }.isSuccess
+            if (!ok) Toast.makeText(context, "この端末では画像を選ぶ画面を開けません", Toast.LENGTH_LONG).show()
+        }) { Text(if (loading) "読み込み中…" else if (d.tableValueImage == null) "背景画像を選ぶ" else "背景画像を変更") }
+        if (d.tableValueImage != null) {
+            OutlinedButton(onClick = { update { it.copy(tableValueImage = null) } }) { Text("画像を外す") }
+        }
+    }
+    Hint("背景画像は値の部分いっぱいに伸ばして表示します (背景色の上に重ねます)。")
 }
 
 /** 折れ線グラフの設定 (表示する項目・時間の幅・保存日数・線の色) */

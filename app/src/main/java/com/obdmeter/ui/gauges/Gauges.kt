@@ -123,6 +123,12 @@ data class GaugeLook(
     val lampCondition: Condition? = null,
     val lampOnColor: Color = GaugeColors.Warn,
     val lampOffColor: Color = Color(0xFF2A2F36),
+    /** 値テーブル */
+    val tableMaxRows: Int = 5,
+    val tableValueBg: Color? = null,
+    val tableValueImage: String? = null,
+    val tableNameRatio: Float = 0.4f,
+    val tableUnitRatio: Float = 0.2f,
     /** 折れ線グラフの 1 画面の期間 (ミリ秒) */
     val chartSpanMs: Long = 3_600_000L,
     /** 折れ線グラフの線の色 (項目の順。足りない分は自動) */
@@ -199,6 +205,9 @@ fun GaugeCard(
             GaugeStyle.DIGITAL -> DigitalGauge(def, v, unsupported, look, image, Modifier.fillMaxSize(), peak, fonts)
             // ランプは条件判定をならし前の値で行う
             GaugeStyle.LAMP -> LampGauge(def, if (unsupported) null else value, unsupported, look, image, Modifier.fillMaxSize(), fonts)
+            GaugeStyle.TABLE -> TableGauge(
+                series.ifEmpty { listOf(ChartSeries(def, value)) }, look, fonts, Modifier.fillMaxSize(),
+            )
             GaugeStyle.CHART -> ChartGauge(
                 series.ifEmpty { listOf(ChartSeries(def, value)) }, look, fonts, interactive, Modifier.fillMaxSize(),
             )

@@ -1,5 +1,6 @@
 package com.obdmeter.ui.gauges
 
+import androidx.compose.foundation.layout.height
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.MutableStateFlow
 import androidx.compose.ui.graphics.drawscope.clipRect
@@ -146,6 +147,89 @@ internal fun LampGauge(
             drawCenteredText(tm, text, Offset(size.width / 2, size.height - valueH / 2),
                 TextStyle(color = look.valueColor, fontFamily = fonts.value,
                     fontSize = (unit * 0.11f * look.valueSize).toSp()))
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------------------------
+// 値テーブル
+// ---------------------------------------------------------------------------------------------
+
+/**
+ * 「項目名 (右寄せ)・値・単位 (左寄せ)」の行を縦に並べる。行数が [GaugeLook.tableMaxRows] を超えたら右に段を増やす。
+ * 値の部分には背景色・背景画像を付けられる。
+ */
+@Composable
+internal fun TableGauge(series: List<ChartSeries>, look: GaugeLook, fonts: GaugeFontSet, modifier: Modifier) {
+    val image = rememberGaugeImage(look.tableValueImage)
+    val density = androidx.compose.ui.platform.LocalDensity.current
+    BoxWithConstraints(modifier) {
+        val n = series.size.coerceAtLeast(1)
+        val rows = look.tableMaxRows.coerceIn(1, 30).coerceAtMost(n)
+        val cols = (n + rows - 1) / rows
+        val colW = maxWidth / cols
+        val rowH = maxHeight / rows
+        // 文字の大きさは行の高さから決める (幅が足りなければ 1 行に収まるよう省略)
+        val base = with(density) { (rowH.toPx() * 0.42f).toSp() }
+        val nameW = if (look.showName) look.tableNameRatio else 0f
+        val unitW = if (look.showUnit) look.tableUnitRatio else 0f
+        val valueW = (1f - nameW - unitW).coerceAtLeast(0.15f)
+        Row(Modifier.fillMaxSize()) {
+            for (c in 0 until cols) {
+                Column(Modifier.width(colW).fillMaxSize()) {
+                    for (r in 0 until rows) {
+                        val i = c * rows + r
+                        val s = series.getOrNull(i)
+                        Row(
+                            Modifier.height(rowH).fillMaxWidth().padding(horizontal = 2.dp, vertical = 1.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            if (s == null) return@Row
+                            if (nameW > 0f) {
+                                Text(
+                                    s.def.shortName,
+                                    Modifier.weight(nameW).padding(end = 4.dp),
+                                    textAlign = androidx.compose.ui.text.style.TextAlign.End,
+                                    color = look.nameColor, fontFamily = fonts.label,
+                                    fontSize = base * 0.8f * look.labelSize, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                                )
+                            }
+                            Box(
+                                Modifier
+                                    .weight(valueW)
+                                    .fillMaxSize()
+                                    .clip(RoundedCornerShape(4.dp))
+                                    .then(look.tableValueBg?.let { Modifier.background(it) } ?: Modifier),
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                if (image != null) {
+                                    androidx.compose.foundation.Image(
+                                        image, null, Modifier.matchParentSize(),
+                                        contentScale = androidx.compose.ui.layout.ContentScale.FillBounds,
+                                    )
+                                }
+                                if (look.showValue) {
+                                    Text(
+                                        s.def.format(s.value),
+                                        color = if (isWarn(s.def, s.value)) GaugeColors.Warn else look.valueColor,
+                                        fontFamily = fonts.value, fontWeight = FontWeight.Bold,
+                                        fontSize = base * look.valueSize, maxLines = 1, softWrap = false,
+                                    )
+                                }
+                            }
+                            if (unitW > 0f) {
+                                Text(
+                                    s.def.unit,
+                                    Modifier.weight(unitW).padding(start = 4.dp),
+                                    textAlign = androidx.compose.ui.text.style.TextAlign.Start,
+                                    color = look.unitColor, fontFamily = fonts.label,
+                                    fontSize = base * 0.7f * look.labelSize, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                                )
+                            }
+                        }
+                    }
+                }
+            }
         }
     }
 }

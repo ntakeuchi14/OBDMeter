@@ -482,7 +482,7 @@ fun GaugeView(
             look = g.look(def).let { if (noCard) it.copy(showCard = false) else it },
             modifier = Modifier.fillMaxSize(),
             peakResetKey = peakResetKey,
-            series = if (g.style == GaugeStyle.CHART) chartSeries(g, def, values, catalog) else emptyList(),
+            series = if (g.style == GaugeStyle.CHART || g.style == GaugeStyle.TABLE) chartSeries(g, def, values, catalog) else emptyList(),
             interactive = interactive,
         )
     } else {

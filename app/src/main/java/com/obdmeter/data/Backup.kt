@@ -88,7 +88,7 @@ object BackupLogic {
 
     /** ダッシュボードが参照している背景画像の名前 */
     fun referencedImages(dashboards: List<Dashboard>): Set<String> =
-        dashboards.flatMap { it.gauges }.mapNotNull { it.design.backgroundImage }.toSet()
+        dashboards.flatMap { it.gauges }.flatMap { it.design.imageNames() }.toSet()
 
     /**
      * 読み込んだ内容を今の内容に適用した結果を作る。
@@ -108,6 +108,7 @@ object BackupLogic {
         fun fixImages(d: Dashboard) = d.copy(gauges = d.gauges.map { g ->
             g.copy(design = g.design.copy(
                 backgroundImage = g.design.backgroundImage?.let { imageRename[it] },
+                tableValueImage = g.design.tableValueImage?.let { imageRename[it] },
                 valueFont = g.design.valueFont?.let { fontRename[it] },
                 labelFont = g.design.labelFont?.let { fontRename[it] },
             ))

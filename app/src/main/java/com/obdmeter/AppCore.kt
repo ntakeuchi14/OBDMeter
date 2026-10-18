@@ -86,7 +86,7 @@ class AppCore private constructor(context: Context) {
                     .ifEmpty { listOfNotNull(pages.firstOrNull { it.id == app }) }
                 val gauges = shown.flatMap { it.gauges }
                 // 折れ線グラフは追加した項目も読む
-                gauges.flatMap { g -> if (g.style == GaugeStyle.CHART) g.chartAllKeys else listOf(g.pidKey) }
+                gauges.flatMap { g -> if (g.style == GaugeStyle.CHART || g.style == GaugeStyle.TABLE) g.chartAllKeys else listOf(g.pidKey) }
                     .mapNotNull { cat.get(it) }.distinctBy { it.key } to
                     gauges.mapNotNull { g -> g.fallbackKey?.let { fb -> cat.get(fb)?.let { g.pidKey to it } } }.toMap()
             }.collect { (pids, fallbacks) ->

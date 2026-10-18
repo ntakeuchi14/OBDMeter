@@ -2,6 +2,7 @@ package com.obdmeter.ui
 
 import android.app.Application
 import android.net.Uri
+import com.obdmeter.data.imageNames
 import com.obdmeter.data.BackupFiles
 import com.obdmeter.data.BackupLogic
 import com.obdmeter.data.BackupManifest
@@ -76,7 +77,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         }
         // どのメーターからも使われなくなった背景画像を消す
         viewModelScope.launch {
-            val used = repo.dashboards.first().flatMap { it.gauges }.mapNotNull { it.design.backgroundImage }.toSet()
+            val used = repo.dashboards.first().flatMap { it.gauges }.flatMap { it.design.imageNames() }.toSet()
             runCatching { GaugeImages.cleanup(app, used) }
         }
     }

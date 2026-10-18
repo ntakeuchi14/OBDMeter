@@ -16,7 +16,7 @@ android {
         // GitHub Actions の実行番号をバージョンにする (ローカルビルドは 1)
         val runNumber = System.getenv("GITHUB_RUN_NUMBER")?.toIntOrNull() ?: 1
         versionCode = runNumber
-        versionName = "0.18.$runNumber"
+        versionName = "0.19.$runNumber"
     }
 
     // どこでビルドしても同じ鍵で署名する。
