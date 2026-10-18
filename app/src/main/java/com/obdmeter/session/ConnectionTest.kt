@@ -170,6 +170,31 @@ class ConnectionTest(private val context: Context, private val log: CommLogger) 
             cmd("ATRV")
             cmd("ATH1")   // 応答した ECU の ID も見たいのでヘッダー表示を ON
 
+            line("--- 3. BMW 方式 (6F1 + 拡張アドレス、BimmerLink などが使う方式) ---")
+            cmd("ATSP6")
+            cmd("ATSH6F1")
+            cmd("ATCEA12")
+            cmd("ATCRA612")
+            // 複数フレームの応答を受け取るためのフロー制御 (拡張アドレス 12 付き)
+            cmd("ATFCSH6F1")
+            cmd("ATFCSD12300000")
+            cmd("ATFCSM1")
+            cmd("1A80", 5000)
+            cmd("22F190", 5000)
+            cmd("2101", 5000)
+
+            line("--- 4. BMW 独自の値 (DME 22 40xx。失火・燃焼状態の統計など) ---")
+            // MSD80/81 の診断データ (例: 4003 = エンジンのラフネス、4031 = 気筒ごとの統計)
+            // 可能性の高いもの (気筒ごとの統計・燃焼状態の確認値など) から先に読む
+            val first = listOf(0x4031, 0x4030, 0x402D, 0x4032, 0x4026, 0x4027, 0x4028, 0x401A, 0x401B, 0x4001, 0x4002)
+            for (id in first + (0x4000..0x403F).filter { it !in first && it !in 0x4000..0x4005 }) {
+                cmd("22%04X".format(id), 2500)
+            }
+            // BMW 方式の設定を解除してから標準 OBD を確認する
+            cmd("ATCRA")
+            cmd("ATCEA")
+            cmd("ATFCSM0")
+            cmd("ATSH7DF")
             line("--- 2. 標準 OBD (エンジン ECU) ---")
             for (proto in listOf(settings.elmProtocol, "6", "0").distinct()) {
                 cmd("ATSP$proto")
@@ -191,22 +216,6 @@ class ConnectionTest(private val context: Context, private val log: CommLogger) 
             cmd("ATH1")
             cmd("ATSH7DF")
 
-            line("--- 3. BMW 方式 (6F1 + 拡張アドレス、BimmerLink などが使う方式) ---")
-            cmd("ATSP6")
-            cmd("ATSH6F1")
-            cmd("ATCEA12")
-            cmd("ATCRA612")
-            // 複数フレームの応答を受け取るためのフロー制御 (拡張アドレス 12 付き)
-            cmd("ATFCSH6F1")
-            cmd("ATFCSD12300000")
-            cmd("ATFCSM1")
-            cmd("1A80", 5000)
-            cmd("22F190", 5000)
-            cmd("2101", 5000)
-
-            line("--- 4. BMW 独自の値 (DME 22 40xx。失火・燃焼状態の統計など) ---")
-            // MSD80/81 の診断データ (例: 4003 = エンジンのラフネス、4031 = 気筒ごとの統計)
-            for (id in 0x4000..0x403F) cmd("22%04X".format(id), 2500)
             // 元に戻す
             cmd("ATCRA")
             cmd("ATCEA")
