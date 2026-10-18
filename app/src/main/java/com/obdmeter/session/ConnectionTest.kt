@@ -260,8 +260,8 @@ class ConnectionTest(private val context: Context, private val log: CommLogger) 
             cmd("2101", 5000)
 
             line("--- 3b. 生涯失火数 (MSD80: 4850=1番 4851=5番 4852=3番 4853=6番 4854=2番 4855=4番) ---")
-            // 方法 1: 直接読む
-            for (id in 0x4850..0x4855) cmd("22%04X".format(id), 2500)
+            // オイルセンサー (STATUS_OEL: 70 0E 01 + 油温 2 / レベル 1 / 品質 2)
+            cmd("300E01", 2500)
             // 方法 2: 測定値ブロック (2C F0 で登録して 21 F0 で読む)。
             // 登録の要求は 1 フレーム (6 バイト) に収まらないので、自動整形を止めて手でフレームに分けて送る
             val ddli = buildList {
@@ -269,6 +269,8 @@ class ConnectionTest(private val context: Context, private val log: CommLogger) 
                 var pos = 1
                 // 1 件ごとに「02 位置 大きさ ID(2) 1」(MSD80.prg の要求と同じ形)
                 for (id in 0x4850..0x4855) { addAll(listOf(0x02, pos, 0x02, id shr 8, id and 0xFF, 0x01)); pos += 2 }
+                // オイルレベル 長期平均 (1 バイト)
+                addAll(listOf(0x02, pos, 0x01, 0x44, 0x00, 0x01))
             }
             fun hx(b: List<Int>) = b.joinToString("") { "%02X".format(it) }
             fun pad(b: List<Int>) = b + List(8 - b.size) { 0 }
@@ -284,7 +286,7 @@ class ConnectionTest(private val context: Context, private val log: CommLogger) 
             }
             cmd("ATCAF1"); cmd("ATCEA12"); cmd("ATST32")
             cmd("ATFCSH6F1"); cmd("ATFCSD12300000"); cmd("ATFCSM1")
-            cmd("21F0", 2500)   // 61 F0 + 2 バイト×6 (1, 5, 3, 6, 2, 4 番の順)
+            cmd("21F0", 2500)   // 61 F0 + 2 バイト×6 (1, 5, 3, 6, 2, 4 番の順) + オイルレベル長期平均 1 バイト
             // STN の長いメッセージ送信 (STPX) でも試す
             cmd("STPX H:6F1, D:12" + hx(ddli), 3000)
             cmd("21F0", 2500)

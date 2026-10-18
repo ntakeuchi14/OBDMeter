@@ -41,6 +41,7 @@ class Repository(private val context: Context) {
         val FLOAT_ON_LEAVE = booleanPreferencesKey("float_on_leave")
         val START_IN_FLOAT = booleanPreferencesKey("start_in_float")
         val LAST_PAGE = longPreferencesKey("last_page")
+        val KEY_PAGE_NAV = booleanPreferencesKey("key_page_nav")
         val DASHBOARDS = stringPreferencesKey("dashboards_json")
         val CUSTOM_PIDS = stringPreferencesKey("custom_pids_json")
         val FONTS = stringPreferencesKey("fonts_json")
@@ -102,6 +103,7 @@ class Repository(private val context: Context) {
             p[Keys.FLOAT_ON_LEAVE] = s.floatOnLeave
             p[Keys.START_IN_FLOAT] = s.startInFloat
             s.lastPageId?.let { p[Keys.LAST_PAGE] = it } ?: p.remove(Keys.LAST_PAGE)
+            p[Keys.KEY_PAGE_NAV] = s.keyPageNav
         }
     }
 
@@ -136,6 +138,7 @@ class Repository(private val context: Context) {
             floatOnLeave = this[Keys.FLOAT_ON_LEAVE] ?: d.floatOnLeave,
             startInFloat = this[Keys.START_IN_FLOAT] ?: d.startInFloat,
             lastPageId = this[Keys.LAST_PAGE],
+            keyPageNav = this[Keys.KEY_PAGE_NAV] ?: d.keyPageNav,
         )
     }
 }

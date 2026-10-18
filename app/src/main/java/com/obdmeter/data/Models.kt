@@ -54,6 +54,8 @@ data class AppSettings(
     val floatOnLeave: Boolean = false,
     /** アプリを起動したら、すぐにホーム画面に戻ってフロート表示で始める (フロート表示が ON のときだけ) */
     val startInFloat: Boolean = false,
+    /** iDrive (ダイヤル・方向キー) でダッシュボードのページを切り替える */
+    val keyPageNav: Boolean = true,
     /** 最後に表示していたダッシュボードのページ (次の起動時にこのページから始める) */
     val lastPageId: Long? = null,
 ) {

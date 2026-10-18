@@ -415,6 +415,22 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     /** 重なったときに手前に表示する (リストの最後が最前面) */
+    // ---- iDrive・方向キーでのページ切替 ----
+
+    /** ダッシュボードが表示中で、レイアウト編集中でない (キーでページを切り替えてよい) */
+    @Volatile var dashboardKeyNav = false
+    private val _pageNav = kotlinx.coroutines.flow.MutableSharedFlow<Int>(extraBufferCapacity = 16)
+    /** ページ移動の要求 (-1 = 前、+1 = 次) */
+    val pageNav: kotlinx.coroutines.flow.SharedFlow<Int> = _pageNav
+
+    /** キーやダイヤルの入力を受け取る。ページを切り替えたら true */
+    fun onNavInput(delta: Int, what: String): Boolean {
+        log.log(com.obdmeter.core.CommLogger.Direction.INFO, "入力: $what")
+        if (!dashboardKeyNav || !settings.value.keyPageNav || delta == 0) return false
+        _pageNav.tryEmit(delta)
+        return true
+    }
+
     // ---- コピー・貼り付け (ページをまたいで使えるよう、画面ではなくここで持つ) ----
 
     private val _clipboard = MutableStateFlow<GaugeConfig?>(null)

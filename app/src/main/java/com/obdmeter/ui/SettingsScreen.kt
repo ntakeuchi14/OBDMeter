@@ -169,6 +169,12 @@ fun SettingsScreen(vm: MainViewModel, onBack: () -> Unit, onOpenCustomPids: () -
 
             Section("その他")
             SwitchRow(
+                "iDrive・方向キーでページを切り替え",
+                "車載ナビのダイヤルの回転・上下左右・PageUp/Down でダッシュボードのページを切り替えます。" +
+                    "効かないときは、操作してから「ログ」画面の「入力: …」を送ってください",
+                s.keyPageNav,
+            ) { v -> vm.updateSettings { it.copy(keyPageNav = v) } }
+            SwitchRow(
                 "ダッシュボードのバーを常に表示",
                 "OFF のときは、接続状態や編集・設定のボタンを隠してメーターを全画面に表示し、右上のボタンで呼び出します",
                 s.alwaysShowToolbar,

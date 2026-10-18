@@ -514,7 +514,7 @@ class ProtocolTest {
             "2CF004" to "612F1026CF0FFFFFFFF",
             ff to "612F1300000FFFFFFFF",
             cfs.last() to "612F1026CF0FFFFFFFF",
-            "21F0" to "612F1100E61F0000E00\r612F12147001B002500\r612F12232001BFFFFFF",
+            "21F0" to "612F1100F61F0000E00\r612F12147001B002500\r612F12232001B90FFFF",
         )
         val fake = FakeElm(replies)
         val p = Elm327Protocol(fake)
@@ -527,6 +527,10 @@ class ProtocolTest {
         assertEquals(27.0, values["MISFIRE_LIFE_4"]!!, 0.0)
         assertEquals(71.0, values["MISFIRE_LIFE_5"]!!, 0.0)
         assertEquals(37.0, values["MISFIRE_LIFE_6"]!!, 0.0)
+        // 同じブロックのオイルレベル長期平均 (0x90 × 0.293 = 42.2 mm)
+        val v2 = mutableMapOf<String, Double>()
+        ObdReader(p).poll(listOf(Pids.get("OIL_LEVEL_LONG")!!), v2)
+        assertEquals(0x90 * 0.29296875, v2["OIL_LEVEL_LONG"]!!, 1e-9)
         // 登録は 1 回だけ
         assertEquals(1, fake.sent.count { String(it).trim() == "2CF004" })
     }

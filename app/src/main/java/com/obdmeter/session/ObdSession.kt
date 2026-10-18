@@ -109,7 +109,7 @@ class ObdSession(
         while (true) {
             val (defs, d) = sampleQueue.poll() ?: return
             val got = HashMap<String, Double>()
-            runCatching { reader.poll(defs, got) }
+            runCatching { reader.poll(defs, got, forceAll = true) }
             d.complete(got)
         }
     }

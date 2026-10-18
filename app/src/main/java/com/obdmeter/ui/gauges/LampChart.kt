@@ -355,10 +355,49 @@ private fun ChartCsvButtons(history: HistoryStore, keys: List<String>) {
     Row {
         CsvButton("書出") {
             val stamp = SimpleDateFormat("yyyyMMdd_HHmm", Locale.US).format(Date())
-            exporter.launch("obdmeter_chart_$stamp.csv")
+            val name = "obdmeter_chart_$stamp.csv"
+            // 保存先を選ぶ画面が無い端末 (車載ナビなど) では、ダウンロードフォルダに直接保存する
+            val launched = runCatching { exporter.launch(name) }.isSuccess
+            if (!launched) {
+                scope.launch {
+                    val msg = runCatching {
+                        val (n, where) = exportToDownloads(context, history, keys, name)
+                        "$n 件を $where に保存しました"
+                    }.getOrElse { "書き出しに失敗しました: ${it.message}" }
+                    Toast.makeText(context, msg, Toast.LENGTH_LONG).show()
+                }
+            }
         }
         Spacer(Modifier.width(4.dp))
-        CsvButton("読込") { importer.launch(arrayOf("text/*", "application/csv", "application/vnd.ms-excel", "*/*")) }
+        CsvButton("読込") {
+            val ok = runCatching { importer.launch(arrayOf("text/*", "application/csv", "application/vnd.ms-excel", "*/*")) }.isSuccess
+            if (!ok) Toast.makeText(context, "この端末ではファイルを選ぶ画面を開けません", Toast.LENGTH_LONG).show()
+        }
+    }
+}
+
+/** ダウンロードフォルダ (Download/OBDMeter) に CSV を直接書き出す。件数と保存先の説明を返す */
+private suspend fun exportToDownloads(
+    context: android.content.Context,
+    history: HistoryStore,
+    keys: List<String>,
+    name: String,
+): Pair<Int, String> = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+    if (android.os.Build.VERSION.SDK_INT >= 29) {
+        val values = android.content.ContentValues().apply {
+            put(android.provider.MediaStore.MediaColumns.DISPLAY_NAME, name)
+            put(android.provider.MediaStore.MediaColumns.MIME_TYPE, "text/csv")
+            put(android.provider.MediaStore.MediaColumns.RELATIVE_PATH, "Download/OBDMeter")
+        }
+        val uri = context.contentResolver.insert(android.provider.MediaStore.Downloads.EXTERNAL_CONTENT_URI, values)
+            ?: error("保存先を作れませんでした")
+        val n = context.contentResolver.openOutputStream(uri)?.use { history.exportCsv(keys, it) } ?: error("ファイルを開けませんでした")
+        n to "Download/OBDMeter/$name"
+    } else {
+        val dir = context.getExternalFilesDir(android.os.Environment.DIRECTORY_DOWNLOADS) ?: context.filesDir
+        val f = java.io.File(dir, name)
+        val n = f.outputStream().use { history.exportCsv(keys, it) }
+        n to f.absolutePath
     }
 }
 

@@ -45,6 +45,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
@@ -107,6 +108,18 @@ fun DashboardScreen(vm: MainViewModel, onNavigate: (Screen) -> Unit, onCreateCus
     val current = dashboards.getOrNull(pager.currentPage)
 
     // 表示中のページの項目だけを読み出す
+    // iDrive・方向キーでのページ切替 (最後のページの次は先頭に戻る)
+    DisposableEffect(editing) {
+        vm.dashboardKeyNav = !editing
+        onDispose { vm.dashboardKeyNav = false }
+    }
+    LaunchedEffect(Unit) {
+        vm.pageNav.collect { d ->
+            val n = pager.pageCount
+            if (n > 1) pager.animateScrollToPage((pager.currentPage + d).mod(n))
+        }
+    }
+
     // 最後に表示していたページから始める (戻すまでは表示中のページを記録しない)
     var pageRestored by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) {

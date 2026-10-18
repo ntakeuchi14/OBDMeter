@@ -84,6 +84,45 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    /**
+     * iDrive などのダイヤル・方向キーでダッシュボードのページを切り替える。
+     * 車載ナビによって、回転が左右/上下キー・PageUp/Down・ダイヤル (スクロール) のどれで来るかが違うので全部受ける
+     */
+    override fun dispatchKeyEvent(event: android.view.KeyEvent): Boolean {
+        if (event.action == android.view.KeyEvent.ACTION_DOWN) {
+            val delta = when (event.keyCode) {
+                android.view.KeyEvent.KEYCODE_DPAD_LEFT, android.view.KeyEvent.KEYCODE_DPAD_UP,
+                android.view.KeyEvent.KEYCODE_PAGE_UP, android.view.KeyEvent.KEYCODE_NAVIGATE_PREVIOUS,
+                android.view.KeyEvent.KEYCODE_SYSTEM_NAVIGATION_UP, android.view.KeyEvent.KEYCODE_SYSTEM_NAVIGATION_LEFT -> -1
+                android.view.KeyEvent.KEYCODE_DPAD_RIGHT, android.view.KeyEvent.KEYCODE_DPAD_DOWN,
+                android.view.KeyEvent.KEYCODE_PAGE_DOWN, android.view.KeyEvent.KEYCODE_NAVIGATE_NEXT,
+                android.view.KeyEvent.KEYCODE_SYSTEM_NAVIGATION_DOWN, android.view.KeyEvent.KEYCODE_SYSTEM_NAVIGATION_RIGHT -> 1
+                else -> 0
+            }
+            val name = android.view.KeyEvent.keyCodeToString(event.keyCode)
+            if (vm.onNavInput(delta, "キー $name (${event.keyCode})")) return true
+        }
+        return super.dispatchKeyEvent(event)
+    }
+
+    /** ダイヤル (ロータリーエンコーダー) やマウスホイールの回転 */
+    private var scrollAcc = 0f
+
+    override fun dispatchGenericMotionEvent(ev: android.view.MotionEvent): Boolean {
+        if (ev.action == android.view.MotionEvent.ACTION_SCROLL) {
+            val v = ev.getAxisValue(android.view.MotionEvent.AXIS_SCROLL)
+                .takeIf { it != 0f } ?: -ev.getAxisValue(android.view.MotionEvent.AXIS_VSCROLL)
+                .takeIf { it != 0f } ?: ev.getAxisValue(android.view.MotionEvent.AXIS_HSCROLL)
+            scrollAcc += v
+            if (kotlin.math.abs(scrollAcc) >= 1f) {
+                val delta = if (scrollAcc > 0) 1 else -1
+                scrollAcc = 0f
+                if (vm.onNavInput(delta, "ダイヤル/スクロール (source=${ev.source})")) return true
+            }
+        }
+        return super.dispatchGenericMotionEvent(ev)
+    }
+
     override fun onStart() {
         super.onStart()
         vm.setAppVisible(true)

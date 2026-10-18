@@ -62,22 +62,70 @@ object Pids {
      */
     private val MISFIRE_LIFE_IDS = listOf(0x4850, 0x4851, 0x4852, 0x4853, 0x4854, 0x4855)
     private val MISFIRE_LIFE_CYL = listOf(1, 5, 3, 6, 2, 4)
-    val MISFIRE_LIFE_SETUP: List<IntArray> = listOf(
+
+    /**
+     * BMW 測定値ブロック F0 に登録する測定値 (ID, バイト数)。DME が覚えられる登録は 1 つなので、
+     * ブロックで読む項目はすべてここにまとめ、21 F0 の応答から自分の位置を取り出す。
+     * 4850〜4855 = 生涯失火数 (2 バイト) / 4400 = オイルレベル 長期平均 (1 バイト)
+     */
+    private val BMW_BLOCK: List<Pair<Int, Int>> = MISFIRE_LIFE_IDS.map { it to 2 } + listOf(0x4400 to 1)
+
+    /** [id] の値が 21 F0 の応答の何バイト目から入っているか */
+    private fun blockOffset(id: Int): Int {
+        var off = 0
+        for ((i, size) in BMW_BLOCK) { if (i == id) return off; off += size }
+        error("not in block")
+    }
+
+    val BMW_BLOCK_SETUP: List<IntArray> = listOf(
         intArrayOf(0x2C, 0xF0, 0x04),
-        (listOf(0x2C, 0xF0) + MISFIRE_LIFE_IDS.flatMapIndexed { i, id ->
-            listOf(0x02, 1 + i * 2, 0x02, id shr 8, id and 0xFF, 0x01)
-        }).toIntArray(),
+        run {
+            val out = mutableListOf(0x2C, 0xF0)
+            var pos = 1
+            for ((id, size) in BMW_BLOCK) {
+                out += listOf(0x02, pos, size, id shr 8, id and 0xFF, 0x01)
+                pos += size
+            }
+            out.toIntArray()
+        },
     )
+    val MISFIRE_LIFE_SETUP: List<IntArray> get() = BMW_BLOCK_SETUP
+
+    private val BMW_BLOCK_REQUEST = PidRequest(0x21, intArrayOf(0xF0), header = "6F1", canExtAddress = "12", setup = BMW_BLOCK_SETUP)
 
     private fun misfireLife(cyl: Int): PidDef {
-        val idx = MISFIRE_LIFE_CYL.indexOf(cyl)
+        val off = blockOffset(MISFIRE_LIFE_IDS[MISFIRE_LIFE_CYL.indexOf(cyl)])
         return PidDef(
             key = "MISFIRE_LIFE_$cyl", name = "生涯失火数 #$cyl (BMW)", shortName = "生涯失火#$cyl", unit = "回",
             min = 0.0, max = 100.0,
             kind = PidDef.Kind.REQUEST,
-            request = PidRequest(0x21, intArrayOf(0xF0), header = "6F1", canExtAddress = "12", setup = MISFIRE_LIFE_SETUP),
+            request = BMW_BLOCK_REQUEST,
             minBytes = 12, slow = true,
-            decode = { d -> (d[idx * 2] * 256 + d[idx * 2 + 1]).toDouble() },
+            decode = { d -> (d[off] * 256 + d[off + 1]).toDouble() },
+        )
+    }
+
+    /** オイルレベル (DME のオイルセンサー。mm)。現在値は 30 0E 01 (STATUS_OEL)、長期平均は測定値 4400 */
+    private val OIL_LEVEL_STEP = 0.29296875
+
+    private fun oilLevelNow() = PidDef(
+        key = "OIL_LEVEL", name = "オイルレベル (BMW)", shortName = "オイル量", unit = "mm",
+        min = 0.0, max = 75.0, decimals = 1,
+        kind = PidDef.Kind.REQUEST,
+        // 応答 70 0E 01 の後: 油温 (2 バイト ×0.1) / オイルレベル (1 バイト ×0.293 mm) / オイル品質 (2 バイト)
+        request = PidRequest(0x30, intArrayOf(0x0E, 0x01), header = "7E0"),
+        minBytes = 3, slow = true,
+        decode = { d -> d[2] * OIL_LEVEL_STEP },
+    )
+
+    private fun oilLevelLong(): PidDef {
+        val off = blockOffset(0x4400)
+        return PidDef(
+            key = "OIL_LEVEL_LONG", name = "オイルレベル 長期平均 (BMW)", shortName = "オイル量平均", unit = "mm",
+            min = 0.0, max = 75.0, decimals = 1,
+            kind = PidDef.Kind.REQUEST, request = BMW_BLOCK_REQUEST,
+            minBytes = 13, slow = true,
+            decode = { d -> d[off] * OIL_LEVEL_STEP },
         )
     }
 
@@ -145,6 +193,7 @@ object Pids {
         misfire("MISFIRE_5", "失火カウンタ 今回の運転 #5", "失火#5", 0xA6),
         misfire("MISFIRE_6", "失火カウンタ 今回の運転 #6", "失火#6", 0xA7),
         misfireLife(1), misfireLife(2), misfireLife(3), misfireLife(4), misfireLife(5), misfireLife(6),
+        oilLevelNow(), oilLevelLong(),
         PidDef("BATTERY", "バッテリー電圧 (アダプター)", "バッテリー", "V", 10.0, 16.0, decimals = 1,
             warnBelow = 12.0, kind = PidDef.Kind.ADAPTER_VOLTAGE, slow = true),
         PidDef("BOOST", "ブースト圧 (MAP−大気圧)", "ブースト", "bar", -1.0, 1.5, decimals = 2,
@@ -250,6 +299,8 @@ class ObdReader(
         defs: Collection<PidDef>,
         values: MutableMap<String, Double>,
         fallbacks: Map<String, PidDef> = emptyMap(),
+        /** true = 失敗続きの項目の間引きをせず、すべて読む (グラフの記録用の 1 回読み) */
+        forceAll: Boolean = false,
     ): Result {
         cycle++
         // 派生項目の依存先も読む
@@ -262,7 +313,7 @@ class ObdReader(
             }
         }
         val c = Counter()
-        for (d in direct.values) readItem(d, values, c)
+        for (d in direct.values) readItem(d, values, c, forceAll)
         for (d in defs) {
             if (d.kind == PidDef.Kind.DERIVED) {
                 val v = d.derive(values)
@@ -294,9 +345,11 @@ class ObdReader(
         var stdRefused = 0
     }
 
-    private fun readItem(d: PidDef, values: MutableMap<String, Double>, c: Counter) {
+    private fun readItem(d: PidDef, values: MutableMap<String, Double>, c: Counter, forceAll: Boolean = false) {
         val streak = failStreak[d.key] ?: 0
-        if (!isAvailable(d)) {
+        if (forceAll) {
+            // 間引きなし
+        } else if (!isAvailable(d)) {
             // 非対応扱いでも、最初と 50 サイクルごとに一度だけ試す
             if (d.kind != PidDef.Kind.MODE01 || (cycle != 1L && cycle % 50 != 0L)) {
                 values.remove(d.key); return
