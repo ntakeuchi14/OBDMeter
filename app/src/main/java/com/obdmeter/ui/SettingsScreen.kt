@@ -436,10 +436,31 @@ private fun ConnectionTestSection(vm: MainViewModel) {
         Text(if (running) "テスト中…" else "接続テストを実行")
     }
 
+    // BimmerLink などに出ている値が、DME のどの ID にあるかを探す
+    Text(
+        "BMW の値を探す: BimmerLink などで見える値 (失火カウンタなど) を入力すると、DME の BMW 独自の値を順に読んで、" +
+            "その値が入っている ID を探します (数分かかります。エンジン停止・イグニッション ON で実行してください)",
+        color = GaugeColors.SubText, fontSize = 12.sp,
+    )
+    var targetText by remember { mutableStateOf("") }
+    OutlinedTextField(
+        value = targetText,
+        onValueChange = { targetText = it },
+        label = { Text("探す値 (カンマ区切り。例: 14,50,27,27,71,37)") },
+        singleLine = true,
+        modifier = Modifier.fillMaxWidth(),
+    )
+    val targets = targetText.split(',', ' ', '、').mapNotNull { it.trim().toDoubleOrNull()?.toLong() }
+    FilledTonalButton(
+        onClick = { vm.runBmwSearch(targets) },
+        enabled = !running && targets.size >= 2,
+        modifier = Modifier.padding(vertical = 8.dp),
+    ) { Text("BMW の値を探す") }
+
     lines?.let { list ->
         AlertDialog(
             onDismissRequest = vm::closeConnectionTest,
-            title = { Text(if (running) "接続テスト中…" else "接続テストの結果") },
+            title = { Text(if (running) "実行中…" else "結果") },
             text = {
                 val scroll = rememberScrollState()
                 LaunchedEffect(list.size) { scroll.animateScrollTo(scroll.maxValue) }
@@ -468,6 +489,7 @@ private fun ConnectionTestSection(vm: MainViewModel) {
                         }
                         context.startActivity(Intent.createChooser(send, "結果を共有"))
                     }) { Text("共有") }
+                    if (running) TextButton(onClick = vm::stopTest) { Text("中止") }
                     TextButton(enabled = !running, onClick = vm::closeConnectionTest) { Text("閉じる") }
                 }
             },
