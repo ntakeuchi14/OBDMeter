@@ -105,7 +105,7 @@ class AppCore private constructor(context: Context) {
                     g.chartAllKeys.forEach { k -> iv[k] = minOf(iv[k] ?: Long.MAX_VALUE, sec * 1000L) }
                 }
                 history.intervals = iv
-                history.retentionMonths = charts.maxOfOrNull { it.design.historyMonths } ?: 3
+                history.retentionMs = charts.maxOfOrNull { it.design.historyRetentionMs } ?: (3 * HistoryStore.MONTH_MS)
             }
         }
         // 記録: 接続した直後に全項目を 1 回読み、その後は項目ごとの間隔で読む

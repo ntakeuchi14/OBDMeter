@@ -23,16 +23,16 @@ class Sample(val t: Long, val v: Float)
 /**
  * 折れ線グラフ用の値の記録。項目ごとに「時刻 (秒単位)・値」を端末のデータベースに保存する。
  * - 記録するのは [intervals] の項目 (どこかの折れ線グラフで使われている項目)。間隔の管理は呼び出し側
- * - 保存期間 ([retentionMonths]) を過ぎた記録は自動で消す
+ * - 保存期間 ([retentionMs]) を過ぎた記録は自動で消す
  * - CSV (項目キー, 年月日時分秒, 値) で書き出し・読み込みができる
  */
 class HistoryStore(context: Context, private val scope: CoroutineScope) {
 
     companion object {
-        const val MIN_INTERVAL_SEC = 10
+        const val MIN_INTERVAL_SEC = 1
         const val MAX_INTERVAL_SEC = 600
         const val MAX_MONTHS = 24
-        private const val MONTH_MS = 2_629_746_000L // 1 か月 (平均 30.44 日)
+        const val MONTH_MS = 2_629_746_000L // 1 か月 (平均 30.44 日)
         const val CSV_HEADER = "key,datetime,value"
 
         /** CSV の時刻の書式 (端末のタイムゾーン) */
@@ -66,8 +66,8 @@ class HistoryStore(context: Context, private val scope: CoroutineScope) {
 
     /** 記録する項目のキーと記録間隔 (ミリ秒) */
     @Volatile var intervals: Map<String, Long> = emptyMap()
-    /** 保存期間 (か月) */
-    @Volatile var retentionMonths: Int = 3
+    /** 保存期間 (ミリ秒) */
+    @Volatile var retentionMs: Long = 3 * MONTH_MS
 
     private val _revision = MutableStateFlow(0L)
     /** 記録が増えるたびに変わる (グラフの読み直しに使う) */
@@ -79,7 +79,7 @@ class HistoryStore(context: Context, private val scope: CoroutineScope) {
             delay(60_000L)
             while (true) {
                 runCatching { cleanup(System.currentTimeMillis()) }
-                delay(3_600_000L)
+                delay(600_000L)
             }
         }
     }
@@ -225,7 +225,7 @@ class HistoryStore(context: Context, private val scope: CoroutineScope) {
         if (v == Math.rint(v) && kotlin.math.abs(v) < 1e15) v.toLong().toString() else v.toString()
 
     private fun cleanup(now: Long) {
-        val months = retentionMonths.coerceIn(1, MAX_MONTHS)
-        db.delete("samples", "t < ?", arrayOf((now - months * MONTH_MS).toString()))
+        val keep = retentionMs.coerceIn(3_600_000L, MAX_MONTHS * MONTH_MS)
+        db.delete("samples", "t < ?", arrayOf((now - keep).toString()))
     }
 }

@@ -893,7 +893,7 @@ private fun ChartSettings(
     Head("記録する間隔")
     val interval = d.recordIntervalSec.toInt().coerceIn(HistoryStore.MIN_INTERVAL_SEC, HistoryStore.MAX_INTERVAL_SEC)
     SliderLine("間隔 (秒)", interval.toFloat(), HistoryStore.MIN_INTERVAL_SEC.toFloat()..HistoryStore.MAX_INTERVAL_SEC.toFloat(),
-        "%.0f 秒") { v -> update { it.copy(recordIntervalSec = snap(v, 10f).coerceAtLeast(10f)) } }
+        "%.0f 秒") { v -> update { it.copy(recordIntervalSec = (if (v < 60f) snap(v, 1f) else snap(v, 10f)).coerceAtLeast(1f)) } }
     Hint(
         "接続した直後にすべての項目を 1 回記録し、その後はこの間隔で記録します " +
             "(グラフのページを表示していなくても記録します)。"
@@ -901,15 +901,20 @@ private fun ChartSettings(
 
     Head("記録を残す期間")
     Row(Modifier.horizontalScroll(rememberScrollState())) {
-        listOf(1, 2, 3, 6, 12, 24).forEach { n ->
-            FilterChip(d.historyMonths == n, { update { it.copy(historyMonths = n) } }, { Text("${n}か月") },
+        listOf(1 to "1時間", 24 to "1日", 168 to "1週間").forEach { (h, label) ->
+            FilterChip(d.historyHours == h, { update { it.copy(historyHours = h) } }, { Text(label) },
                 Modifier.padding(end = 6.dp))
         }
+        listOf(1, 2, 3, 6, 12, 24).forEach { n ->
+            FilterChip(d.historyHours <= 0 && d.historyMonths == n, { update { it.copy(historyHours = 0, historyMonths = n) } },
+                { Text("${n}か月") }, Modifier.padding(end = 6.dp))
+        }
     }
-    val mbPerMonth = 30 * 86_400f / interval * g.chartAllKeys.size * 40 / 1_000_000f
+    val days = d.historyRetentionMs / 86_400_000f
+    val mb = days * 86_400f / interval * g.chartAllKeys.size * 40 / 1_000_000f
     Hint(
         "期間を過ぎた記録は自動で消えます (複数のグラフがあるときは一番長い期間)。" +
-            "この設定で 1 か月あたり約 ${"%.1f".format(mbPerMonth)} MB を使います。"
+            "この設定で最大約 ${"%.1f".format(mb)} MB を使います。"
     )
 
     Head("記録の CSV")

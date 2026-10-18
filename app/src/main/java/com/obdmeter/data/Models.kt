@@ -231,8 +231,13 @@ data class GaugeDesign(
     val historyDays: Int = 1,
     /** 記録を残す期間 (か月) */
     val historyMonths: Int = 3,
-    /** 記録する間隔 (秒、10〜600)。接続した直後に 1 回記録し、その後この間隔で記録する */
+    /** 記録を残す期間 (時間)。0 より大きければ [historyMonths] の代わりにこちらを使う (1 時間・1 日・1 週間) */
+    val historyHours: Int = 0,
+    /** 記録する間隔 (秒、1〜600)。接続した直後に 1 回記録し、その後この間隔で記録する */
     val recordIntervalSec: Float = 60f,
+    /** 記録を残す期間 (ミリ秒) */
+    val historyRetentionMs: Long
+        get() = if (historyHours > 0) historyHours * 3_600_000L else historyMonths.coerceIn(1, 24) * 2_629_746_000L
     /** 項目ごとの線の色 (並びは「表示する項目」→ 追加した項目の順。null = 自動) */
     val chartColors: List<Long?> = emptyList(),
 )
