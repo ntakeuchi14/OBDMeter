@@ -774,14 +774,35 @@ private fun TableSettings(
         val list = keys.toMutableList()
         val k = list.removeAt(from); list.add(to, k)
         val newMain = list[0]
-        // 先頭 (表示する項目) が変わったら、その項目用の表示名・範囲の上書きは外す
-        val design = if (newMain != g.pidKey) d.copy(label = null, min = null, max = null, decimals = null) else d
-        replace(g.copy(pidKey = newMain, chartKeys = list.drop(1), design = design))
+        // 先頭 (表示する項目) が変わったら、その項目用の範囲の上書きは外す。表示名は項目について移す
+        if (newMain == g.pidKey) { replace(g.copy(chartKeys = list.drop(1))); return }
+        var labels = g.itemLabels - newMain
+        d.label?.takeIf { it.isNotBlank() }?.let { labels = labels + (g.pidKey to it) }
+        val design = d.copy(label = g.itemLabels[newMain], min = null, max = null, decimals = null)
+        replace(g.copy(pidKey = newMain, chartKeys = list.drop(1), design = design, itemLabels = labels))
     }
+    Hint("名前の欄に入力すると、表に出す項目名を変えられます (空欄で標準の名前)。")
     keys.forEachIndexed { i, key ->
         val def = catalog.get(key)
+        Text("${i + 1}. " + (def?.name ?: "(見つかりません: $key)"), fontSize = 13.sp, color = GaugeColors.SubText,
+            modifier = Modifier.padding(top = 6.dp))
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            Text("${i + 1}. " + (def?.name ?: "(見つかりません: $key)"), Modifier.weight(1f), fontSize = 14.sp)
+            // 表示名 (先頭は design.label、2 番目以降は itemLabels)
+            val current = if (i == 0) d.label.orEmpty() else g.itemLabels[key].orEmpty()
+            var text by remember(g.id, key, i) { mutableStateOf(current) }
+            OutlinedTextField(
+                value = text,
+                onValueChange = { v ->
+                    text = v
+                    val t = v.takeIf { it.isNotBlank() }
+                    if (i == 0) update { it.copy(label = t) }
+                    else replace(g.copy(itemLabels = if (t == null) g.itemLabels - key else g.itemLabels + (key to t)))
+                },
+                placeholder = { Text(def?.shortName ?: "") },
+                label = { Text("名前") },
+                singleLine = true,
+                modifier = Modifier.weight(1f),
+            )
             TextButton(onClick = { reorder(i, i - 1) }, enabled = i > 0) { Text("▲") }
             TextButton(onClick = { reorder(i, i + 1) }, enabled = i < keys.lastIndex) { Text("▼") }
             if (i > 0) TextButton(onClick = {

@@ -355,7 +355,13 @@ private fun MenuButton(state: ConnectionState, modifier: Modifier, onClick: () -
 /** 折れ線グラフの項目 (先頭はメーターの項目、続いて追加した項目) */
 fun chartSeries(g: GaugeConfig, def: PidDef, values: Map<String, Double>, catalog: PidCatalog?): List<ChartSeries> =
     listOf(ChartSeries(def, values[def.key] ?: g.fallbackKey?.let { values[it] })) +
-        g.chartKeys.mapNotNull { k -> catalog?.get(k)?.let { ChartSeries(it, values[it.key]) } }
+        g.chartKeys.mapNotNull { k ->
+            catalog?.get(k)?.let { base ->
+                // 表示名を変えてあればその名前で出す
+                val def2 = g.itemLabels[k]?.takeIf { it.isNotBlank() }?.let { base.copy(shortName = it) } ?: base
+                ChartSeries(def2, values[base.key])
+            }
+        }
 
 /** 接続状態を表す色 (ダッシュボードとフロート表示の点) */
 fun statusColor(state: ConnectionState): Color = when (state) {
