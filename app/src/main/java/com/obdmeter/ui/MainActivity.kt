@@ -110,9 +110,15 @@ class MainActivity : ComponentActivity() {
 
     override fun dispatchGenericMotionEvent(ev: android.view.MotionEvent): Boolean {
         if (ev.action == android.view.MotionEvent.ACTION_SCROLL) {
-            val v = ev.getAxisValue(android.view.MotionEvent.AXIS_SCROLL)
-                .takeIf { it != 0f } ?: -ev.getAxisValue(android.view.MotionEvent.AXIS_VSCROLL)
-                .takeIf { it != 0f } ?: ev.getAxisValue(android.view.MotionEvent.AXIS_HSCROLL)
+            val scroll = ev.getAxisValue(android.view.MotionEvent.AXIS_SCROLL)
+            val vscroll = ev.getAxisValue(android.view.MotionEvent.AXIS_VSCROLL)
+            val hscroll = ev.getAxisValue(android.view.MotionEvent.AXIS_HSCROLL)
+            // ホイールは奥へ回すと + なので、下 (次のページ) を + にそろえる
+            val v = when {
+                scroll != 0f -> scroll
+                vscroll != 0f -> -vscroll
+                else -> hscroll
+            }
             scrollAcc += v
             if (kotlin.math.abs(scrollAcc) >= 1f) {
                 val delta = if (scrollAcc > 0) 1 else -1
