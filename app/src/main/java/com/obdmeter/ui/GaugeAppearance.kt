@@ -101,6 +101,7 @@ fun GaugeDesign.toLook(def: PidDef, style: GaugeStyle): GaugeLook {
         tableValueImage = tableValueImage,
         tableNameRatio = tableNameRatio.coerceIn(0f, 0.7f),
         tableUnitRatio = tableUnitRatio.coerceIn(0f, 0.5f),
+        tableUnitInline = tableUnitInline,
         chartColors = chartColors.map { c -> c?.let { Color(it) } },
         showPeak = showPeak,
         peakColor = peakColor.color(GaugeColors.Peak),

@@ -217,6 +217,8 @@ data class GaugeDesign(
     /** 1 行の中の項目名・単位の幅 (行の幅に対する比率。残りが値) */
     val tableNameRatio: Float = 0.4f,
     val tableUnitRatio: Float = 0.2f,
+    /** 値テーブルで、単位を別の欄にせず値のすぐ後ろに付ける */
+    val tableUnitInline: Boolean = false,
     // --- 折れ線グラフ ---
     /** 1 画面に表示する期間 (秒)。左右のスクロールで記録の全期間を見られる */
     val chartSpanSec: Int = 3600,

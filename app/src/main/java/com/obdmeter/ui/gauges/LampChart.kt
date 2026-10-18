@@ -172,7 +172,8 @@ internal fun TableGauge(series: List<ChartSeries>, look: GaugeLook, fonts: Gauge
         // 文字の大きさは行の高さから決める (幅が足りなければ 1 行に収まるよう省略)
         val base = with(density) { (rowH.toPx() * 0.42f).toSp() }
         val nameW = if (look.showName) look.tableNameRatio else 0f
-        val unitW = if (look.showUnit) look.tableUnitRatio else 0f
+        val inlineUnit = look.showUnit && look.tableUnitInline
+        val unitW = if (look.showUnit && !inlineUnit) look.tableUnitRatio else 0f
         val valueW = (1f - nameW - unitW).coerceAtLeast(0.15f)
         Row(Modifier.fillMaxSize()) {
             for (c in 0 until cols) {
@@ -208,13 +209,22 @@ internal fun TableGauge(series: List<ChartSeries>, look: GaugeLook, fonts: Gauge
                                         contentScale = androidx.compose.ui.layout.ContentScale.FillBounds,
                                     )
                                 }
-                                if (look.showValue) {
-                                    Text(
-                                        s.def.format(s.value),
-                                        color = if (isWarn(s.def, s.value)) GaugeColors.Warn else look.valueColor,
-                                        fontFamily = fonts.value, fontWeight = FontWeight.Bold,
-                                        fontSize = base * look.valueSize, maxLines = 1, softWrap = false,
-                                    )
+                                if (look.showValue || inlineUnit) {
+                                    Row(verticalAlignment = Alignment.Bottom) {
+                                        if (look.showValue) Text(
+                                            s.def.format(s.value),
+                                            color = if (isWarn(s.def, s.value)) GaugeColors.Warn else look.valueColor,
+                                            fontFamily = fonts.value, fontWeight = FontWeight.Bold,
+                                            fontSize = base * look.valueSize, maxLines = 1, softWrap = false,
+                                        )
+                                        // 単位を値のすぐ後ろに付ける
+                                        if (inlineUnit && s.def.unit.isNotEmpty()) Text(
+                                            " " + s.def.unit,
+                                            Modifier.padding(bottom = 1.dp),
+                                            color = look.unitColor, fontFamily = fonts.label,
+                                            fontSize = base * 0.7f * look.labelSize, maxLines = 1, softWrap = false,
+                                        )
+                                    }
                                 }
                             }
                             if (unitW > 0f) {
