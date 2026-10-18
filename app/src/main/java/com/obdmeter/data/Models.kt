@@ -199,6 +199,11 @@ data class GaugeDesign(
     val faceColor: Long? = null,
     /** 背景色を塗る大きさ (倍率)。透過した背景画像の内側に合わせる */
     val faceScale: Float = 1f,
+    /** バー表示: バーの角度 (度、時計回り。0 = 横) */
+    val barAngle: Float = 0f,
+    /** バー表示: 破線のマスの数 (0 = 実線) と、マスの間のすき間 (マスの幅に対する比率) */
+    val barSegments: Int = 0,
+    val barSegmentGap: Float = 0.25f,
     /** 背景画像の位置のずれ (メーターの大きさに対する比率。右・下が正) */
     val imageOffsetX: Float = 0f,
     val imageOffsetY: Float = 0f,

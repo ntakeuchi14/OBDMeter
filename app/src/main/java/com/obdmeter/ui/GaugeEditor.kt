@@ -442,7 +442,31 @@ private fun BasicTab(
 @Composable
 private fun AngleTab(g: GaugeConfig, update: ((GaugeDesign) -> GaugeDesign) -> Unit) {
     val d = g.design
-    if (g.style != GaugeStyle.ANALOG) Hint("角度・目盛りはアナログ表示のときに使われます。レッドゾーンはバー表示でも使われます。")
+    if (g.style == GaugeStyle.BAR) {
+        Head("バーの角度 (時計回り)")
+        Row(Modifier.horizontalScroll(rememberScrollState())) {
+            listOf(
+                "横 (左→右)" to 0f, "縦 (下→上)" to -90f, "縦 (上→下)" to 90f,
+                "斜め ↗" to -45f, "斜め ↘" to 45f, "横 (右→左)" to 180f,
+            ).forEach { (name, a) ->
+                FilterChip(d.barAngle == a, { update { it.copy(barAngle = a) } }, { Text(name) }, Modifier.padding(end = 6.dp))
+            }
+        }
+        SliderLine("角度", d.barAngle, -180f..180f, "%.0f°") { v -> update { it.copy(barAngle = snap(v, 5f)) } }
+        Hint("0° 以外はメーターの中央を軸に回し、枠に収まる長さで描きます。")
+
+        Head("バーの線")
+        Row {
+            FilterChip(d.barSegments == 0, { update { it.copy(barSegments = 0) } }, { Text("実線") }, Modifier.padding(end = 6.dp))
+            FilterChip(d.barSegments > 0, { update { it.copy(barSegments = if (it.barSegments > 0) it.barSegments else 20) } },
+                { Text("破線") })
+        }
+        if (d.barSegments > 0) {
+            SliderLine("マスの数", d.barSegments.toFloat(), 3f..60f, "%.0f") { v -> update { it.copy(barSegments = v.roundToInt()) } }
+            SliderLine("マスの間のすき間", d.barSegmentGap * 100, 5f..80f, "%.0f%%") { v -> update { it.copy(barSegmentGap = snap(v, 1f) / 100f) } }
+        }
+    }
+    if (g.style != GaugeStyle.ANALOG) Hint("以下の角度・目盛りはアナログ表示のときに使われます。レッドゾーンはバー表示でも使われます。")
 
     Head("開始・終了角度 (12 時 = 0°、時計回り)")
     Row(Modifier.horizontalScroll(rememberScrollState())) {

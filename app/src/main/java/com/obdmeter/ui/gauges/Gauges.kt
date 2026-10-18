@@ -31,6 +31,7 @@ import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.drawscope.withTransform
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.TextMeasurer
 import androidx.compose.ui.text.TextStyle
@@ -138,6 +139,9 @@ data class GaugeLook(
     val tableMarginRight: Float = 0f,
     /** 折れ線グラフの 1 画面の期間 (ミリ秒) */
     val chartSpanMs: Long = 3_600_000L,
+    val barAngle: Float = 0f,
+    val barSegments: Int = 0,
+    val barSegmentGap: Float = 0.25f,
     val chartIntervalMs: Long = 60_000L,
     val chartSkipGaps: Boolean = true,
     /** 折れ線グラフの線の色 (項目の順。足りない分は自動) */
@@ -579,39 +583,76 @@ fun BarGauge(
             drawText(valueLayout, topLeft = Offset(w - unitLayout.size.width - 10f - valueLayout.size.width + dx, valueY))
         }
 
-        // バー
+        // バー (角度を付けるときはメーターの中央を軸に回し、枠に収まる長さにする)
         val barHidden = !look.showValueArc || look.arcWidth <= 0f
         val barH = if (look.arcWidth <= 0f) 0f else max(h * 0.12f * look.arcWidth, 4f)
         // バーが無いときのレッドゾーンは細い帯で描く
         val zoneH = if (barHidden) max(h * 0.04f, 3f) else barH
-        val barY = h - max(barH, zoneH) - h * 0.08f
-        val r = CornerRadius(barH / 2, barH / 2)
-        if (look.showTrack && barH > 0f) drawRoundRect(GaugeColors.Track, Offset(0f, barY), Size(w, barH), r)
-        look.redZone?.let { z ->
-            val s = fraction(def, z.start)
-            val e = fraction(def, z.endInclusive)
-            if (e > s) drawRect(look.redZoneColor, Offset(w * s, barY + (max(barH, zoneH) - zoneH) / 2), Size(w * (e - s), zoneH))
-        }
-        if (value != null && !barHidden) {
-            val color = if (warn) GaugeColors.Warn else look.accent
-            if (def.min < 0 && def.max > 0) {
-                // 燃調のような ± 値は 0 から伸ばす
-                val zero = w * fraction(def, 0.0)
-                val x = w * f
-                drawRoundRect(color, Offset(min(zero, x), barY), Size(abs(x - zero).coerceAtLeast(3f), barH), r)
-                drawLine(look.tickColor, Offset(zero, barY - 4f), Offset(zero, barY + barH + 4f), 2f)
+        val thick = max(barH, zoneH)
+        val angle = look.barAngle
+        val rad = Math.toRadians(angle.toDouble())
+        val pivot = if (angle == 0f) Offset(w / 2, h - thick / 2 - h * 0.08f) else Offset(w / 2, h / 2)
+        val len = if (angle == 0f) w else {
+            val c = abs(cos(rad)).toFloat()
+            val sn = abs(sin(rad)).toFloat()
+            // 太さの分も含めて枠に収まる長さ
+            val byW = if (c > 1e-3f) (w - thick * sn) / c else Float.MAX_VALUE
+            val byH = if (sn > 1e-3f) (h - thick * c) / sn else Float.MAX_VALUE
+            min(byW, byH) * 0.94f
+        }.coerceAtLeast(4f)
+        val segs = look.barSegments
+        val gap = if (segs > 0) len / segs * look.barSegmentGap else 0f
+        val r = if (segs > 0) CornerRadius(min(barH / 6, 4f), min(barH / 6, 4f)) else CornerRadius(barH / 2, barH / 2)
+        /** [from]〜[to] (0〜1) の範囲を、破線ならマスごとに、実線なら 1 本で塗る (バーの座標: 左端 0) */
+        fun DrawScope.fillRange(color: Color, from: Float, to: Float, top: Float, height: Float, minWidth: Float = 0f) {
+            val lo = min(from, to); val hi = max(from, to)
+            if (segs <= 0) {
+                drawRoundRect(color, Offset(len * lo, top), Size((len * (hi - lo)).coerceAtLeast(minWidth), height), r)
             } else {
-                drawRoundRect(color, Offset(0f, barY), Size(w * f, barH), r)
+                val cell = len / segs
+                for (i in 0 until segs) {
+                    // マスの中心が範囲に入っていれば点ける
+                    val mid = (i + 0.5f) / segs
+                    if (mid < lo || mid > hi) continue
+                    drawRoundRect(color, Offset(cell * i + gap / 2, top), Size(cell - gap, height), r)
+                }
             }
         }
-        if (peak != null) {
-            val px = w * fraction(def, peak)
-            drawLine(look.peakColor, Offset(px, barY - barH * 0.5f), Offset(px, barY + barH * 1.5f), max(3f, barH * 0.25f))
-            if (look.showPeakValue) {
-                val t = tm.measure("MAX " + def.format(peak),
-                    TextStyle(color = look.peakColor, fontSize = (unit * 0.12f).toSp(), fontFamily = fonts.value))
-                drawText(t, topLeft = Offset(4f, barY - t.size.height - barH * 0.6f))
+        withTransform({
+            translate(pivot.x - len / 2, pivot.y - thick / 2)
+            rotate(angle, Offset(len / 2, thick / 2))
+        }) {
+            val barTop = (thick - barH) / 2
+            if (look.showTrack && barH > 0f) fillRange(GaugeColors.Track, 0f, 1f, barTop, barH)
+            look.redZone?.let { z ->
+                val s0 = fraction(def, z.start)
+                val e0 = fraction(def, z.endInclusive)
+                if (e0 > s0) {
+                    if (segs > 0 && !barHidden) fillRange(look.redZoneColor, s0, e0, (thick - zoneH) / 2, zoneH)
+                    else drawRect(look.redZoneColor, Offset(len * s0, (thick - zoneH) / 2), Size(len * (e0 - s0), zoneH))
+                }
             }
+            if (value != null && !barHidden) {
+                val color = if (warn) GaugeColors.Warn else look.accent
+                if (def.min < 0 && def.max > 0) {
+                    // 燃調のような ± 値は 0 から伸ばす
+                    val zero = fraction(def, 0.0)
+                    fillRange(color, zero, f, barTop, barH, minWidth = 3f)
+                    drawLine(look.tickColor, Offset(len * zero, barTop - 4f), Offset(len * zero, barTop + barH + 4f), 2f)
+                } else {
+                    fillRange(color, 0f, f, barTop, barH)
+                }
+            }
+            if (peak != null) {
+                val px = len * fraction(def, peak)
+                drawLine(look.peakColor, Offset(px, barTop - barH * 0.5f), Offset(px, barTop + barH * 1.5f), max(3f, barH * 0.25f))
+            }
+        }
+        if (peak != null && look.showPeakValue) {
+            val t = tm.measure("MAX " + def.format(peak),
+                TextStyle(color = look.peakColor, fontSize = (unit * 0.12f).toSp(), fontFamily = fonts.value))
+            val ty = if (angle == 0f) pivot.y - thick / 2 - t.size.height - barH * 0.6f else 0f
+            drawText(t, topLeft = Offset(4f, ty.coerceAtLeast(0f)))
         }
     }
 }
