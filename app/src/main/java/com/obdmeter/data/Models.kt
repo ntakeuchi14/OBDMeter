@@ -282,7 +282,12 @@ data class GaugeConfig(
     val chartKeys: List<String> = emptyList(),
     /** 値テーブル・折れ線グラフの追加項目の表示名 (項目キー → 名前)。先頭の項目は design.label を使う */
     val itemLabels: Map<String, String> = emptyMap(),
+    /** 折れ線グラフの各項目が右の縦軸に属するか (項目キー → true = 右)。無ければ奇数番目が右、偶数番目が左 */
+    val chartAxis: Map<String, Boolean> = emptyMap(),
 ) {
+    /** 折れ線グラフの [index] 番目 (0 始まり) の項目が右の縦軸か */
+    fun isRightAxis(index: Int, key: String): Boolean = chartAxis[key] ?: (index % 2 == 0)
+
     /** 折れ線グラフに出す項目すべて (先頭が [pidKey]) */
     val chartAllKeys: List<String> get() = listOf(pidKey) + chartKeys
 

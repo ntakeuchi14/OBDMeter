@@ -75,7 +75,11 @@ import kotlin.math.min
 val LocalHistory = staticCompositionLocalOf<HistoryStore?> { null }
 
 /** 折れ線グラフの 1 項目 */
-class ChartSeries(val def: PidDef, val value: Double?)
+/** グラフの項目。[right] = 右の縦軸に属する */
+class ChartSeries(val def: PidDef, val value: Double?, val right: Boolean = true)
+
+/** 左右の縦軸の範囲 (null = その軸に項目が無い) */
+internal class ChartAxes(val left: Pair<Double, Double>?, val right: Pair<Double, Double>?)
 
 /** 線の色の自動割り当て */
 val CHART_PALETTE = listOf(
@@ -329,6 +333,14 @@ internal fun ChartGauge(
             nearest(data[k].orEmpty(), cursorTime)?.takeIf { abs(it.t - cursorTime) <= max(span / 20, 2_000L) }?.v?.toDouble()
         }
 
+    // 左右の縦軸の範囲 (属する項目の最小〜最大をまとめたもの。項目が無い軸は出さない)
+    val axes = remember(series.map { Triple(it.def.min, it.def.max, it.right) }) {
+        fun range(list: List<ChartSeries>) =
+            if (list.isEmpty()) null else list.minOf { it.def.min } to list.maxOf { it.def.max }
+        ChartAxes(range(series.filter { !it.right }), range(series.filter { it.right }))
+    }
+    val axisW = 34.dp
+
     Column(modifier.padding(4.dp)) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Top) {
             // 各項目の現在値 (時刻を選んでいるときはその時刻の値)
@@ -390,9 +402,12 @@ internal fun ChartGauge(
                             detectTapGestures(
                                 // タップした位置の時刻の値を凡例に出す
                                 onTap = { p ->
-                                    if (size.width > 0) {
+                                    val padL = if (axes.left != null) axisW.toPx() else 0f
+                                    val padR = if (axes.right != null) axisW.toPx() else 0f
+                                    val pw = size.width - padL - padR
+                                    if (pw > 0) {
                                         val e = endAt ?: System.currentTimeMillis()
-                                        cursorAt = e - span + (p.x / size.width * span).toLong()
+                                        cursorAt = e - span + (((p.x - padL) / pw).coerceIn(0f, 1f) * span).toLong()
                                     }
                                 },
                                 // ダブルタップで現在に戻り、現在値を出す
@@ -406,20 +421,47 @@ internal fun ChartGauge(
                 val labelH = tm.measure("00:00", labelStyle).size.height.toFloat()
                 val plotH = size.height - labelH - 2f
                 val w = size.width
-                if (plotH <= 4f || w <= 4f) return@Canvas
+                val padL = if (axes.left != null) axisW.toPx() else 0f
+                val padR = if (axes.right != null) axisW.toPx() else 0f
+                val pw = w - padL - padR
+                if (plotH <= 4f || pw <= 4f) return@Canvas
+                fun xAt(t: Long) = padL + (t - start).toFloat() / span * pw
+                fun yAt(right: Boolean, v: Double): Float {
+                    val (lo, hi) = (if (right) axes.right else axes.left) ?: (0.0 to 1.0)
+                    val range = (hi - lo).takeIf { it > 0 } ?: 1.0
+                    return plotH - ((v - lo) / range).toFloat().coerceIn(-0.02f, 1.02f) * plotH
+                }
 
                 // 横の補助線
                 for (i in 0..4) {
                     val y = plotH * i / 4f
-                    drawLine(GaugeColors.Track.copy(alpha = if (i == 0 || i == 4) 0.9f else 0.5f), Offset(0f, y), Offset(w, y), 1f)
+                    drawLine(GaugeColors.Track.copy(alpha = if (i == 0 || i == 4) 0.9f else 0.5f), Offset(padL, y), Offset(padL + pw, y), 1f)
                 }
+                // 左右の縦軸の目盛り (その軸の項目が 1 つならその項目の色)
+                fun drawAxis(range: Pair<Double, Double>?, right: Boolean) {
+                    val (lo, hi) = range ?: return
+                    val members = series.indices.filter { series[it].right == right }
+                    val color = if (members.size == 1) chartColor(look, members[0]) else GaugeColors.SubText
+                    val st = labelStyle.copy(color = color)
+                    val step = (hi - lo) / 4
+                    val dec = when { step >= 5 -> 0; step >= 0.5 -> 1; else -> 2 }
+                    for (i in 0..4) {
+                        val v = hi - step * i
+                        val lay = tm.measure("%.${dec}f".format(v), st)
+                        val y = (plotH * i / 4f - lay.size.height / 2f).coerceIn(0f, max(0f, plotH - lay.size.height))
+                        val x = if (right) padL + pw + 3f else (padL - 3f - lay.size.width).coerceAtLeast(0f)
+                        drawText(lay, topLeft = Offset(x, y))
+                    }
+                }
+                drawAxis(axes.left, false)
+                drawAxis(axes.right, true)
                 // 時刻の目盛り
                 val step = TIME_STEPS.firstOrNull { it * 5 >= span } ?: TIME_STEPS.last()
                 val fmt = SimpleDateFormat(if (step >= 21_600_000L) "M/d HH:mm" else "HH:mm", Locale.getDefault())
                 val tz = java.util.TimeZone.getDefault()
                 var t = start - Math.floorMod(start + tz.getOffset(start), step) + step
                 while (t <= end) {
-                    val x = (t - start).toFloat() / span * w
+                    val x = xAt(t)
                     drawLine(GaugeColors.Track.copy(alpha = 0.5f), Offset(x, 0f), Offset(x, plotH), 1f)
                     val lay = tm.measure(fmt.format(Date(t)), labelStyle)
                     val lx = (x - lay.size.width / 2f).coerceIn(0f, max(0f, w - lay.size.width))
@@ -427,24 +469,22 @@ internal fun ChartGauge(
                     t += step
                 }
 
-                // 項目ごとに、記録のある時刻を線でつなぐ
+                // 項目ごとに、記録のある時刻を線でつなぐ (縦は属する軸の範囲で合わせる)
                 var any = false
                 series.forEachIndexed { i, s ->
                     val pts = data[s.def.key].orEmpty()
                     if (pts.isEmpty()) return@forEachIndexed
                     any = true
                     val color = chartColor(look, i)
-                    val lo = s.def.min
-                    val range = (s.def.max - s.def.min).takeIf { it > 0 } ?: 1.0
-                    fun x(p: Sample) = (p.t - start).toFloat() / span * w
-                    fun y(p: Sample) = plotH - ((p.v - lo) / range).toFloat().coerceIn(-0.02f, 1.02f) * plotH
+                    fun x(p: Sample) = xAt(p.t)
+                    fun y(p: Sample) = yAt(s.right, p.v.toDouble())
                     val path = Path()
                     pts.forEachIndexed { idx, p -> if (idx == 0) path.moveTo(x(p), y(p)) else path.lineTo(x(p), y(p)) }
-                    clipRect(0f, 0f, w, plotH) {
+                    clipRect(padL, 0f, padL + pw, plotH) {
                         drawPath(path, color, style = Stroke(2.dp.toPx(), cap = StrokeCap.Round, join = StrokeJoin.Round))
                         // 点がまばらなときは記録した位置に点を打つ
                         val visible = pts.count { it.t in start..end }
-                        if (visible in 1..(w / 8).toInt()) {
+                        if (visible in 1..(pw / 8).toInt()) {
                             pts.forEach { p -> if (p.t in start..end) drawCircle(color, 2.5.dp.toPx(), Offset(x(p), y(p))) }
                         }
                     }
@@ -452,19 +492,18 @@ internal fun ChartGauge(
                 // 選んだ時刻の縦線
                 cursorTime?.let { ct ->
                     if (ct in start..end) {
-                        val cx = (ct - start).toFloat() / span * w
+                        val cx = xAt(ct)
                         drawLine(GaugeColors.Accent, Offset(cx, 0f), Offset(cx, plotH), 1.5.dp.toPx())
                         series.forEachIndexed { i, s ->
                             val v = cursorValues[s.def.key] ?: return@forEachIndexed
-                            val range = (s.def.max - s.def.min).takeIf { it > 0 } ?: 1.0
-                            val cy = plotH - ((v - s.def.min) / range).toFloat().coerceIn(-0.02f, 1.02f) * plotH
+                            val cy = yAt(s.right, v)
                             drawCircle(chartColor(look, i), 4.dp.toPx(), Offset(cx, cy))
                             drawCircle(GaugeColors.Text, 4.dp.toPx(), Offset(cx, cy), style = Stroke(1.dp.toPx()))
                         }
                     }
                 }
                 if (!any) {
-                    drawCenteredText(tm, if (history == null) "" else "この期間の記録はありません", Offset(w / 2, plotH / 2), labelStyle)
+                    drawCenteredText(tm, if (history == null) "" else "この期間の記録はありません", Offset(padL + pw / 2, plotH / 2), labelStyle)
                 }
             }
             if (endAt != null || cursorAt != null) {

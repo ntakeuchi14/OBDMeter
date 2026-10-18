@@ -881,7 +881,7 @@ private fun ChartSettings(
     val d = g.design
     val look = g.look(catalog.get(g.pidKey) ?: return)
     Head("グラフに表示する項目")
-    Hint("先頭は上の「表示する項目」です。項目ごとに、その項目の目盛りの範囲 (最小〜最大) で縦方向を合わせて重ねます。")
+    Hint("先頭は上の「表示する項目」です。縦軸は左右 2 つあり、項目ごとにどちらの軸に属するか選べます (既定は奇数番目が右、偶数番目が左)。各軸の範囲は、属する項目の目盛りの範囲 (最小〜最大) をまとめたものです。")
     g.chartAllKeys.forEachIndexed { i, key ->
         val def = catalog.get(key)
         Row(Modifier.fillMaxWidth().padding(vertical = 2.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -891,6 +891,11 @@ private fun ChartSettings(
                 Text(def?.name ?: "(見つかりません: $key)", fontSize = 14.sp)
                 if (def != null) Text("${def.unit}  範囲 ${fmt(def.min)}〜${fmt(def.max)}", color = GaugeColors.SubText, fontSize = 12.sp)
             }
+            // 左右どちらの縦軸か
+            val right = g.isRightAxis(i, key)
+            FilterChip(!right, { replace(g.copy(chartAxis = g.chartAxis + (key to false))) }, { Text("左") },
+                Modifier.padding(end = 4.dp))
+            FilterChip(right, { replace(g.copy(chartAxis = g.chartAxis + (key to true))) }, { Text("右") })
             if (i > 0) {
                 TextButton(onClick = {
                     val keys = g.chartKeys.toMutableList().also { it.removeAt(i - 1) }
