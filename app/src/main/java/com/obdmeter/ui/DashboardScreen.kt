@@ -59,6 +59,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
@@ -410,7 +411,8 @@ private fun DashboardCanvas(
 ) {
     // メーターごとのピーク値リセット回数 (長押しで増やす)
     val peakResets = remember { mutableStateMapOf<Long, Int>() }
-    BoxWithConstraints(Modifier.fillMaxSize().padding(4.dp)) {
+    // ページからはみ出した部分は切り取る (隣のページに映らないように)
+    BoxWithConstraints(Modifier.fillMaxSize().clipToBounds().padding(4.dp)) {
         val cellW = maxWidth / Layout.COLS
         val cellH = maxHeight / Layout.ROWS
         val density = LocalDensity.current
@@ -518,11 +520,12 @@ private fun GaugeOnGrid(
         pending?.let { return it }
         val dx = (move.x / cellWPx).roundToInt()
         val dy = (move.y / cellHPx).roundToInt()
-        val w = (g.w + (resize.x / cellWPx).roundToInt()).coerceIn(2, Layout.COLS)
-        val h = (g.h + (resize.y / cellHPx).roundToInt()).coerceIn(2, Layout.ROWS)
-        val x = (g.x + dx).coerceIn(0, Layout.COLS - minOf(w, Layout.COLS))
-        val y = (g.y + dy).coerceIn(0, Layout.ROWS - minOf(h, Layout.ROWS))
-        return intArrayOf(x, y, minOf(w, Layout.COLS - x), minOf(h, Layout.ROWS - y))
+        // ページの外へのはみ出しも可 (つかめるよう、少なくとも 1 マスはページ内に残す)
+        val w = (g.w + (resize.x / cellWPx).roundToInt()).coerceIn(2, Layout.COLS * 2)
+        val h = (g.h + (resize.y / cellHPx).roundToInt()).coerceIn(2, Layout.ROWS * 2)
+        val x = (g.x + dx).coerceIn(1 - w, Layout.COLS - 1)
+        val y = (g.y + dy).coerceIn(1 - h, Layout.ROWS - 1)
+        return intArrayOf(x, y, w, h)
     }
 
     val r = preview()

@@ -405,8 +405,23 @@ private fun BasicTab(
     }
 
     Head("配置")
-    Text("位置 (${g.x}, ${g.y})  大きさ ${g.w} × ${g.h} マス (全体 ${Layout.COLS} × ${Layout.ROWS})",
+    Text("位置 (${g.x}, ${g.y})  大きさ ${g.w} × ${g.h} マス (ページ全体 ${Layout.COLS} × ${Layout.ROWS})",
         color = GaugeColors.SubText, fontSize = 12.sp)
+    Hint("ページの外にはみ出して置けます (はみ出した部分は表示されません)。右や下にはみ出して大きさ変更のつまみが見えないときは、ここで調整してください。")
+    SliderLine("横の位置", g.x.toFloat(), (1 - g.w).toFloat()..(Layout.COLS - 1).toFloat(), "%.0f") { v ->
+        replace(g.copy(x = v.roundToInt()))
+    }
+    SliderLine("縦の位置", g.y.toFloat(), (1 - g.h).toFloat()..(Layout.ROWS - 1).toFloat(), "%.0f") { v ->
+        replace(g.copy(y = v.roundToInt()))
+    }
+    SliderLine("幅", g.w.toFloat(), 2f..(Layout.COLS * 2).toFloat(), "%.0f マス") { v ->
+        val w = v.roundToInt()
+        replace(g.copy(w = w, x = g.x.coerceAtLeast(1 - w)))
+    }
+    SliderLine("高さ", g.h.toFloat(), 2f..(Layout.ROWS * 2).toFloat(), "%.0f マス") { v ->
+        val h = v.roundToInt()
+        replace(g.copy(h = h, y = g.y.coerceAtLeast(1 - h)))
+    }
     Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(top = 4.dp)) {
         OutlinedButton(onClick = onCopy) { Text("コピー") }
         OutlinedButton(onClick = onBringToFront) { Text("最前面へ") }
