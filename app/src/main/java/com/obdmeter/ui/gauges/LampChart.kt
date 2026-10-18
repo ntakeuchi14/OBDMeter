@@ -143,7 +143,7 @@ internal fun LampGauge(
                     fontSize = (unit * 0.11f * look.labelSize).toSp()))
         }
         if (look.showValue) {
-            val text = if (unsupported) "非対応" else def.format(value) + if (look.showUnit) " ${def.unit}" else ""
+            val text = if (unsupported) "非対応" else def.format(value) + if (look.showUnit) " ${def.unitText}" else ""
             drawCenteredText(tm, text, Offset(size.width / 2, size.height - valueH / 2),
                 TextStyle(color = look.valueColor, fontFamily = fonts.value,
                     fontSize = (unit * 0.11f * look.valueSize).toSp()))
@@ -218,8 +218,8 @@ internal fun TableGauge(series: List<ChartSeries>, look: GaugeLook, fonts: Gauge
                                             fontSize = base * look.valueSize, maxLines = 1, softWrap = false,
                                         )
                                         // 単位を値のすぐ後ろに付ける
-                                        if (inlineUnit && s.def.unit.isNotEmpty()) Text(
-                                            " " + s.def.unit,
+                                        if (inlineUnit && s.def.unitText.isNotEmpty()) Text(
+                                            " " + s.def.unitText,
                                             Modifier.padding(bottom = 1.dp),
                                             color = look.unitColor, fontFamily = fonts.label,
                                             fontSize = base * 0.7f * look.labelSize, maxLines = 1, softWrap = false,
@@ -229,7 +229,7 @@ internal fun TableGauge(series: List<ChartSeries>, look: GaugeLook, fonts: Gauge
                             }
                             if (unitW > 0f) {
                                 Text(
-                                    s.def.unit,
+                                    s.def.unitText,
                                     Modifier.weight(unitW).padding(start = 4.dp),
                                     textAlign = androidx.compose.ui.text.style.TextAlign.Start,
                                     color = look.unitColor, fontFamily = fonts.label,
@@ -318,7 +318,7 @@ internal fun ChartGauge(
                             fontSize = (11 * look.labelSize).sp, maxLines = 1, overflow = TextOverflow.Ellipsis,
                         )
                         Text(
-                            s.def.format(s.value) + if (look.showUnit) " ${s.def.unit}" else "",
+                            s.def.format(s.value) + if (look.showUnit) " ${s.def.unitText}" else "",
                             color = chartColor(look, i), fontFamily = fonts.value, fontWeight = FontWeight.Bold,
                             fontSize = (13 * look.valueSize).sp, maxLines = 1,
                         )

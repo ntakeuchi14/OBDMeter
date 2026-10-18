@@ -460,7 +460,7 @@ fun AnalogGauge(
                     fontWeight = FontWeight.Bold, fontFamily = fonts.value))
         }
         if (look.showUnit) {
-            drawCenteredText(tm, def.unit + scale.unitSuffix,
+            drawCenteredText(tm, def.unitText + scale.unitSuffix,
                 Offset(valueX + d * look.unitOffsetX, valueY + d * 0.1f * max(look.valueSize, 0.6f) + d * look.unitOffsetY),
                 TextStyle(color = look.unitColor, fontFamily = fonts.label, fontSize = (d * 0.055f).toSp()))
         }
@@ -557,7 +557,7 @@ fun BarGauge(
                 fontWeight = FontWeight.Bold, fontFamily = fonts.value,
             )
             val valueLayout = tm.measure(if (unsupported) "非対応" else def.format(value), valueStyle)
-            val unitLayout = tm.measure(if (look.showUnit) def.unit else "",
+            val unitLayout = tm.measure(if (look.showUnit) def.unitText else "",
                 TextStyle(color = look.unitColor, fontFamily = fonts.label, fontSize = (unit * 0.14f).toSp()))
             // 縦横の位置調整 (アナログと共通の設定。既定は右寄せ・中央)
             val valueY = h * (0.52f + (look.valuePosition - 0.42f) * 0.5f) - valueLayout.size.height / 2f
@@ -648,7 +648,7 @@ fun DigitalGauge(
                 maxWidth = size.width * 0.96f)
         }
         if (look.showUnit) {
-            drawCenteredText(tm, def.unit,
+            drawCenteredText(tm, def.unitText,
                 Offset(cx + size.width * look.unitOffsetX, cy + unit * 0.3f * max(look.valueSize, 0.6f) + size.height * look.unitOffsetY),
                 TextStyle(color = look.unitColor, fontFamily = fonts.label, fontSize = (unit * 0.13f).toSp()))
         }
@@ -756,3 +756,10 @@ internal fun DrawScope.drawRing(look: GaugeLook, center: Offset, outer: Float, w
         )
     }
 }
+
+/**
+ * 表示用の単位。全角の「℃」「℉」は多くのフォントに無く、標準フォントで代わりに描かれて
+ * 見た目がそろわないので、「°C」「°F」(半角の度記号 + 英字) に置き換える
+ */
+internal val com.obdmeter.core.PidDef.unitText: String
+    get() = unit.replace("℃", "°C").replace("℉", "°F")
