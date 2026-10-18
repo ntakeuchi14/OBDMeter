@@ -798,7 +798,13 @@ private fun TableSettings(
     }
     SwitchLine("項目名を表示", "OFF にすると値と単位だけを並べます", d.showName) { v -> update { it.copy(showName = v) } }
     if (d.showName) {
-        SliderLine("項目名の幅", d.tableNameRatio * 100, 0f..70f, "%.0f%%") { v -> update { it.copy(tableNameRatio = snap(v, 1f) / 100f) } }
+        SwitchLine("項目名を値の枠の左上に表示", "ON にすると項目名の欄をなくして、値の枠の左上に小さく表示します", d.tableNameInline) { v ->
+            update { it.copy(tableNameInline = v) }
+        }
+        if (!d.tableNameInline) {
+            SliderLine("項目名の幅", d.tableNameRatio * 100, 0f..70f, "%.0f%%") { v -> update { it.copy(tableNameRatio = snap(v, 1f) / 100f) } }
+        }
+        SliderLine("項目名の文字の大きさ", d.tableNameSize * 100, 30f..300f, "%.0f%%") { v -> update { it.copy(tableNameSize = snap(v, 5f) / 100f) } }
     }
     SwitchLine("単位を表示", "OFF にすると単位の欄をなくして、値の部分を広げます", d.showUnit) { v -> update { it.copy(showUnit = v) } }
     if (d.showUnit) {
@@ -808,7 +814,9 @@ private fun TableSettings(
         if (!d.tableUnitInline) {
             SliderLine("単位の幅", d.tableUnitRatio * 100, 0f..50f, "%.0f%%") { v -> update { it.copy(tableUnitRatio = snap(v, 1f) / 100f) } }
         }
+        SliderLine("単位の文字の大きさ", d.tableUnitSize * 100, 30f..300f, "%.0f%%") { v -> update { it.copy(tableUnitSize = snap(v, 5f) / 100f) } }
     }
+    SliderLine("値の文字の大きさ", d.valueSize * 100, 30f..300f, "%.0f%%") { v -> update { it.copy(valueSize = snap(v, 5f) / 100f) } }
     Hint("項目名は右寄せ、単位は左寄せで表示します。残りの幅が値の部分です。文字の色・大きさ・フォントは「色・針・数値」タブで変えられます。")
 
     Head("値の部分の背景")

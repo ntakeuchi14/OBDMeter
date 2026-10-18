@@ -219,6 +219,11 @@ data class GaugeDesign(
     val tableUnitRatio: Float = 0.2f,
     /** 値テーブルで、単位を別の欄にせず値のすぐ後ろに付ける */
     val tableUnitInline: Boolean = false,
+    /** 値テーブルで、項目名を別の欄にせず値の枠の左上に表示する */
+    val tableNameInline: Boolean = false,
+    /** 値テーブルの項目名・単位の文字の大きさ (倍率) */
+    val tableNameSize: Float = 1f,
+    val tableUnitSize: Float = 1f,
     // --- 折れ線グラフ ---
     /** 1 画面に表示する期間 (秒)。左右のスクロールで記録の全期間を見られる */
     val chartSpanSec: Int = 3600,

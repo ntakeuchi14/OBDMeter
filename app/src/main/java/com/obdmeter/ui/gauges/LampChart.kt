@@ -171,7 +171,10 @@ internal fun TableGauge(series: List<ChartSeries>, look: GaugeLook, fonts: Gauge
         val rowH = maxHeight / rows
         // 文字の大きさは行の高さから決める (幅が足りなければ 1 行に収まるよう省略)
         val base = with(density) { (rowH.toPx() * 0.42f).toSp() }
-        val nameW = if (look.showName) look.tableNameRatio else 0f
+        val inlineName = look.showName && look.tableNameInline
+        val nameW = if (look.showName && !inlineName) look.tableNameRatio else 0f
+        val nameSize = base * 0.8f * look.labelSize * look.tableNameSize
+        val unitSize = base * 0.7f * look.labelSize * look.tableUnitSize
         val inlineUnit = look.showUnit && look.tableUnitInline
         val unitW = if (look.showUnit && !inlineUnit) look.tableUnitRatio else 0f
         val valueW = (1f - nameW - unitW).coerceAtLeast(0.15f)
@@ -192,7 +195,7 @@ internal fun TableGauge(series: List<ChartSeries>, look: GaugeLook, fonts: Gauge
                                     Modifier.weight(nameW).padding(end = 4.dp),
                                     textAlign = androidx.compose.ui.text.style.TextAlign.End,
                                     color = look.nameColor, fontFamily = fonts.label,
-                                    fontSize = base * 0.8f * look.labelSize, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                                    fontSize = nameSize, maxLines = 1, overflow = TextOverflow.Ellipsis,
                                 )
                             }
                             Box(
@@ -209,6 +212,14 @@ internal fun TableGauge(series: List<ChartSeries>, look: GaugeLook, fonts: Gauge
                                         contentScale = androidx.compose.ui.layout.ContentScale.FillBounds,
                                     )
                                 }
+                                // 項目名を値の枠の左上に
+                                if (inlineName) Text(
+                                    s.def.shortName,
+                                    Modifier.align(Alignment.TopStart).padding(start = 4.dp, top = 1.dp),
+                                    color = look.nameColor, fontFamily = fonts.label,
+                                    fontSize = nameSize, maxLines = 1, softWrap = false,
+                                    lineHeight = nameSize,
+                                )
                                 if (look.showValue || inlineUnit) {
                                     Row(verticalAlignment = Alignment.Bottom) {
                                         if (look.showValue) Text(
@@ -222,7 +233,7 @@ internal fun TableGauge(series: List<ChartSeries>, look: GaugeLook, fonts: Gauge
                                             " " + s.def.unitText,
                                             Modifier.padding(bottom = 1.dp),
                                             color = look.unitColor, fontFamily = fonts.label,
-                                            fontSize = base * 0.7f * look.labelSize, maxLines = 1, softWrap = false,
+                                            fontSize = unitSize, maxLines = 1, softWrap = false,
                                         )
                                     }
                                 }
@@ -233,7 +244,7 @@ internal fun TableGauge(series: List<ChartSeries>, look: GaugeLook, fonts: Gauge
                                     Modifier.weight(unitW).padding(start = 4.dp),
                                     textAlign = androidx.compose.ui.text.style.TextAlign.Start,
                                     color = look.unitColor, fontFamily = fonts.label,
-                                    fontSize = base * 0.7f * look.labelSize, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                                    fontSize = unitSize, maxLines = 1, overflow = TextOverflow.Ellipsis,
                                 )
                             }
                         }
