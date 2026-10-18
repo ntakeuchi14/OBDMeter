@@ -96,7 +96,38 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     fun clearBackupMessage() { _backupMessage.value = null }
 
-    fun exportBackup(uri: Uri) {
+    /**
+     * 保存先を選ぶ画面が無い端末 (車載ナビなど) 用: ダウンロードフォルダ (Download/OBDMeter) に直接書き出す
+     */
+    fun exportBackupToDownloads(name: String) {
+        viewModelScope.launch {
+            val app = getApplication<Application>()
+            val target = runCatching {
+                kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                    if (android.os.Build.VERSION.SDK_INT >= 29) {
+                        val values = android.content.ContentValues().apply {
+                            put(android.provider.MediaStore.MediaColumns.DISPLAY_NAME, name)
+                            put(android.provider.MediaStore.MediaColumns.MIME_TYPE, "application/zip")
+                            put(android.provider.MediaStore.MediaColumns.RELATIVE_PATH, "Download/OBDMeter")
+                        }
+                        val uri = app.contentResolver.insert(android.provider.MediaStore.Downloads.EXTERNAL_CONTENT_URI, values)
+                            ?: error("保存先を作れませんでした")
+                        uri to "Download/OBDMeter/$name"
+                    } else {
+                        val dir = app.getExternalFilesDir(android.os.Environment.DIRECTORY_DOWNLOADS) ?: app.filesDir
+                        val f = java.io.File(dir, name)
+                        Uri.fromFile(f) to f.absolutePath
+                    }
+                }
+            }.getOrElse {
+                _backupMessage.value = "エクスポートに失敗しました: ${it.message}"
+                return@launch
+            }
+            exportBackup(target.first, target.second)
+        }
+    }
+
+    fun exportBackup(uri: Uri, savedAs: String? = null) {
         viewModelScope.launch {
             _backupBusy.value = true
             runCatching {
@@ -111,7 +142,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 )
                 val images = BackupFiles.export(app, uri, manifest)
                 "エクスポートしました (ページ ${manifest.dashboards.size}、カスタム PID ${manifest.customPids.size}、" +
-                    "画像 $images、フォント ${manifest.fonts.size})"
+                    "画像 $images、フォント ${manifest.fonts.size})" + (savedAs?.let { "\n保存先: $it" } ?: "")
             }.onSuccess { _backupMessage.value = it }
                 .onFailure { _backupMessage.value = "エクスポートに失敗しました: ${it.message}" }
             _backupBusy.value = false

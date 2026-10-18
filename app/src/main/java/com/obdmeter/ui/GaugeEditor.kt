@@ -628,7 +628,10 @@ private fun ImageTab(g: GaugeConfig, update: ((GaugeDesign) -> GaugeDesign) -> U
     Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(vertical = 8.dp)) {
         FilledTonalButton(
             enabled = !loading,
-            onClick = { picker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) },
+            onClick = {
+                val ok = runCatching { picker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) }.isSuccess
+                if (!ok) Toast.makeText(context, "この端末では画像を選ぶ画面を開けません", Toast.LENGTH_LONG).show()
+            },
         ) { Text(if (loading) "読み込み中…" else if (d.backgroundImage == null) "画像を選ぶ" else "画像を変更") }
         if (d.backgroundImage != null) {
             OutlinedButton(onClick = { update { it.copy(backgroundImage = null) } }) { Text("画像を外す") }
@@ -1007,9 +1010,12 @@ private fun FontPickerDialog(
                 FilledTonalButton(
                     enabled = !busy,
                     onClick = {
-                        picker.launch(arrayOf("font/ttf", "font/otf", "font/sfnt", "application/x-font-ttf",
-                            "application/x-font-otf", "application/font-sfnt", "application/vnd.ms-opentype",
-                            "application/octet-stream", "*/*"))
+                        val ok = runCatching {
+                            picker.launch(arrayOf("font/ttf", "font/otf", "font/sfnt", "application/x-font-ttf",
+                                "application/x-font-otf", "application/font-sfnt", "application/vnd.ms-opentype",
+                                "application/octet-stream", "*/*"))
+                        }.isSuccess
+                        if (!ok) Toast.makeText(context, "この端末ではファイルを選ぶ画面を開けません", Toast.LENGTH_LONG).show()
                     },
                 ) { Text(if (busy) "読み込み中…" else "フォントを追加 (.ttf / .otf)") }
                 error?.let { Text("⚠ $it", color = GaugeColors.Warn, fontSize = 13.sp) }

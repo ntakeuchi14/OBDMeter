@@ -1,5 +1,6 @@
 package com.obdmeter.ui
 
+import android.widget.Toast
 import android.Manifest
 import android.content.Intent
 import android.content.pm.PackageManager
@@ -363,6 +364,7 @@ private fun FloatSlider(label: String, value: Float, range: ClosedFloatingPointR
  */
 @Composable
 private fun BackupSection(vm: MainViewModel) {
+    val context = LocalContext.current
     val busy by vm.backupBusy.collectAsStateWithLifecycle()
     val message by vm.backupMessage.collectAsStateWithLifecycle()
     val pending by vm.pendingImport.collectAsStateWithLifecycle()
@@ -384,13 +386,20 @@ private fun BackupSection(vm: MainViewModel) {
             enabled = !busy,
             onClick = {
                 val stamp = SimpleDateFormat("yyyyMMdd_HHmm", Locale.JAPAN).format(Date())
-                exportLauncher.launch("OBDMeter_$stamp.zip")
+                val name = "OBDMeter_$stamp.zip"
+                // 保存先を選ぶ画面が無い端末 (車載ナビなど) ではダウンロードフォルダに直接保存する
+                if (runCatching { exportLauncher.launch(name) }.isFailure) vm.exportBackupToDownloads(name)
             },
         ) { Text("エクスポート") }
         Spacer(Modifier.width(8.dp))
         OutlinedButton(
             enabled = !busy,
-            onClick = { importLauncher.launch(arrayOf("application/zip", "application/x-zip-compressed", "application/octet-stream")) },
+            onClick = {
+                val ok = runCatching {
+                    importLauncher.launch(arrayOf("application/zip", "application/x-zip-compressed", "application/octet-stream"))
+                }.isSuccess
+                if (!ok) Toast.makeText(context, "この端末ではファイルを選ぶ画面を開けません", Toast.LENGTH_LONG).show()
+            },
         ) { Text("インポート") }
         if (busy) {
             Spacer(Modifier.width(12.dp))
