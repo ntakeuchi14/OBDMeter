@@ -86,14 +86,15 @@ class ConnectionTest(private val context: Context, private val log: CommLogger) 
             var hits = 0
             for ((svc, range) in ranges) {
                 val idHex = if (svc == 0x22) "%04X" else "%02X"
+                // 30 は「30 xx 01」(現在の値を読む) の形で問い合わせる
                 line("--- %02X ${idHex}〜${idHex} ---".format(svc, range.first, range.last))
                 for (id in range) {
                     currentCoroutineContext().ensureActive()
-                    val req = "%02X$idHex".format(svc, id)
+                    val req = "%02X$idHex".format(svc, id) + if (svc == 0x30) "01" else ""
                     val lines = elm.command(req, 1500)
                     done++
                     val msg = ValueSearch.assemble(lines)
-                    val skip = if (svc == 0x22) 3 else 2
+                    val skip = if (svc == 0x21) 2 else 3
                     if (msg != null && msg.size >= skip && msg[0] == svc + 0x40) {
                         positive++
                         val data = msg.copyOfRange(skip, msg.size)

@@ -271,7 +271,7 @@ private fun SwitchRow(
 /** "21:00-FF, 22:0000-3FFF" を (サービス, 範囲) の一覧にする。読めない部分は飛ばす */
 private fun parseSearchRanges(text: String): List<Pair<Int, IntRange>> =
     text.split(',', '、', ' ').mapNotNull { part ->
-        val m = Regex("""^(21|22):([0-9A-F]{1,4})-([0-9A-F]{1,4})$""").find(part.trim()) ?: return@mapNotNull null
+        val m = Regex("""^(21|22|30):([0-9A-F]{1,4})-([0-9A-F]{1,4})$""").find(part.trim()) ?: return@mapNotNull null
         val svc = m.groupValues[1].toInt(16)
         val a = m.groupValues[2].toInt(16)
         val b = m.groupValues[3].toInt(16)
@@ -462,11 +462,11 @@ private fun ConnectionTestSection(vm: MainViewModel) {
         modifier = Modifier.fillMaxWidth(),
     )
     val targets = targetText.split(',', ' ', '、').mapNotNull { it.trim().toDoubleOrNull()?.toLong() }
-    var rangeText by remember { mutableStateOf("21:00-FF, 22:0000-3FFF") }
+    var rangeText by remember { mutableStateOf("30:00-FF") }
     OutlinedTextField(
         value = rangeText,
         onValueChange = { rangeText = it.uppercase() },
-        label = { Text("探す範囲 (サービス:開始-終了、16進。22 は 1 万件で約 15〜25 分)") },
+        label = { Text("探す範囲 (21 / 22 / 30:開始-終了、16進。30 は「30 xx 01」で読む)") },
         singleLine = true,
         modifier = Modifier.fillMaxWidth(),
     )
