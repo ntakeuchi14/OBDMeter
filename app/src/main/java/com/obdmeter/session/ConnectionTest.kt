@@ -56,7 +56,12 @@ class ConnectionTest(private val context: Context, private val log: CommLogger) 
      * DME の BMW 独自の値 (22 xxxx) を順に読み、[targets] の値が入っている応答を探す。
      * (BimmerLink に出ている失火カウンタなどが、どの ID のどの位置にあるかを調べる)
      */
-    suspend fun searchBmw(settings: AppSettings, targets: List<Long>, out: (String) -> Unit) = withContext(Dispatchers.IO) {
+    suspend fun searchBmw(
+        settings: AppSettings,
+        targets: List<Long>,
+        ranges: List<Pair<Int, IntRange>>,
+        out: (String) -> Unit,
+    ) = withContext(Dispatchers.IO) {
         fun line(s: String) { out(s); log.log(CommLogger.Direction.INFO, "[探索] $s") }
         line("== BMW の値の探索 ==")
         line("探す値: ${targets.joinToString(", ")} (順番は問いません)")
@@ -72,38 +77,37 @@ class ConnectionTest(private val context: Context, private val log: CommLogger) 
             t.open()
             val elm = Elm327Protocol(t, Elm327Protocol.Options(protocol = settings.elmProtocol, commandTimeoutMs = 3000), log)
             line("○ ${elm.initAdapter()}")
-            for (c in listOf("ATH1", "ATSP6", "ATSH6F1", "ATCEA12", "ATCRA612", "ATFCSH6F1", "ATFCSD12300000", "ATFCSM1", "ATST20")) {
+            for (c in listOf("ATH1", "ATSP6", "ATSH6F1", "ATCEA12", "ATCRA612", "ATFCSH6F1", "ATFCSD12300000", "ATFCSM1", "ATST10")) {
                 elm.command(c, 3000)
             }
-            val ranges = listOf(
-                0x4040..0x40FF, 0x4100..0x41FF, 0x5F00..0x5FFF, 0x2500..0x25FF,
-                0x4200..0x42FF, 0x4300..0x43FF, 0x4400..0x45FF, 0x5A00..0x5BFF,
-            )
-            val total = ranges.sumOf { it.count() }
+            val total = ranges.sumOf { it.second.count() }
             var done = 0
             var positive = 0
             var hits = 0
-            for (range in ranges) {
-                line("--- 22 %04X〜%04X ---".format(range.first, range.last))
+            for ((svc, range) in ranges) {
+                val idHex = if (svc == 0x22) "%04X" else "%02X"
+                line("--- %02X ${idHex}〜${idHex} ---".format(svc, range.first, range.last))
                 for (id in range) {
                     currentCoroutineContext().ensureActive()
-                    val lines = elm.command("22%04X".format(id), 1500)
+                    val req = "%02X$idHex".format(svc, id)
+                    val lines = elm.command(req, 1500)
                     done++
                     val msg = ValueSearch.assemble(lines)
-                    if (msg != null && msg.size >= 3 && msg[0] == 0x62) {
+                    val skip = if (svc == 0x22) 3 else 2
+                    if (msg != null && msg.size >= skip && msg[0] == svc + 0x40) {
                         positive++
-                        val data = msg.copyOfRange(3, msg.size)
+                        val data = msg.copyOfRange(skip, msg.size)
                         val m = ValueSearch.match(data, targets)
                         val hex = data.joinToString("") { "%02X".format(it) }
                         if (m != null) {
                             hits++
-                            line("★ 22%04X: $m".format(id))
+                            line("★ $req: $m")
                             line("   $hex")
                         } else {
-                            line("22%04X (${data.size}バイト): ${hex.take(48)}${if (hex.length > 48) "…" else ""}".format(id))
+                            line("$req (${data.size}バイト): ${hex.take(48)}${if (hex.length > 48) "…" else ""}")
                         }
                     }
-                    if (done % 128 == 0) line("… $done / $total 件")
+                    if (done % 256 == 0) line("… $done / $total 件")
                 }
             }
             line("応答のあった ID: $positive 件 / 一致の候補: $hits 件")

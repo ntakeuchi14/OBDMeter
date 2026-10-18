@@ -27,6 +27,14 @@ class ValueSearchTest {
         assertTrue(r!!.contains("一致 6/6"))
         // 1 バイトずつの場合
         assertTrue(ValueSearch.match(intArrayOf(0, 14, 50, 27, 27, 71, 37, 0), targets)!!.contains("一致 6/6"))
+        // 10 倍の 2 バイト
+        val x10 = listOf(140, 500, 270, 270, 710, 370).flatMap { listOf(it shr 8, it and 0xFF) }.toIntArray()
+        assertTrue(ValueSearch.match(x10, targets)!!.contains("×10"))
+        // float (ビッグエンディアン)
+        val fl = listOf(14f, 50f, 27f, 27f, 71f, 37f).flatMap { f ->
+            val b = java.lang.Float.floatToIntBits(f); listOf(b ushr 24 and 0xFF, b ushr 16 and 0xFF, b ushr 8 and 0xFF, b and 0xFF)
+        }.toIntArray()
+        assertTrue(ValueSearch.match(fl, targets)!!.contains("float"))
         // 無関係なデータ
         assertNull(ValueSearch.match(intArrayOf(0, 0, 0, 0, 1, 1, 0xA6, 1, 0xA4), targets))
     }

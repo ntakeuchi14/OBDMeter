@@ -268,6 +268,17 @@ private fun SwitchRow(
     }
 }
 
+/** "21:00-FF, 22:0000-3FFF" を (サービス, 範囲) の一覧にする。読めない部分は飛ばす */
+private fun parseSearchRanges(text: String): List<Pair<Int, IntRange>> =
+    text.split(',', '、', ' ').mapNotNull { part ->
+        val m = Regex("""^(21|22):([0-9A-F]{1,4})-([0-9A-F]{1,4})$""").find(part.trim()) ?: return@mapNotNull null
+        val svc = m.groupValues[1].toInt(16)
+        val a = m.groupValues[2].toInt(16)
+        val b = m.groupValues[3].toInt(16)
+        val max = if (svc == 0x22) 0xFFFF else 0xFF
+        if (a > b || b > max) null else svc to (a..b)
+    }
+
 /**
  * フロート表示の設定。ON にすると、アプリを離れたときに表示中のページのメーターを
  * ほかのアプリやホーム画面の上に出す。「ほかのアプリの上に重ねて表示」の許可が必要。
@@ -451,9 +462,18 @@ private fun ConnectionTestSection(vm: MainViewModel) {
         modifier = Modifier.fillMaxWidth(),
     )
     val targets = targetText.split(',', ' ', '、').mapNotNull { it.trim().toDoubleOrNull()?.toLong() }
+    var rangeText by remember { mutableStateOf("21:00-FF, 22:0000-3FFF") }
+    OutlinedTextField(
+        value = rangeText,
+        onValueChange = { rangeText = it.uppercase() },
+        label = { Text("探す範囲 (サービス:開始-終了、16進。22 は 1 万件で約 15〜25 分)") },
+        singleLine = true,
+        modifier = Modifier.fillMaxWidth(),
+    )
+    val ranges = parseSearchRanges(rangeText)
     FilledTonalButton(
-        onClick = { vm.runBmwSearch(targets) },
-        enabled = !running && targets.size >= 2,
+        onClick = { vm.runBmwSearch(targets, ranges) },
+        enabled = !running && targets.size >= 2 && ranges.isNotEmpty(),
         modifier = Modifier.padding(vertical = 8.dp),
     ) { Text("BMW の値を探す") }
 

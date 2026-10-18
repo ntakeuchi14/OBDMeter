@@ -252,7 +252,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     private var testJob: kotlinx.coroutines.Job? = null
 
     /** BMW の値の探索 (BimmerLink の値がどの ID にあるかを調べる) */
-    fun runBmwSearch(targets: List<Long>) {
+    fun runBmwSearch(targets: List<Long>, ranges: List<Pair<Int, IntRange>>) {
         if (_testRunning.value || targets.isEmpty()) return
         testJob = viewModelScope.launch {
             _testRunning.value = true
@@ -260,7 +260,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             session.disconnectAndWait()
             val s = repo.settings.first()
             runCatching {
-                ConnectionTest(getApplication(), log).searchBmw(s, targets) { line -> _testLines.value = _testLines.value.orEmpty() + line }
+                ConnectionTest(getApplication(), log).searchBmw(s, targets, ranges) { line -> _testLines.value = _testLines.value.orEmpty() + line }
             }.onFailure { e ->
                 _testLines.value = _testLines.value.orEmpty() +
                     (if (e is kotlinx.coroutines.CancellationException) "中止しました" else "✗ エラー: ${e.message}")
