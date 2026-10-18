@@ -56,6 +56,31 @@ object Pids {
         minBytes = 8, slow = true, decode = ::decodeMisfire,
     )
 
+    /**
+     * BMW MSD80/81 の生涯失火数 (DME の測定値 0x4850〜0x4855。点火順 1-5-3-6-2-4 で並ぶ)。
+     * 測定値ブロック F0 に 6 つを登録 (2C F0 …) してから 21 F0 でまとめて読む。BMW 方式 (6F1 + 拡張アドレス 12)
+     */
+    private val MISFIRE_LIFE_IDS = listOf(0x4850, 0x4851, 0x4852, 0x4853, 0x4854, 0x4855)
+    private val MISFIRE_LIFE_CYL = listOf(1, 5, 3, 6, 2, 4)
+    val MISFIRE_LIFE_SETUP: List<IntArray> = listOf(
+        intArrayOf(0x2C, 0xF0, 0x04),
+        (listOf(0x2C, 0xF0) + MISFIRE_LIFE_IDS.flatMapIndexed { i, id ->
+            listOf(0x02, 1 + i * 2, 0x02, id shr 8, id and 0xFF, 0x01)
+        }).toIntArray(),
+    )
+
+    private fun misfireLife(cyl: Int): PidDef {
+        val idx = MISFIRE_LIFE_CYL.indexOf(cyl)
+        return PidDef(
+            key = "MISFIRE_LIFE_$cyl", name = "生涯失火数 #$cyl (BMW)", shortName = "生涯失火#$cyl", unit = "回",
+            min = 0.0, max = 100.0,
+            kind = PidDef.Kind.REQUEST,
+            request = PidRequest(0x21, intArrayOf(0xF0), header = "6F1", canExtAddress = "12", setup = MISFIRE_LIFE_SETUP),
+            minBytes = 12, slow = true,
+            decode = { d -> (d[idx * 2] * 256 + d[idx * 2 + 1]).toDouble() },
+        )
+    }
+
     internal fun decodeMisfire(d: IntArray): Double {
         var ewma: Double? = null
         var i = 0
@@ -112,13 +137,14 @@ object Pids {
             pid = 0x42, minBytes = 2, slow = true, decode = { ab(it) / 1000 }),
         PidDef("RUNTIME", "始動後経過時間", "経過時間", "s", 0.0, 3600.0,
             pid = 0x1F, minBytes = 2, slow = true, decode = ::ab),
-        misfire("MISFIRE_TOTAL", "失火カウンタ 合計", "失火計", 0xA1),
-        misfire("MISFIRE_1", "失火カウンタ #1", "失火#1", 0xA2),
-        misfire("MISFIRE_2", "失火カウンタ #2", "失火#2", 0xA3),
-        misfire("MISFIRE_3", "失火カウンタ #3", "失火#3", 0xA4),
-        misfire("MISFIRE_4", "失火カウンタ #4", "失火#4", 0xA5),
-        misfire("MISFIRE_5", "失火カウンタ #5", "失火#5", 0xA6),
-        misfire("MISFIRE_6", "失火カウンタ #6", "失火#6", 0xA7),
+        misfire("MISFIRE_TOTAL", "失火カウンタ 今回の運転 合計", "失火計", 0xA1),
+        misfire("MISFIRE_1", "失火カウンタ 今回の運転 #1", "失火#1", 0xA2),
+        misfire("MISFIRE_2", "失火カウンタ 今回の運転 #2", "失火#2", 0xA3),
+        misfire("MISFIRE_3", "失火カウンタ 今回の運転 #3", "失火#3", 0xA4),
+        misfire("MISFIRE_4", "失火カウンタ 今回の運転 #4", "失火#4", 0xA5),
+        misfire("MISFIRE_5", "失火カウンタ 今回の運転 #5", "失火#5", 0xA6),
+        misfire("MISFIRE_6", "失火カウンタ 今回の運転 #6", "失火#6", 0xA7),
+        misfireLife(1), misfireLife(2), misfireLife(3), misfireLife(4), misfireLife(5), misfireLife(6),
         PidDef("BATTERY", "バッテリー電圧 (アダプター)", "バッテリー", "V", 10.0, 16.0, decimals = 1,
             warnBelow = 12.0, kind = PidDef.Kind.ADAPTER_VOLTAGE, slow = true),
         PidDef("BOOST", "ブースト圧 (MAP−大気圧)", "ブースト", "bar", -1.0, 1.5, decimals = 2,

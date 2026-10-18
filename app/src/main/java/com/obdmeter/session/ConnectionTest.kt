@@ -265,9 +265,10 @@ class ConnectionTest(private val context: Context, private val log: CommLogger) 
             // 方法 2: 測定値ブロック (2C F0 で登録して 21 F0 で読む)。
             // 登録の要求は 1 フレーム (6 バイト) に収まらないので、自動整形を止めて手でフレームに分けて送る
             val ddli = buildList {
-                addAll(listOf(0x2C, 0xF0, 0x02))
+                addAll(listOf(0x2C, 0xF0))
                 var pos = 1
-                for (id in 0x4850..0x4855) { addAll(listOf(pos, 0x02, id shr 8, id and 0xFF, 0x01)); pos += 2 }
+                // 1 件ごとに「02 位置 大きさ ID(2) 1」(MSD80.prg の要求と同じ形)
+                for (id in 0x4850..0x4855) { addAll(listOf(0x02, pos, 0x02, id shr 8, id and 0xFF, 0x01)); pos += 2 }
             }
             fun hx(b: List<Int>) = b.joinToString("") { "%02X".format(it) }
             fun pad(b: List<Int>) = b + List(8 - b.size) { 0 }

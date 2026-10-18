@@ -85,6 +85,19 @@ class BmwFastProtocol(
     override fun query(request: PidRequest): IntArray? {
         val target = request.header.takeIf { it.isNotEmpty() }?.toIntOrNull(16)?.takeIf { it in 0..0xFF }
             ?: options.targetAddress
+        // 読む前の準備 (測定値ブロックの登録など)。BMW-FAST は長い要求もそのまま送れる
+        val key = "$target/" + request.setup.joinToString(";") { Hex.of(it) }
+        if (request.setup.isNotEmpty() && key !in setupDone) {
+            for ((i, p) in request.setup.withIndex()) {
+                val r = request(p, target)
+                if (i == request.setup.lastIndex && (r == null || r.isEmpty() || r[0] != p[0] + 0x40)) {
+                    lastFailure = "準備の要求 ${Hex.of(p)} が通りませんでした: ${r?.let { Hex.of(it) } ?: "応答なし"}"
+                    lastResponded = r != null
+                    return null
+                }
+            }
+            setupDone += key
+        }
         val resp = request(intArrayOf(request.mode) + request.pid, target)
             ?: run { lastFailure = "応答なし"; lastResponded = false; return null }
         lastResponded = resp.isNotEmpty() && resp[0] == 0x7F
@@ -93,6 +106,7 @@ class BmwFastProtocol(
             lastFailure = null
             return resp.copyOfRange(echo.size, resp.size)
         }
+        setupDone.remove(key)
         lastFailure = if (resp.isNotEmpty() && resp[0] == 0x7F) {
             "否定応答 ${Hex.of(resp)} (NRC=%02X)".format(resp.getOrElse(2) { 0 })
         } else {
@@ -104,6 +118,9 @@ class BmwFastProtocol(
     override fun close() {
         runCatching { transport.close() }
     }
+
+    /** 準備の要求を送り済みのもの */
+    private val setupDone = mutableSetOf<String>()
 
     /**
      * サービスデータ (例: 01 0C) を送り、応答のサービスデータ部を返す。

@@ -112,6 +112,11 @@ class PidRequest(
     val pid: IntArray,
     val header: String = "",
     val canExtAddress: String = "",
+    /**
+     * 読む前に 1 度だけ送る要求 (サービスデータ)。例: BMW の測定値ブロックの登録 (2C F0 …)。
+     * 読み出しが否定応答になったら、次の読み出しの前にもう一度送る
+     */
+    val setup: List<IntArray> = emptyList(),
 ) {
     val isPlainMode01: Boolean get() = mode == 0x01 && pid.size == 1 && header.isEmpty() && canExtAddress.isEmpty()
 

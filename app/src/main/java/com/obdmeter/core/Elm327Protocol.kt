@@ -42,6 +42,8 @@ class Elm327Protocol(
         }
         currentHeader = ""
         currentCea = ""
+        currentFcHeader = ""
+        setupDone.clear()
         return command("ATI").lastOrNull { it.isNotBlank() } ?: "ELM327"
     }
 
@@ -92,9 +94,10 @@ class Elm327Protocol(
         if (cea != currentCea || (cea.isNotEmpty() && header != currentFcHeader)) {
             if (cea.isEmpty()) {
                 command("ATCEA")
-                // BMW 方式の設定を解除 (受信フィルター・フロー制御を既定に戻す)
+                // BMW 方式の設定を解除 (受信フィルター・フロー制御・ヘッダー表示を既定に戻す)
                 command("ATCRA")
                 command("ATFCSM0")
+                command("ATH0")
                 currentFcHeader = ""
             } else {
                 command("ATCEA$cea")
@@ -106,6 +109,8 @@ class Elm327Protocol(
                 command("ATFCSH$fcHeader")
                 command("ATFCSD${cea}300000")
                 command("ATFCSM1")
+                // 拡張アドレス付きの応答はヘッダー表示 ON で受け取り、自前でフレームをつなげる
+                command("ATH1")
                 currentFcHeader = header
             }
             currentCea = cea
@@ -115,14 +120,104 @@ class Elm327Protocol(
     override fun query(request: PidRequest): IntArray? {
         if (request.isPlainMode01 && currentHeader.isEmpty() && currentCea.isEmpty()) return readPid(request.pid[0])
         applyAddressing(request.header, request.canExtAddress)
+        val key = setupKey(request)
+        if (request.setup.isNotEmpty() && key !in setupDone) {
+            if (!runSetup(request.setup)) return null
+            setupDone += key
+        }
         val cmd = buildString {
             append("%02X".format(request.mode))
             request.pid.forEach { append("%02X".format(it)) }
         }
         val lines = command(cmd, options.commandTimeoutMs)
+        if (currentCea.isNotEmpty()) {
+            // 拡張アドレス付き (ヘッダー表示 ON): フレームを自前でつなげる
+            val msg = ValueSearch.assemble(lines)
+            val echo = intArrayOf(request.mode + 0x40) + request.pid
+            if (msg != null && msg.size >= echo.size && echo.indices.all { msg[it] == echo[it] }) {
+                return ok(msg.copyOfRange(echo.size, msg.size))
+            }
+            setupDone.remove(key)
+            if (msg != null && msg.isNotEmpty() && msg[0] == 0x7F) {
+                lastResponded = true
+                lastFailure = "否定応答 ${Hex.of(msg)} (NRC=%02X)".format(msg.getOrElse(2) { 0 })
+                return null
+            }
+            return fail(lines, request.mode)
+        }
         val data = parseResponseAll(lines, request.mode, request.pid).firstOrNull()
         if (data != null) return ok(data)
+        setupDone.remove(key)
         return fail(lines, request.mode)
+    }
+
+    /** 準備の要求を送り済みのもの (アダプターの初期化で消える) */
+    private val setupDone = mutableSetOf<String>()
+
+    private fun setupKey(r: PidRequest): String =
+        r.header + "/" + r.canExtAddress + "/" + r.setup.joinToString(";") { Hex.of(it) }
+
+    /** 準備の要求を順に送る。最後の要求が肯定応答なら true (途中の消去などは断られても続ける) */
+    private fun runSetup(setup: List<IntArray>): Boolean {
+        for ((i, p) in setup.withIndex()) {
+            val resp = sendPayload(p)
+            val positive = resp != null && resp.isNotEmpty() && resp[0] == p[0] + 0x40
+            if (!positive && i == setup.lastIndex) {
+                lastResponded = resp != null
+                lastFailure = "準備の要求 ${Hex.of(p)} が通りませんでした: ${resp?.let { Hex.of(it) } ?: "応答なし"}"
+                logger.log(CommLogger.Direction.ERROR, lastFailure!!)
+                return false
+            }
+        }
+        return true
+    }
+
+    private fun hex(b: List<Int>) = b.joinToString("") { "%02X".format(it and 0xFF) }
+
+    /** サービスデータを送り、応答のサービスデータを返す。1 フレームに収まらなければ手で分割して送る */
+    private fun sendPayload(p: IntArray): IntArray? {
+        val ea = currentCea.toIntOrNull(16)
+        val maxSingle = if (ea != null) 6 else 7
+        if (p.size <= maxSingle) {
+            val lines = command(hex(p.toList()), options.commandTimeoutMs)
+            return if (ea != null) ValueSearch.assemble(lines)
+            else lines.map { it.replace(" ", "") }.firstOrNull { l -> l.isNotEmpty() && l.all { it.isDigit() || it in 'A'..'F' } }
+                ?.let { Hex.parse(it) }
+        }
+        return sendSegmented(p, ea)
+    }
+
+    /**
+     * ELM327 は 1 フレームに収まらない要求を送れないので、自動整形 (CAF) を止めて
+     * ISO-TP の先頭フレーム・続きのフレームを手で組み立てて送る。応答 (1 フレーム) を返す
+     */
+    private fun sendSegmented(p: IntArray, ea: Int?): IntArray? {
+        val pre = if (ea != null) listOf(ea) else emptyList()
+        command("ATCAF0")
+        if (ea != null) command("ATCEA") // 拡張アドレスはこちらでフレームに入れる
+        else command("ATH1")
+        try {
+            val ffData = 8 - pre.size - 2
+            val cfData = 8 - pre.size - 1
+            var lines = command(hex(pre + listOf(0x10 or ((p.size shr 8) and 0x0F), p.size and 0xFF) + p.take(ffData)))
+            var idx = ffData
+            var sn = 1
+            while (idx < p.size) {
+                val part = p.slice(idx until minOf(p.size, idx + cfData))
+                val frame = pre + listOf(0x20 or (sn and 0x0F)) + part
+                lines = command(hex(frame + List(8 - frame.size) { 0 }))
+                idx += cfData
+                sn++
+            }
+            return if (ea != null) ValueSearch.assemble(lines)
+            else lines.map { it.replace(" ", "") }.firstOrNull { it.length >= 5 }?.let { l ->
+                val b = Hex.parse(l.substring(3))
+                if (b.isEmpty()) null else b.copyOfRange(1, minOf(b.size, 1 + (b[0] and 0x0F)))
+            }
+        } finally {
+            command("ATCAF1")
+            if (ea != null) command("ATCEA$currentCea") else command("ATH0")
+        }
     }
 
     override var lastFailure: String? = null

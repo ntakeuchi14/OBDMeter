@@ -495,4 +495,39 @@ class ProtocolTest {
         assertEquals(14.2, Pids.get("ECU_VOLT")!!.decode(intArrayOf(0x37, 0x78)), 0.001)
         assertEquals(0.5, Pids.get("BOOST")!!.derive(mapOf("MAP" to 151.0, "BARO" to 101.0))!!, 0.001)
     }
+
+    @Test
+    fun bmwLifetimeMisfireViaDdli() {
+        // 実車のログに合わせた応答 (BMW 方式・ヘッダー表示 ON)。登録は 2C F0 … を手で分割して送る
+        val define = Pids.MISFIRE_LIFE_SETUP[1]
+        val ff = "1210%02X".format(define.size) + define.take(5).joinToString("") { "%02X".format(it) }
+        val cfs = mutableListOf<String>()
+        var idx = 5; var sn = 1
+        while (idx < define.size) {
+            val part = define.toList().subList(idx, minOf(define.size, idx + 6))
+            val frame = listOf(0x12, 0x20 or sn) + part
+            cfs += (frame + List(8 - frame.size) { 0 }).joinToString("") { "%02X".format(it) }
+            idx += 6; sn++
+        }
+        // 1, 5, 3, 6, 2, 4 番の順に 14, 71, 27, 37, 50, 27
+        val replies = mutableMapOf(
+            "2CF004" to "612F1026CF0FFFFFFFF",
+            ff to "612F1300000FFFFFFFF",
+            cfs.last() to "612F1026CF0FFFFFFFF",
+            "21F0" to "612F1100E61F0000E00\r612F12147001B002500\r612F12232001BFFFFFF",
+        )
+        val fake = FakeElm(replies)
+        val p = Elm327Protocol(fake)
+        p.initAdapter()
+        val values = mutableMapOf<String, Double>()
+        ObdReader(p).poll((1..6).map { Pids.get("MISFIRE_LIFE_$it")!! }, values)
+        assertEquals(14.0, values["MISFIRE_LIFE_1"]!!, 0.0)
+        assertEquals(50.0, values["MISFIRE_LIFE_2"]!!, 0.0)
+        assertEquals(27.0, values["MISFIRE_LIFE_3"]!!, 0.0)
+        assertEquals(27.0, values["MISFIRE_LIFE_4"]!!, 0.0)
+        assertEquals(71.0, values["MISFIRE_LIFE_5"]!!, 0.0)
+        assertEquals(37.0, values["MISFIRE_LIFE_6"]!!, 0.0)
+        // 登録は 1 回だけ
+        assertEquals(1, fake.sent.count { String(it).trim() == "2CF004" })
+    }
 }
