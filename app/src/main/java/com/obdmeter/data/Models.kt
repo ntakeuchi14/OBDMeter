@@ -240,6 +240,8 @@ data class GaugeDesign(
     val historyHours: Int = 0,
     /** 記録する間隔 (秒、1〜600)。接続した直後に 1 回記録し、その後この間隔で記録する */
     val recordIntervalSec: Float = 60f,
+    /** 折れ線グラフで、どの項目にも記録が無い時間を詰めて表示する */
+    val chartSkipGaps: Boolean = true,
     /** 項目ごとの線の色 (並びは「表示する項目」→ 追加した項目の順。null = 自動) */
     val chartColors: List<Long?> = emptyList(),
 )

@@ -920,6 +920,8 @@ private fun ChartSettings(
         }
     }
     Hint("記録の全期間を表示できます。左右にドラッグでスクロール、2 本指で期間を拡大縮小、ダブルタップで現在の表示に戻ります。")
+    SwitchLine("記録の無い時間を詰めて表示", "どの項目にも記録が無い時間 (エンジン停止中など) を飛ばして、切れ目に点線を出します",
+        d.chartSkipGaps) { v -> update { it.copy(chartSkipGaps = v) } }
 
     Head("記録する間隔")
     val interval = d.recordIntervalSec.toInt().coerceIn(HistoryStore.MIN_INTERVAL_SEC, HistoryStore.MAX_INTERVAL_SEC)

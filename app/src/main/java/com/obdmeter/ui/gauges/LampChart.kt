@@ -78,6 +78,53 @@ val LocalHistory = staticCompositionLocalOf<HistoryStore?> { null }
 /** グラフの項目。[right] = 右の縦軸に属する */
 class ChartSeries(val def: PidDef, val value: Double?, val right: Boolean = true)
 
+/**
+ * グラフの横軸の時間。記録の無い時間 (区間の間) を [pad] の幅に詰める。
+ * 「詰めた時間」(c) と実際の時刻 (t) を相互に変換する。区間が無ければそのまま
+ */
+internal class TimeAxis(val segs: List<Pair<Long, Long>>, val pad: Long) {
+    /** 各区間の、詰めた時間での開始位置 */
+    val cs = LongArray(segs.size).also { arr ->
+        var c = 0L
+        segs.forEachIndexed { i, (a, b) -> arr[i] = c; c += (b - a) + pad }
+    }
+
+    private fun segAt(t: Long): Int {
+        var lo = 0; var hi = segs.size - 1; var r = -1
+        while (lo <= hi) { val m = (lo + hi) / 2; if (segs[m].first <= t) { r = m; lo = m + 1 } else hi = m - 1 }
+        return r
+    }
+
+    fun toC(t: Long): Long {
+        if (segs.isEmpty()) return t
+        val i = segAt(t)
+        if (i < 0) return cs[0] - (segs[0].first - t)
+        val (a, b) = segs[i]
+        return if (t <= b) cs[i] + (t - a)
+        else if (i == segs.lastIndex) cs[i] + (b - a) + (t - b)
+        else cs[i] + (b - a) + minOf(t - b, pad)
+    }
+
+    fun toReal(c: Long): Long {
+        if (segs.isEmpty()) return c
+        if (c < cs[0]) return segs[0].first - (cs[0] - c)
+        var lo = 0; var hi = cs.size - 1; var i = 0
+        while (lo <= hi) { val m = (lo + hi) / 2; if (cs[m] <= c) { i = m; lo = m + 1 } else hi = m - 1 }
+        val (a, b) = segs[i]
+        val off = c - cs[i]
+        return if (off <= b - a) a + off else b + (off - (b - a))
+    }
+
+    /** 実時刻 [from]〜[to] と重なる区間 (重なる部分だけ)。区間が無ければ [from]〜[to] そのもの */
+    fun overlaps(from: Long, to: Long): List<Pair<Long, Long>> =
+        if (segs.isEmpty()) listOf(from to to)
+        else segs.mapIndexedNotNull { i, (a, b) ->
+            val bb = if (i == segs.lastIndex) maxOf(b, to) else b
+            val s = maxOf(a, from); val e = minOf(bb, to)
+            if (s <= e) s to e else null
+        }
+}
+
 /** 左右の縦軸の範囲 (null = その軸に項目が無い) */
 internal class ChartAxes(val left: Pair<Double, Double>?, val right: Pair<Double, Double>?)
 
@@ -309,16 +356,33 @@ internal fun ChartGauge(
     val earliest by produceState<Long?>(null, keys, revision) { value = history?.earliest(keys) }
 
     val end = endAt ?: now
-    val start = end - span
     // 範囲を丸めて、動かすたびに読み直さないようにする
     val q = (span / 50).coerceAtLeast(1000L)
+    // 記録の無い時間を詰める: 記録のある区間を調べる (表示の右端から 1 画面の 10 倍・最低 1 日さかのぼる)
+    val gapMs = maxOf(look.chartIntervalMs * 3, span / 200, 5_000L)
+    val segEnd = (end / q + 1) * q
+    val segFrom = segEnd - maxOf(span * 10, 86_400_000L)
+    val segs by produceState(emptyList<Pair<Long, Long>>(), keys, look.chartSkipGaps, gapMs, segFrom, segEnd, now / 15_000) {
+        value = if (!look.chartSkipGaps || history == null) emptyList()
+        else history.segments(keys, segFrom, segEnd, gapMs)
+    }
+    val axis = remember(segs, gapMs) { TimeAxis(segs, gapMs) }
+    val cEnd = axis.toC(end)
+    val cStart = cEnd - span
+    val start = axis.toReal(cStart)
     val qStart = start / q * q - q
     val qEnd = (end / q + 1) * q
-    val data by produceState(emptyMap<String, List<Sample>>(), keys, qStart, qEnd, revision) {
+    val ranges = axis.overlaps(qStart, qEnd)
+    val data by produceState(emptyMap<String, List<Sample>>(), keys, ranges, revision) {
         if (history != null) value = keys.associateWith { k ->
             // 表示範囲の外の直前・直後の点も入れて、端まで線がつながるようにする
             val (before, after) = history.neighbors(k, qStart, qEnd)
-            listOfNotNull(before) + history.load(k, qStart, qEnd, 800) + listOfNotNull(after)
+            val body = ranges.flatMap { (a, b) ->
+                // 区間ごとに、詰めた幅に応じた点の数で読む
+                val pts = (800L * (b - a + 1) / span.coerceAtLeast(1)).toInt().coerceIn(20, 800)
+                history.load(k, a, b, pts)
+            }
+            listOfNotNull(before) + body + listOfNotNull(after)
         }
     }
 
@@ -390,11 +454,13 @@ internal fun ChartGauge(
                                 val maxSpan = max(31 * 86_400_000L, t - oldest)
                                 if (zoom != 1f) span = (span / zoom).toLong().coerceIn(60_000L, maxSpan)
                                 if (pan.x != 0f && size.width > 0) {
-                                    val base = endAt ?: t
+                                    // 詰めた時間で動かす
+                                    val baseC = axis.toC(endAt ?: t)
+                                    val nowC = axis.toC(t)
                                     // 一番古い記録が左端に来るところまでさかのぼれる
-                                    val minEnd = min(t, oldest + span)
-                                    val next = (base - (pan.x / size.width * span).toLong()).coerceIn(minEnd, t)
-                                    endAt = if (next >= t - span / 100) null else next
+                                    val minC = min(nowC, axis.toC(oldest) + span)
+                                    val nextC = (baseC - (pan.x / size.width * span).toLong()).coerceIn(minC, nowC)
+                                    endAt = if (nextC >= nowC - span / 100) null else axis.toReal(nextC)
                                 }
                             }
                         }
@@ -406,8 +472,8 @@ internal fun ChartGauge(
                                     val padR = if (axes.right != null) axisW.toPx() else 0f
                                     val pw = size.width - padL - padR
                                     if (pw > 0) {
-                                        val e = endAt ?: System.currentTimeMillis()
-                                        cursorAt = e - span + (((p.x - padL) / pw).coerceIn(0f, 1f) * span).toLong()
+                                        val ec = axis.toC(endAt ?: System.currentTimeMillis())
+                                        cursorAt = axis.toReal(ec - span + (((p.x - padL) / pw).coerceIn(0f, 1f) * span).toLong())
                                     }
                                 },
                                 // ダブルタップで現在に戻り、現在値を出す
@@ -425,7 +491,7 @@ internal fun ChartGauge(
                 val padR = if (axes.right != null) axisW.toPx() else 0f
                 val pw = w - padL - padR
                 if (plotH <= 4f || pw <= 4f) return@Canvas
-                fun xAt(t: Long) = padL + (t - start).toFloat() / span * pw
+                fun xAt(t: Long) = padL + (axis.toC(t) - cStart).toFloat() / span * pw
                 fun yAt(right: Boolean, v: Double): Float {
                     val (lo, hi) = (if (right) axes.right else axes.left) ?: (0.0 to 1.0)
                     val range = (hi - lo).takeIf { it > 0 } ?: 1.0
@@ -459,14 +525,32 @@ internal fun ChartGauge(
                 val step = TIME_STEPS.firstOrNull { it * 5 >= span } ?: TIME_STEPS.last()
                 val fmt = SimpleDateFormat(if (step >= 21_600_000L) "M/d HH:mm" else "HH:mm", Locale.getDefault())
                 val tz = java.util.TimeZone.getDefault()
-                var t = start - Math.floorMod(start + tz.getOffset(start), step) + step
-                while (t <= end) {
-                    val x = xAt(t)
-                    drawLine(GaugeColors.Track.copy(alpha = 0.5f), Offset(x, 0f), Offset(x, plotH), 1f)
-                    val lay = tm.measure(fmt.format(Date(t)), labelStyle)
-                    val lx = (x - lay.size.width / 2f).coerceIn(0f, max(0f, w - lay.size.width))
-                    drawText(lay, topLeft = Offset(lx, plotH + 2f))
-                    t += step
+                var lastLabelEnd = -1f
+                for ((ra, rb) in axis.overlaps(start, end)) {
+                    var t = ra - Math.floorMod(ra + tz.getOffset(ra), step) + step
+                    while (t <= rb) {
+                        val x = xAt(t)
+                        drawLine(GaugeColors.Track.copy(alpha = 0.5f), Offset(x, 0f), Offset(x, plotH), 1f)
+                        val lay = tm.measure(fmt.format(Date(t)), labelStyle)
+                        val lx = (x - lay.size.width / 2f).coerceIn(0f, max(0f, w - lay.size.width))
+                        // 詰めたところで目盛りの文字が重なるときは出さない
+                        if (lx > lastLabelEnd + 4f) {
+                            drawText(lay, topLeft = Offset(lx, plotH + 2f))
+                            lastLabelEnd = lx + lay.size.width
+                        }
+                        t += step
+                    }
+                }
+                // 記録の無い時間を詰めたところ (区間の切れ目) に点線
+                for (i in 1 until axis.segs.size) {
+                    val bc = axis.cs[i] - axis.pad / 2
+                    if (bc in cStart..cEnd) {
+                        val x = padL + (bc - cStart).toFloat() / span * pw
+                        drawLine(
+                            GaugeColors.SubText.copy(alpha = 0.8f), Offset(x, 0f), Offset(x, plotH), 1.dp.toPx(),
+                            pathEffect = androidx.compose.ui.graphics.PathEffect.dashPathEffect(floatArrayOf(6f, 6f)),
+                        )
+                    }
                 }
 
                 // 項目ごとに、記録のある時刻を線でつなぐ (縦は属する軸の範囲で合わせる)
@@ -483,15 +567,15 @@ internal fun ChartGauge(
                     clipRect(padL, 0f, padL + pw, plotH) {
                         drawPath(path, color, style = Stroke(2.dp.toPx(), cap = StrokeCap.Round, join = StrokeJoin.Round))
                         // 点がまばらなときは記録した位置に点を打つ
-                        val visible = pts.count { it.t in start..end }
+                        val visible = pts.count { axis.toC(it.t) in cStart..cEnd }
                         if (visible in 1..(pw / 8).toInt()) {
-                            pts.forEach { p -> if (p.t in start..end) drawCircle(color, 2.5.dp.toPx(), Offset(x(p), y(p))) }
+                            pts.forEach { p -> if (axis.toC(p.t) in cStart..cEnd) drawCircle(color, 2.5.dp.toPx(), Offset(x(p), y(p))) }
                         }
                     }
                 }
                 // 選んだ時刻の縦線
                 cursorTime?.let { ct ->
-                    if (ct in start..end) {
+                    if (axis.toC(ct) in cStart..cEnd) {
                         val cx = xAt(ct)
                         drawLine(GaugeColors.Accent, Offset(cx, 0f), Offset(cx, plotH), 1.5.dp.toPx())
                         series.forEachIndexed { i, s ->

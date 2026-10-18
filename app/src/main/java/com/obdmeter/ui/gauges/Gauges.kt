@@ -138,6 +138,8 @@ data class GaugeLook(
     val tableMarginRight: Float = 0f,
     /** 折れ線グラフの 1 画面の期間 (ミリ秒) */
     val chartSpanMs: Long = 3_600_000L,
+    val chartIntervalMs: Long = 60_000L,
+    val chartSkipGaps: Boolean = true,
     /** 折れ線グラフの線の色 (項目の順。足りない分は自動) */
     val chartColors: List<Color?> = emptyList(),
     val showPeak: Boolean = false,

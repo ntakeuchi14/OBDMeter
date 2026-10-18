@@ -141,6 +141,36 @@ class HistoryStore(context: Context, private val scope: CoroutineScope) {
             one("SELECT t, v FROM samples WHERE k = ? AND t > ? ORDER BY t ASC LIMIT 1", to)
     }
 
+    /**
+     * [from]〜[to] で、[keys] のどれかに記録がある時間帯 (開始, 終了) を古い順に返す。
+     * 記録の間が [gapMs] より空いたところで区切る (グラフで記録の無い時間を詰めるため)
+     */
+    suspend fun segments(keys: Collection<String>, from: Long, to: Long, gapMs: Long): List<Pair<Long, Long>> =
+        withContext(Dispatchers.IO) {
+            if (keys.isEmpty()) return@withContext emptyList()
+            val bucket = (gapMs / 2).coerceAtLeast(1000L)
+            val out = ArrayList<Pair<Long, Long>>()
+            runCatching {
+                db.rawQuery(
+                    "SELECT t / ? AS b, MIN(t), MAX(t) FROM samples WHERE k IN (${keys.joinToString(",") { "?" }}) " +
+                        "AND t >= ? AND t <= ? GROUP BY b ORDER BY b",
+                    arrayOf(bucket.toString()) + keys.toTypedArray() + arrayOf(from.toString(), to.toString()),
+                ).use { c ->
+                    var a = -1L
+                    var b = -1L
+                    while (c.moveToNext()) {
+                        val lo = c.getLong(1)
+                        val hi = c.getLong(2)
+                        if (a < 0) { a = lo; b = hi }
+                        else if (lo - b <= gapMs) b = maxOf(b, hi)
+                        else { out += a to b; a = lo; b = hi }
+                    }
+                    if (a >= 0) out += a to b
+                }
+            }
+            out
+        }
+
     /** [keys] の記録の一番古い時刻 (無ければ null) */
     suspend fun earliest(keys: Collection<String>): Long? = withContext(Dispatchers.IO) {
         if (keys.isEmpty()) return@withContext null
