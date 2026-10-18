@@ -1,5 +1,8 @@
 package com.obdmeter.ui
 
+import androidx.compose.material3.IconButton
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -62,10 +65,13 @@ fun CustomPidScreen(vm: MainViewModel, startNew: Boolean, onBack: () -> Unit) {
     val list by vm.customPids.collectAsStateWithLifecycle()
     val settings by vm.settings.collectAsStateWithLifecycle()
     var editingId by rememberSaveable { mutableStateOf(if (startNew) NEW else NONE) }
+    /** 複製して新規作成するときの元 */
+    var copyFrom by remember { mutableStateOf<CustomPid?>(null) }
+    var deleting by remember { mutableStateOf<CustomPid?>(null) }
 
     val editing = when (editingId) {
         NONE -> null
-        NEW -> newPid()
+        NEW -> copyFrom?.copy(id = 0, name = copyFrom!!.name + " のコピー") ?: newPid()
         else -> list.firstOrNull { it.id == editingId }
     }
 
@@ -75,9 +81,9 @@ fun CustomPidScreen(vm: MainViewModel, startNew: Boolean, onBack: () -> Unit) {
             isNew = editingId == NEW,
             settings = settings,
             vm = vm,
-            onSave = { vm.saveCustomPid(it); editingId = NONE },
+            onSave = { vm.saveCustomPid(it); editingId = NONE; copyFrom = null },
             onDelete = { vm.deleteCustomPid(it.id); editingId = NONE },
-            onCancel = { if (startNew && editingId == NEW) onBack() else editingId = NONE },
+            onCancel = { if (startNew && editingId == NEW) onBack() else { editingId = NONE; copyFrom = null } },
         )
         return
     }
@@ -86,22 +92,30 @@ fun CustomPidScreen(vm: MainViewModel, startNew: Boolean, onBack: () -> Unit) {
         TopBar("カスタム PID", onBack)
         Text(
             "標準にない値 (メーカー独自の値など) を、モード・PID と換算式を指定して読み出します。" +
-                "登録した項目は、メーター追加の一覧に「カスタム PID」として出てきます。",
+                "登録した項目は、メーター追加の一覧に「カスタム PID」として出てきます。" +
+                "各行の右のボタンで編集・複製・削除できます。",
             color = GaugeColors.SubText, fontSize = 13.sp, modifier = Modifier.padding(horizontal = 16.dp),
         )
         LazyColumn(Modifier.weight(1f).fillMaxWidth().padding(top = 8.dp)) {
             items(list, key = { it.id }) { p ->
                 val error = p.validate()
-                Column(
-                    Modifier.fillMaxWidth().clickable { editingId = p.id }.padding(horizontal = 16.dp, vertical = 10.dp)
+                Row(
+                    Modifier.fillMaxWidth().clickable { copyFrom = null; editingId = p.id }
+                        .padding(start = 16.dp, end = 4.dp, top = 6.dp, bottom = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Text(p.name.ifBlank { "(名前なし)" }, fontWeight = FontWeight.Medium)
-                    Text(
-                        "Mode ${p.mode}  PID ${p.pid}" + (if (p.header.isNotBlank()) "  @${p.header}" else "") +
-                            "   式: ${p.formula}   ${p.unit}",
-                        color = GaugeColors.SubText, fontSize = 12.sp, fontFamily = FontFamily.Monospace,
-                    )
-                    if (error != null) Text("⚠ $error", color = GaugeColors.Warn, fontSize = 12.sp)
+                    Column(Modifier.weight(1f)) {
+                        Text(p.name.ifBlank { "(名前なし)" }, fontWeight = FontWeight.Medium)
+                        Text(
+                            "Mode ${p.mode}  PID ${p.pid}" + (if (p.header.isNotBlank()) "  @${p.header}" else "") +
+                                "   式: ${p.formula}   ${p.unit}",
+                            color = GaugeColors.SubText, fontSize = 12.sp, fontFamily = FontFamily.Monospace,
+                        )
+                        if (error != null) Text("⚠ $error", color = GaugeColors.Warn, fontSize = 12.sp)
+                    }
+                    IconButton(onClick = { copyFrom = null; editingId = p.id }) { Icon(Icons.Default.Edit, "編集") }
+                    TextButton(onClick = { copyFrom = p; editingId = NEW }) { Text("複製") }
+                    IconButton(onClick = { deleting = p }) { Icon(Icons.Default.Delete, "削除", tint = GaugeColors.Warn) }
                 }
                 HorizontalDivider()
             }
@@ -112,11 +126,23 @@ fun CustomPidScreen(vm: MainViewModel, startNew: Boolean, onBack: () -> Unit) {
                 }
             }
             item {
-                TextButton(onClick = { editingId = NEW }, modifier = Modifier.padding(8.dp)) {
+                TextButton(onClick = { copyFrom = null; editingId = NEW }, modifier = Modifier.padding(8.dp)) {
                     Icon(Icons.Default.Add, null); Spacer(Modifier.width(4.dp)); Text("カスタム PID を追加")
                 }
             }
         }
+    }
+
+    deleting?.let { p ->
+        AlertDialog(
+            onDismissRequest = { deleting = null },
+            title = { Text("「${p.name.ifBlank { "(名前なし)" }}」を削除しますか？") },
+            text = { Text("この項目を表示しているメーターも削除されます。") },
+            confirmButton = {
+                TextButton(onClick = { vm.deleteCustomPid(p.id); deleting = null }) { Text("削除", color = GaugeColors.Warn) }
+            },
+            dismissButton = { TextButton(onClick = { deleting = null }) { Text("キャンセル") } },
+        )
     }
 }
 
