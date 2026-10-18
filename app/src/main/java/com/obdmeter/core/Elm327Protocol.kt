@@ -72,6 +72,8 @@ class Elm327Protocol(
     /** いま設定しているヘッダー / 拡張アドレス ("" = 既定) */
     private var currentHeader = ""
     private var currentCea = ""
+    /** フロー制御を設定したときのヘッダー (BMW 方式) */
+    private var currentFcHeader = ""
 
     /** プロトコルごとの既定ヘッダー (機能アドレス)。ATSH を戻すときに使う。 */
     private fun defaultHeader(): String = when (protocolNumber) {
@@ -87,8 +89,25 @@ class Elm327Protocol(
             command("ATSH" + header.ifEmpty { defaultHeader() })
             currentHeader = header
         }
-        if (cea != currentCea) {
-            command(if (cea.isEmpty()) "ATCEA" else "ATCEA$cea")
+        if (cea != currentCea || (cea.isNotEmpty() && header != currentFcHeader)) {
+            if (cea.isEmpty()) {
+                command("ATCEA")
+                // BMW 方式の設定を解除 (受信フィルター・フロー制御を既定に戻す)
+                command("ATCRA")
+                command("ATFCSM0")
+                currentFcHeader = ""
+            } else {
+                command("ATCEA$cea")
+                // BMW 方式 (6F1 + 拡張アドレス): ECU (0x6xx) からの応答だけを受け、
+                // 複数フレームの応答を受け取れるよう、拡張アドレス付きのフロー制御を送る
+                val ecu = cea.toIntOrNull(16)
+                if (ecu != null) command("ATCRA%03X".format(0x600 + ecu))
+                val fcHeader = header.ifEmpty { defaultHeader() }
+                command("ATFCSH$fcHeader")
+                command("ATFCSD${cea}300000")
+                command("ATFCSM1")
+                currentFcHeader = header
+            }
             currentCea = cea
         }
     }
