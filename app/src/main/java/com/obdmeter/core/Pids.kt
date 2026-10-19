@@ -71,16 +71,16 @@ object Pids {
      * 21 F0 でまとめて読む。登録する測定値は、その時に読む項目から [bmwBlockRequest] で組み立てる。
      * BMW 方式 (6F1 + 拡張アドレス 12)
      */
-    fun bmwBlockRequest(items: List<PidDef>): PidRequest {
-        val define = mutableListOf(0x2C, 0xF0)
+    fun bmwBlockRequest(items: List<PidDef>, lid: Int = 0xF0): PidRequest {
+        val define = mutableListOf(0x2C, lid)
         var pos = 1
         for (d in items) {
             define += listOf(0x02, pos, d.blockSize, d.blockId shr 8, d.blockId and 0xFF, 0x01)
             pos += d.blockSize
         }
         return PidRequest(
-            0x21, intArrayOf(0xF0), header = "6F1", canExtAddress = "12",
-            setup = listOf(intArrayOf(0x2C, 0xF0, 0x04), define.toIntArray()),
+            0x21, intArrayOf(lid), header = "6F1", canExtAddress = "12",
+            setup = listOf(intArrayOf(0x2C, lid, 0x04), define.toIntArray()),
         )
     }
 
@@ -156,7 +156,22 @@ object Pids {
             bmw("BMW_LAMBDA2", "ラムダ バンク2 (BMW)", "λ2", "λ", 0.7, 1.3, 0x5A51, 2, decimals = 2) { u16(it) / 1024.0 },
             bmw("BMW_PEDAL", "アクセルペダル開度 (BMW)", "アクセル", "%", 0.0, 100.0, 0x5A29, 1) { it[0] * 0.390625 },
             bmw("BMW_OIL_PRESSURE", "油圧 (BMW)", "油圧", "bar", 0.0, 6.0, 0x5A25, 2, decimals = 1) { s16(it) / 1000.0 },
-        ) + msd80Items()
+        ) + msd80Items() + listOf(
+            // ブースト = スロットル前の圧力 (過給圧、絶対圧) − 大気圧
+            PidDef("BMW_BOOST_BAR", "ブースト (BMW, bar)", "ブースト", "bar", -1.0, 1.5, decimals = 2,
+                kind = PidDef.Kind.DERIVED, deps = listOf("MSD80_5A2C", "MSD80_4201"),
+                derive = { v -> boostHpa(v)?.let { it / 1000.0 } }),
+            PidDef("BMW_BOOST_PSI", "ブースト (BMW, psi)", "ブースト", "psi", -15.0, 22.0, decimals = 1,
+                kind = PidDef.Kind.DERIVED, deps = listOf("MSD80_5A2C", "MSD80_4201"),
+                derive = { v -> boostHpa(v)?.let { it / 1000.0 * 14.503774 } }),
+        )
+    }
+
+    /** ブースト (hPa)。大気圧が読めていなければ 1013 hPa とみなす */
+    private fun boostHpa(v: Map<String, Double>): Double? {
+        val p = v["MSD80_5A2C"] ?: return null
+        val baro = v["MSD80_4201"]?.takeIf { it in 500.0..1200.0 } ?: 1013.25
+        return p - baro
     }
 
     internal fun decodeMisfire(d: IntArray): Double {
@@ -373,9 +388,28 @@ class ObdReader(
             readItem(d, values, c, forceAll)
             lastRead[d.key] = now
         }
-        if (block.isNotEmpty() && (forceAll || block.any { !notDue(it.key, values, now) })) {
-            readBlock(block, values, c, forceAll)
-            block.forEach { lastRead[it.key] = now }
+        if (block.isNotEmpty()) {
+            if (forceAll) {
+                // 記録用の 1 回読み: 表示用の登録を崩さないよう、別の番号 (F9) に登録して読む
+                readBlock(block, values, c, true, lid = if (multiBlockUnsupported) 0xF0 else 0xF9)
+            } else if (multiBlockUnsupported || effIntervals.isEmpty()) {
+                // 周期の設定が無い (または DME が 1 つしか登録できない): まとめて 1 回。どれか周期が来ていれば読む
+                if (block.any { !notDue(it.key, values, now) }) {
+                    readBlock(block, values, c, false)
+                    block.forEach { lastRead[it.key] = now }
+                }
+            } else {
+                // 取得周期ごとに分けて別の番号 (F0, F1, …) に登録し、周期が来たまとまりだけ読む
+                var groups = block.groupBy { effIntervals[it.key] ?: 0L }.toSortedMap().values.toList()
+                // 番号は F0〜F8 まで (F9 は記録用)。それより多い周期は最後のまとまりに入れる
+                if (groups.size > 9) groups = groups.take(8) + listOf(groups.drop(8).flatten())
+                groups.forEachIndexed { i, g ->
+                    if (g.any { !notDue(it.key, values, now) }) {
+                        readBlock(g, values, c, false, lid = 0xF0 + i)
+                        g.forEach { lastRead[it.key] = now }
+                    }
+                }
+            }
         }
         for (d in defs) {
             if (d.kind == PidDef.Kind.DERIVED) {
@@ -415,7 +449,11 @@ class ObdReader(
      * BMW の測定値をまとめて読む。登録が断られたら 1 つずつ試し、断られた測定値だけを外す
      * (DME のソフトによって対応している測定値が違うため)
      */
-    private fun readBlock(items: List<PidDef>, values: MutableMap<String, Double>, c: Counter, forceAll: Boolean) {
+    /** DME が F0 以外の番号への登録を断った (1 つしか登録できない)。以後はまとめて F0 で読む */
+    var multiBlockUnsupported = false
+        private set
+
+    private fun readBlock(items: List<PidDef>, values: MutableMap<String, Double>, c: Counter, forceAll: Boolean, lid: Int = 0xF0) {
         val use = items.filter { d -> blockRejected[d.key]?.let { forceAll || cycle - it >= 300 } ?: true }
         for (d in items - use.toSet()) values.remove(d.key)
         if (use.isEmpty()) return
@@ -424,7 +462,7 @@ class ObdReader(
         val offsets = HashMap<Int, Int>()
         var total = 0
         for (d in ids) { offsets[d.blockId] = total; total += d.blockSize }
-        val data = protocol.query(Pids.bmwBlockRequest(ids))
+        val data = protocol.query(Pids.bmwBlockRequest(ids, lid))
         if (data != null && data.size >= total) {
             for (d in use) {
                 val off = offsets.getValue(d.blockId)
@@ -451,6 +489,12 @@ class ObdReader(
             c.failed += use.size
             return
         }
+        if (lid != 0xF0) {
+            // F0 以外の番号が使えない DME かもしれない: 測定値のせいにせず、以後は F0 だけで読む
+            multiBlockUnsupported = true
+            logger.log(CommLogger.Direction.INFO, "この DME は測定値の登録を 1 つしか持てないため、まとめて読みます")
+            return
+        }
         c.refused += use.size
         if (use.size == 1) {
             blockRejected[use[0].key] = cycle
@@ -459,7 +503,7 @@ class ObdReader(
             return
         }
         // どれが断られたかを 1 つずつ確かめる
-        for (d in use) readBlock(listOf(d), values, c, forceAll)
+        for (d in use) readBlock(listOf(d), values, c, forceAll, lid)
     }
 
     private fun readItem(d: PidDef, values: MutableMap<String, Double>, c: Counter, forceAll: Boolean = false) {

@@ -120,7 +120,8 @@ class Elm327Protocol(
     override fun query(request: PidRequest): IntArray? {
         if (request.isPlainMode01 && currentHeader.isEmpty() && currentCea.isEmpty()) return readPid(request.pid[0])
         applyAddressing(request.header, request.canExtAddress)
-        val addr = request.header + "/" + request.canExtAddress
+        // 登録は番号 (21 F0 / 21 F1 …) ごとに別に覚えておく
+        val addr = request.header + "/" + request.canExtAddress + "/" + Hex.of(request.pid)
         val key = setupKey(request)
         if (request.setup.isNotEmpty() && setupDone[addr] != key) {
             // ECU が覚えられる登録は 1 つなので、違う登録を送ったら前の登録は無効になる
