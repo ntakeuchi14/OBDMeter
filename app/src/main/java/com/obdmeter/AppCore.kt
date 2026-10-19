@@ -97,10 +97,16 @@ class AppCore private constructor(context: Context) {
         }
         // 折れ線グラフで使っている項目と記録間隔・保存期間 (同じ項目を複数のグラフで使うときは短いほうの間隔)
         scope.launch {
-            dashboards.collect { pages ->
+            combine(dashboards, appVisible, appPage, floatPage) { pages, visible, app, float ->
+                Triple(pages, visible, if (visible) app else float)
+            }.collect { (pages, _, shownPage) ->
                 val charts = pages.flatMap { it.gauges }.filter { it.style == GaugeStyle.CHART }
+                // 「表示中だけ記録する」グラフは、そのページを表示している間だけ記録する
+                val recording = pages.flatMap { p ->
+                    p.gauges.filter { it.style == GaugeStyle.CHART && (!it.design.recordOnlyWhenShown || p.id == shownPage) }
+                }
                 val iv = HashMap<String, Long>()
-                charts.forEach { g ->
+                recording.forEach { g ->
                     val sec = g.design.recordIntervalSec.toInt()
                         .coerceIn(HistoryStore.MIN_INTERVAL_SEC, HistoryStore.MAX_INTERVAL_SEC)
                     g.chartAllKeys.forEach { k -> iv[k] = minOf(iv[k] ?: Long.MAX_VALUE, sec * 1000L) }

@@ -1037,6 +1037,11 @@ private fun ChartSettings(
     SwitchLine("記録の無い時間を詰めて表示", "どの項目にも記録が無い時間 (エンジン停止中など) を飛ばして、切れ目に点線を出します",
         d.chartSkipGaps) { v -> update { it.copy(chartSkipGaps = v) } }
 
+    Head("記録するタイミング")
+    SwitchLine("このページを表示している間だけ記録する",
+        "ON にすると、ほかのページを表示している間はこのグラフの項目を記録しません (車との通信が減り、ほかのメーターの反応が良くなります)",
+        d.recordOnlyWhenShown) { v -> update { it.copy(recordOnlyWhenShown = v) } }
+
     Head("記録する間隔")
     val interval = d.recordIntervalSec.toInt().coerceIn(HistoryStore.MIN_INTERVAL_SEC, HistoryStore.MAX_INTERVAL_SEC)
     SliderLine("間隔 (秒)", interval.toFloat(), HistoryStore.MIN_INTERVAL_SEC.toFloat()..HistoryStore.MAX_INTERVAL_SEC.toFloat(),

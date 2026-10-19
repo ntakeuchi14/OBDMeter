@@ -276,6 +276,8 @@ data class GaugeDesign(
     val recordIntervalSec: Float = 60f,
     /** 折れ線グラフで、どの項目にも記録が無い時間を詰めて表示する */
     val chartSkipGaps: Boolean = true,
+    /** 折れ線グラフ: そのページを表示している間だけ記録する (false = ほかのページを表示中も記録する) */
+    val recordOnlyWhenShown: Boolean = false,
     /** 項目ごとの線の色 (並びは「表示する項目」→ 追加した項目の順。null = 自動) */
     val chartColors: List<Long?> = emptyList(),
 )
