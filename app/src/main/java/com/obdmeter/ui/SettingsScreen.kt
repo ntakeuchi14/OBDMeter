@@ -556,13 +556,29 @@ private fun PollIntervalSection(vm: MainViewModel, s: AppSettings) {
             else listOf(g.pidKey)) + listOfNotNull(g.fallbackKey)
         }.distinct()
     }
-    val changed = keys.count { (s.pollIntervalsMs[it] ?: 0) > 0 }
+    val changed = s.pollIntervalsMs.count { it.value > 0 }
     TextButton(onClick = { open = !open }) {
-        Text(if (open) "閉じる" else "項目の一覧を開く (${keys.size} 項目、周期を変えたもの $changed 項目)")
+        Text(if (open) "閉じる" else "項目の一覧を開く (ページで使用中 ${keys.size} 項目、周期を変えたもの $changed 項目)")
     }
     if (!open) return
+    // ページで使っていない項目も、名前で探して設定できる (先に設定しておける)
+    var query by remember { mutableStateOf("") }
+    androidx.compose.material3.OutlinedTextField(
+        value = query, onValueChange = { query = it }, singleLine = true,
+        placeholder = { Text("ほかの項目を探す (例: ブースト、水温、5A2C)") },
+        modifier = Modifier.fillMaxWidth(),
+    )
+    val shownKeys = if (query.isBlank()) {
+        // 使用中の項目 + 周期を変えてある項目
+        (keys + s.pollIntervalsMs.keys).distinct()
+    } else {
+        val q = query.trim()
+        catalog.all.filter { it.name.contains(q, ignoreCase = true) || it.shortName.contains(q, ignoreCase = true) ||
+            it.key.contains(q, ignoreCase = true) }.map { it.key }.take(40)
+    }
+    if (query.isNotBlank() && shownKeys.isEmpty()) Text("見つかりません", color = GaugeColors.SubText, fontSize = 12.sp)
     val options = listOf(0 to "毎回", 500 to "0.5秒", 1000 to "1秒", 2000 to "2秒", 5000 to "5秒", 10000 to "10秒", 30000 to "30秒")
-    keys.forEach { key ->
+    shownKeys.forEach { key ->
         val def = catalog.get(key)
         val cur = s.pollIntervalsMs[key] ?: 0
         Column(Modifier.fillMaxWidth().padding(vertical = 4.dp)) {

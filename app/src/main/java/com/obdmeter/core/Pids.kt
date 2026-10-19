@@ -238,6 +238,15 @@ object Pids {
         misfire("MISFIRE_5", "失火カウンタ 今回の運転 #5", "失火#5", 0xA6),
         misfire("MISFIRE_6", "失火カウンタ 今回の運転 #6", "失火#6", 0xA7),
         oilLevelNow(),
+        // 排気フラップ (STATUS_AGK, 30 C1 01): LV_EF = 0 / 1
+        PidDef(
+            key = "BMW_EXHAUST_FLAP", name = "排気フラップ 作動状態 (BMW)", shortName = "排気フラップ", unit = "",
+            min = 0.0, max = 1.0, decimals = 0,
+            kind = PidDef.Kind.REQUEST,
+            request = PidRequest(0x30, intArrayOf(0xC1, 0x01), header = "7E0"),
+            minBytes = 1,
+            decode = { d -> if (d[0] != 0) 1.0 else 0.0 },
+        ),
         PidDef("BATTERY", "バッテリー電圧 (アダプター)", "バッテリー", "V", 10.0, 16.0, decimals = 1,
             warnBelow = 12.0, kind = PidDef.Kind.ADAPTER_VOLTAGE, slow = true),
         PidDef("BOOST", "ブースト圧 (MAP−大気圧)", "ブースト", "bar", -1.0, 1.5, decimals = 2,
