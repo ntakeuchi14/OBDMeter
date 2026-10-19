@@ -142,6 +142,40 @@ object Pids {
         ) { b -> raw(b) * mul + add }
     }
 
+    /**
+     * MSD80 の状態読み出しジョブ ([MSD80_STATUS_TABLE]) の結果をすべて項目にする (キーは MSD80S_ジョブ_結果)。
+     * 同じジョブの項目は同じ要求を共有するので、1 サイクルに 1 回だけ問い合わせる
+     */
+    private fun msd80StatusItems(): List<PidDef> {
+        val requests = HashMap<String, PidRequest>()
+        return MSD80_STATUS_TABLE.flatMap { it.lines() }.mapNotNull { line ->
+            val f = line.split('|')
+            if (f.size < 14) return@mapNotNull null
+            val req = f[1]
+            val bytes = req.chunked(2).mapNotNull { it.toIntOrNull(16) }
+            if (bytes.size != 3) return@mapNotNull null
+            val request = requests.getOrPut(req) { PidRequest(bytes[0], intArrayOf(bytes[1], bytes[2]), header = "7E0") }
+            val pos = f[5].toIntOrNull() ?: return@mapNotNull null
+            val size = f[6].toIntOrNull() ?: return@mapNotNull null
+            val signed = f[7] == "S"
+            val mul = f[8].toDoubleOrNull() ?: return@mapNotNull null
+            val add = f[9].toDoubleOrNull() ?: 0.0
+            val name = f[2]
+            PidDef(
+                key = "MSD80S_${f[0]}_${f[3]}", name = "$name (BMW $req)",
+                shortName = if (name.length <= 14) name else name.take(13) + "…", unit = f[4],
+                min = f[10].toDoubleOrNull() ?: 0.0, max = f[11].toDoubleOrNull() ?: 100.0, decimals = f[12].toIntOrNull() ?: 0,
+                kind = PidDef.Kind.REQUEST, request = request, minBytes = pos + size,
+                decode = { d ->
+                    var raw = 0L
+                    for (i in 0 until size) raw = (raw shl 8) or d[pos + i].toLong()
+                    if (signed && raw >= (1L shl (8 * size - 1))) raw -= 1L shl (8 * size)
+                    raw * mul + add
+                },
+            )
+        }
+    }
+
     private val BMW_ITEMS: List<PidDef> by lazy {
         (1..6).map { misfireLife(it) } + listOf(
             bmw("OIL_LEVEL_LONG", "オイルレベル 長期平均 (BMW)", "オイル量平均", "mm", 0.0, 75.0, 0x4400, 1, decimals = 1) { it[0] * OIL_LEVEL_STEP },
@@ -156,7 +190,7 @@ object Pids {
             bmw("BMW_LAMBDA2", "ラムダ バンク2 (BMW)", "λ2", "λ", 0.7, 1.3, 0x5A51, 2, decimals = 2) { u16(it) / 1024.0 },
             bmw("BMW_PEDAL", "アクセルペダル開度 (BMW)", "アクセル", "%", 0.0, 100.0, 0x5A29, 1) { it[0] * 0.390625 },
             bmw("BMW_OIL_PRESSURE", "油圧 (BMW)", "油圧", "bar", 0.0, 6.0, 0x5A25, 2, decimals = 1) { s16(it) / 1000.0 },
-        ) + msd80Items() + listOf(
+        ) + msd80Items() + msd80StatusItems() + listOf(
             // ブースト = スロットル前の圧力 (過給圧、絶対圧) − 大気圧
             PidDef("BMW_BOOST_BAR", "ブースト (BMW, bar)", "ブースト", "bar", -1.0, 1.5, decimals = 2,
                 kind = PidDef.Kind.DERIVED, deps = listOf("MSD80_5A2C", "MSD80_4201"),
