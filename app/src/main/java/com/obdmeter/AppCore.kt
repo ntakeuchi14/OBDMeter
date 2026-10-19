@@ -109,6 +109,10 @@ class AppCore private constructor(context: Context) {
                 history.retentionMs = charts.maxOfOrNull { it.design.historyRetentionMs } ?: (3 * HistoryStore.MONTH_MS)
             }
         }
+        // 項目ごとの取得周期
+        scope.launch {
+            settings.collect { s -> session.pollIntervals = s.pollIntervalsMs.mapValues { it.value.toLong() } }
+        }
         // 記録: 接続した直後に全項目を 1 回読み、その後は項目ごとの間隔で読む
         // (表示中のページに無い項目も読む)
         scope.launch {

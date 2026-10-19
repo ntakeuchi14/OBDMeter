@@ -36,6 +36,7 @@ class Repository(private val context: Context) {
         val KEEP_SCREEN_ON = booleanPreferencesKey("keep_screen_on")
         val FLOAT_PAGE = longPreferencesKey("float_page")
         val FLOAT_PLACEMENTS = stringPreferencesKey("float_placements_json")
+        val POLL_INTERVALS = stringPreferencesKey("poll_intervals_json")
         val FLOAT_OPACITY = floatPreferencesKey("float_opacity")
         val FLOAT_BG = floatPreferencesKey("float_background_v2")
         val FLOAT_ON_LEAVE = booleanPreferencesKey("float_on_leave")
@@ -104,6 +105,7 @@ class Repository(private val context: Context) {
             p[Keys.START_IN_FLOAT] = s.startInFloat
             s.lastPageId?.let { p[Keys.LAST_PAGE] = it } ?: p.remove(Keys.LAST_PAGE)
             p[Keys.KEY_PAGE_NAV] = s.keyPageNav
+            p[Keys.POLL_INTERVALS] = json.encodeToString(s.pollIntervalsMs)
         }
     }
 
@@ -139,6 +141,9 @@ class Repository(private val context: Context) {
             startInFloat = this[Keys.START_IN_FLOAT] ?: d.startInFloat,
             lastPageId = this[Keys.LAST_PAGE],
             keyPageNav = this[Keys.KEY_PAGE_NAV] ?: d.keyPageNav,
+            pollIntervalsMs = this[Keys.POLL_INTERVALS]
+                ?.let { runCatching { json.decodeFromString<Map<String, Int>>(it) }.getOrNull() }
+                ?: d.pollIntervalsMs,
         )
     }
 }

@@ -73,6 +73,8 @@ class ObdSession(
     /** 表示中のメーターの代替項目 (メイン項目のキー → 代替項目)。メインが読めないときだけ読む */
     @Volatile
     var activeFallbacks: Map<String, PidDef> = emptyMap()
+    /** 項目ごとの取得周期 (ミリ秒)。設定から渡す */
+    @Volatile var pollIntervals: Map<String, Long> = emptyMap()
 
     private var job: Job? = null
 
@@ -105,12 +107,27 @@ class ObdSession(
         return withTimeoutOrNull(20_000) { d.await() }
     }
 
+    /** 記録用の読み出しで、途中まで読んだもの (残りの項目と、読めた値) */
+    private var samplePending: Triple<List<PidDef>, HashMap<String, Double>, CompletableDeferred<Map<String, Double>>>? = null
+
+    /**
+     * 記録用の読み出しを少しずつ進める。1 サイクルに数項目だけ読み、表示中のメーターの更新を止めない
+     * (グラフの項目が多いときに、メーターの反応が悪くならないように)
+     */
     private fun drainSamples(reader: ObdReader) {
-        while (true) {
-            val (defs, d) = sampleQueue.poll() ?: return
-            val got = HashMap<String, Double>()
-            runCatching { reader.poll(defs, got, forceAll = true) }
+        val cur = samplePending ?: sampleQueue.poll()?.let { (defs, d) -> Triple(defs, HashMap<String, Double>(), d) } ?: return
+        val (defs, got, d) = cur
+        // BMW の測定値はまとめて 1 回で読めるので一緒に、それ以外は 3 項目まで
+        val block = defs.filter { it.kind == PidDef.Kind.BMW_BLOCK }
+        val others = defs.filter { it.kind != PidDef.Kind.BMW_BLOCK }
+        val chunk = block + others.take(SAMPLE_CHUNK)
+        val rest = others.drop(SAMPLE_CHUNK)
+        runCatching { reader.poll(chunk, got, forceAll = true) }
+        if (rest.isEmpty()) {
+            samplePending = null
             d.complete(got)
+        } else {
+            samplePending = Triple(rest, got, d)
         }
     }
 
@@ -265,6 +282,7 @@ class ObdSession(
             drainSamples(reader)
             val defs = activePids
             if (defs.isEmpty()) { delay(100); continue }
+            reader.intervals = pollIntervals
             val r = reader.poll(defs, values, activeFallbacks)
             // 画面への反映は 10 回/秒まで (それ以上は描画負荷が増えるだけ)
             val t = System.currentTimeMillis()
@@ -356,3 +374,6 @@ class ObdSession(
         }
     }
 }
+
+/** 記録用の読み出しで 1 サイクルに読む項目数 (BMW の測定値のまとめ読みは別) */
+private const val SAMPLE_CHUNK = 3

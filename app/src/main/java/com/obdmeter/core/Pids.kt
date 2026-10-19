@@ -277,6 +277,20 @@ class ObdReader(
     /** 1 サイクル内で同じ要求 (測定値ブロックなど) を何度も送らないための控え */
     private val requestCache = HashMap<PidRequest, IntArray?>()
     private var adapterVoltageSupported = true
+    /** 項目ごとの取得周期 (ミリ秒)。この間隔より早くは読み直さない (値があるとき) */
+    var intervals: Map<String, Long> = emptyMap()
+    /** 項目ごとの最後に読んだ時刻 */
+    private val lastRead = HashMap<String, Long>()
+    /** 1 サイクルの中で使う、派生項目の周期を依存先にも当てたもの */
+    private var effIntervals: Map<String, Long> = emptyMap()
+
+    /** 取得周期がまだ来ていない (値があって前回から周期が経っていない) */
+    private fun notDue(key: String, values: Map<String, Double>, now: Long): Boolean {
+        val iv = effIntervals[key] ?: return false
+        if (iv <= 0 || !values.containsKey(key)) return false
+        val last = lastRead[key] ?: return false
+        return now - last < iv
+    }
 
     fun detectSupported() {
         supported = runCatching { protocol.readSupportedPids() }
@@ -321,10 +335,24 @@ class ObdReader(
             }
         }
         val c = Counter()
-        // BMW の測定値はまとめて 1 回で読む
+        // 取得周期: 派生項目の周期は依存先にも当てる (依存先に自分の設定があればそちら)
+        effIntervals = if (forceAll || intervals.isEmpty()) emptyMap() else HashMap(intervals).also { m ->
+            for (d in defs) if (d.kind == PidDef.Kind.DERIVED) intervals[d.key]?.let { iv ->
+                d.deps.forEach { dep -> if (dep !in intervals) m[dep] = minOf(m[dep] ?: Long.MAX_VALUE, iv) }
+            }
+        }
+        val now = System.currentTimeMillis()
+        // BMW の測定値はまとめて 1 回で読む (どれも周期が来ていなければ読まない)
         val block = direct.values.filter { it.kind == PidDef.Kind.BMW_BLOCK }
-        for (d in direct.values) if (d.kind != PidDef.Kind.BMW_BLOCK) readItem(d, values, c, forceAll)
-        if (block.isNotEmpty()) readBlock(block, values, c, forceAll)
+        for (d in direct.values) if (d.kind != PidDef.Kind.BMW_BLOCK) {
+            if (!forceAll && notDue(d.key, values, now)) continue
+            readItem(d, values, c, forceAll)
+            lastRead[d.key] = now
+        }
+        if (block.isNotEmpty() && (forceAll || block.any { !notDue(it.key, values, now) })) {
+            readBlock(block, values, c, forceAll)
+            block.forEach { lastRead[it.key] = now }
+        }
         for (d in defs) {
             if (d.kind == PidDef.Kind.DERIVED) {
                 val v = d.derive(values)
@@ -422,7 +450,7 @@ class ObdReader(
             }
         } else {
             // 遅い項目は 8 サイクルに 1 回 (値が無いうちは毎回)
-            if (d.slow && values.containsKey(d.key) && cycle % 8 != 0L) return
+            if (d.slow && d.key !in effIntervals && values.containsKey(d.key) && cycle % 8 != 0L) return
             // 連続 3 回失敗した項目は 20 サイクルに 1 回だけ再試行。
             // ただし ECU が拒否しただけ (イグニッション OFF の 7F 01 22) なら毎回試す。
             // そうしないとイグニッション ON にしても値が戻るまで時間がかかる

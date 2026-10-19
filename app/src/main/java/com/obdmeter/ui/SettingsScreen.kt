@@ -21,6 +21,7 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.TextButton
+import androidx.compose.foundation.horizontalScroll
 import com.obdmeter.data.ImportMode
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -94,6 +95,9 @@ fun SettingsScreen(vm: MainViewModel, onBack: () -> Unit, onOpenCustomPids: () -
                 }
                 Text("›", fontSize = 22.sp, color = GaugeColors.SubText)
             }
+
+            Section("項目ごとの取得周期")
+            PollIntervalSection(vm, s)
 
             Section("接続方式")
             ConnectionType.entries.forEach { t ->
@@ -531,3 +535,49 @@ private fun ConnectionTestSection(vm: MainViewModel) {
         )
     }
 }
+
+/**
+ * ページで使っている項目ごとに、車から読む周期を選ぶ。変化が遅い項目 (水温・油温・電圧など) の周期を
+ * 長くすると、そのぶん回転数などの速い項目の更新が速くなる
+ */
+@Composable
+private fun PollIntervalSection(vm: MainViewModel, s: AppSettings) {
+    val dashboards by vm.dashboards.collectAsStateWithLifecycle()
+    val catalog by vm.catalog.collectAsStateWithLifecycle()
+    var open by remember { mutableStateOf(false) }
+    Text(
+        "変化が遅い項目 (水温・油温・電圧など) は周期を長くすると、回転数などの速い項目の更新が速くなります。" +
+            "「毎回」は表示中は毎サイクル読みます。設定はその項目を使うすべてのメーター・グラフに共通です。",
+        color = GaugeColors.SubText, fontSize = 12.sp,
+    )
+    val keys = remember(dashboards) {
+        dashboards.flatMap { it.gauges }.flatMap { g ->
+            (if (g.style == com.obdmeter.data.GaugeStyle.CHART || g.style == com.obdmeter.data.GaugeStyle.TABLE) g.chartAllKeys
+            else listOf(g.pidKey)) + listOfNotNull(g.fallbackKey)
+        }.distinct()
+    }
+    val changed = keys.count { (s.pollIntervalsMs[it] ?: 0) > 0 }
+    TextButton(onClick = { open = !open }) {
+        Text(if (open) "閉じる" else "項目の一覧を開く (${keys.size} 項目、周期を変えたもの $changed 項目)")
+    }
+    if (!open) return
+    val options = listOf(0 to "毎回", 500 to "0.5秒", 1000 to "1秒", 2000 to "2秒", 5000 to "5秒", 10000 to "10秒", 30000 to "30秒")
+    keys.forEach { key ->
+        val def = catalog.get(key)
+        val cur = s.pollIntervalsMs[key] ?: 0
+        Column(Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
+            Text(def?.name ?: key, fontSize = 14.sp)
+            if (def?.slow == true && cur == 0) Text("既定では 8 サイクルに 1 回読みます", color = GaugeColors.SubText, fontSize = 11.sp)
+            Row(Modifier.horizontalScroll(rememberScrollState())) {
+                options.forEach { (ms, label) ->
+                    FilterChip(cur == ms, {
+                        vm.updateSettings { st ->
+                            st.copy(pollIntervalsMs = if (ms == 0) st.pollIntervalsMs - key else st.pollIntervalsMs + (key to ms))
+                        }
+                    }, { Text(label) }, Modifier.padding(end = 6.dp))
+                }
+            }
+        }
+    }
+}
+

@@ -56,6 +56,8 @@ data class AppSettings(
     val startInFloat: Boolean = false,
     /** iDrive (ダイヤル・方向キー) でダッシュボードのページを切り替える */
     val keyPageNav: Boolean = true,
+    /** 項目ごとの取得周期 (項目キー → ミリ秒)。無い項目は毎回 (遅い項目は 8 回に 1 回) */
+    val pollIntervalsMs: Map<String, Int> = emptyMap(),
     /** 最後に表示していたダッシュボードのページ (次の起動時にこのページから始める) */
     val lastPageId: Long? = null,
 ) {
