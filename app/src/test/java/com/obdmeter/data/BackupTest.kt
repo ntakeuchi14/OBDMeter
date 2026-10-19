@@ -153,4 +153,38 @@ class BackupTest {
             assertTrue("should reject $bad", !BackupLogic.SAFE_IMAGE_NAME.matches(bad))
         }
     }
+
+    @Test
+    fun pollIntervalsReplaceOrKeepCurrent() {
+        val withIv = BackupManifest(dashboards = listOf(page(1, "P")), pollIntervalsMs = mapOf("COOLANT" to 5_000))
+        val r = BackupLogic.apply(emptyList(), emptyList(), withIv, emptyMap(), ImportMode.REPLACE, newId = { 0 },
+            currentIntervals = mapOf("RPM" to 500))
+        assertEquals(mapOf("COOLANT" to 5_000), r.pollIntervalsMs)
+        val old = BackupManifest(dashboards = listOf(page(1, "P")))
+        val r2 = BackupLogic.apply(emptyList(), emptyList(), old, emptyMap(), ImportMode.REPLACE, newId = { 0 },
+            currentIntervals = mapOf("RPM" to 500))
+        assertEquals("古いファイル (取得周期なし) は今の設定を残す", mapOf("RPM" to 500), r2.pollIntervalsMs)
+    }
+
+    @Test
+    fun mergeAddsIntervalsAndRenamesCustomKeysEverywhere() {
+        val chart = GaugeConfig(
+            pidKey = "RPM", style = GaugeStyle.CHART, id = 1, chartKeys = listOf(oilTemp.key),
+            itemLabels = mapOf(oilTemp.key to "油温"), chartAxis = mapOf(oilTemp.key to false),
+        )
+        val incoming = BackupManifest(
+            dashboards = listOf(page(1, "グラフ", chart)), customPids = listOf(oilTemp),
+            pollIntervalsMs = mapOf(oilTemp.key to 5_000, "RPM" to 1_000),
+        )
+        val r = BackupLogic.apply(
+            current = emptyList(), currentPids = listOf(boost), incoming = incoming, imageRename = emptyMap(),
+            mode = ImportMode.MERGE, newId = { 300 }, currentIntervals = mapOf("RPM" to 200),
+        )
+        val newKey = r.customPids.single { it.id == 300L }.key
+        val g = r.dashboards.single().gauges.single()
+        assertEquals(listOf(newKey), g.chartKeys)
+        assertEquals(mapOf(newKey to "油温"), g.itemLabels)
+        assertEquals(mapOf(newKey to false), g.chartAxis)
+        assertEquals("今の設定が優先、ファイルにだけある項目を追加", mapOf("RPM" to 200, newKey to 5_000), r.pollIntervalsMs)
+    }
 }

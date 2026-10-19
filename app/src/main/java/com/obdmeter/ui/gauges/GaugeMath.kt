@@ -10,7 +10,7 @@ import kotlin.math.pow
 // メーターの描画で使う計算 (描画はしない)
 
 /** 表示の更新間隔。通信は 100 回/秒近く値が来るが、人が読める速さに間引く。 */
-private const val DISPLAY_INTERVAL_MS = 200L
+internal const val DISPLAY_INTERVAL_MS = 200L
 
 /** 表示値を更新する間隔 (なめらかさに応じて 60〜320ms。0.5 で従来の 200ms) */
 internal fun displayIntervalMs(smoothing: Float): Long = (60 + 280 * smoothing.coerceIn(0f, 1f)).toLong()
