@@ -338,9 +338,17 @@ internal fun ChartGauge(
 ) {
     val history = LocalHistory.current
     val tm = rememberTextMeasurer()
-    val keys = series.map { it.def.key }
-    val revision by (history?.revision ?: remember { MutableStateFlow(0L) }).collectAsState()
+    // 現在値が変わるたびにグラフ全体を描き直さないよう、描画に使うものは中身が同じ間は同じものを使う
+    @Suppress("NAME_SHADOWING") val look = remember(look) { look }
+    val plotSeries = remember(series.map { it.def to it.right }) { series.map { ChartSeries(it.def, null, it.right) } }
+    val keys = remember(plotSeries) { plotSeries.map { it.def.key } }
     var span by remember(look.chartSpanMs) { mutableLongStateOf(look.chartSpanMs) }
+    // 記録の読み直しは、記録が増えても一定の間隔まで (グラフが多いときに読み直しが続かないように)
+    var revision by remember { mutableLongStateOf(0L) }
+    val refreshMs = (span / 300).coerceIn(2_000L, 60_000L)
+    LaunchedEffect(history, refreshMs) {
+        history?.revision?.collect { r -> revision = r; delay(refreshMs) }
+    }
     /** 表示の右端の時刻 (null = 現在に追従) */
     var endAt by remember { mutableStateOf<Long?>(null) }
     /** タップで選んだ時刻 (null = 現在値を表示) */
@@ -391,17 +399,19 @@ internal fun ChartGauge(
     val cursorTime: Long? = cursorAt?.let { c ->
         data.values.mapNotNull { nearest(it, c) }.minByOrNull { abs(it.t - c) }?.t ?: c
     }
-    val cursorValues: Map<String, Double?> = if (cursorTime == null) emptyMap() else
-        keys.associateWith { k ->
-            // 選んだ時刻から離れすぎた記録は出さない (1 画面の 1/20 まで)
-            nearest(data[k].orEmpty(), cursorTime)?.takeIf { abs(it.t - cursorTime) <= max(span / 20, 2_000L) }?.v?.toDouble()
-        }
+    val cursorValues: Map<String, Double?> = remember(cursorTime, data, keys, span) {
+        if (cursorTime == null) emptyMap() else
+            keys.associateWith { k ->
+                // 選んだ時刻から離れすぎた記録は出さない (1 画面の 1/20 まで)
+                nearest(data[k].orEmpty(), cursorTime)?.takeIf { abs(it.t - cursorTime) <= max(span / 20, 2_000L) }?.v?.toDouble()
+            }
+    }
 
     // 左右の縦軸の範囲 (属する項目の最小〜最大をまとめたもの。項目が無い軸は出さない)
-    val axes = remember(series.map { Triple(it.def.min, it.def.max, it.right) }) {
+    val axes = remember(plotSeries) {
         fun range(list: List<ChartSeries>) =
             if (list.isEmpty()) null else list.minOf { it.def.min } to list.maxOf { it.def.max }
-        ChartAxes(range(series.filter { !it.right }), range(series.filter { it.right }))
+        ChartAxes(range(plotSeries.filter { !it.right }), range(plotSeries.filter { it.right }))
     }
     val axisW = 34.dp
 
@@ -506,7 +516,7 @@ internal fun ChartGauge(
                 // 左右の縦軸の目盛り (その軸の項目が 1 つならその項目の色)
                 fun drawAxis(range: Pair<Double, Double>?, right: Boolean) {
                     val (lo, hi) = range ?: return
-                    val members = series.indices.filter { series[it].right == right }
+                    val members = plotSeries.indices.filter { plotSeries[it].right == right }
                     val color = if (members.size == 1) chartColor(look, members[0]) else GaugeColors.SubText
                     val st = labelStyle.copy(color = color)
                     val step = (hi - lo) / 4
@@ -555,7 +565,7 @@ internal fun ChartGauge(
 
                 // 項目ごとに、記録のある時刻を線でつなぐ (縦は属する軸の範囲で合わせる)
                 var any = false
-                series.forEachIndexed { i, s ->
+                plotSeries.forEachIndexed { i, s ->
                     val pts = data[s.def.key].orEmpty()
                     if (pts.isEmpty()) return@forEachIndexed
                     any = true
@@ -578,7 +588,7 @@ internal fun ChartGauge(
                     if (axis.toC(ct) in cStart..cEnd) {
                         val cx = xAt(ct)
                         drawLine(GaugeColors.Accent, Offset(cx, 0f), Offset(cx, plotH), 1.5.dp.toPx())
-                        series.forEachIndexed { i, s ->
+                        plotSeries.forEachIndexed { i, s ->
                             val v = cursorValues[s.def.key] ?: return@forEachIndexed
                             val cy = yAt(s.right, v)
                             drawCircle(chartColor(look, i), 4.dp.toPx(), Offset(cx, cy))

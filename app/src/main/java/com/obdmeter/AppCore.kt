@@ -122,9 +122,13 @@ class AppCore private constructor(context: Context) {
                 val now = System.currentTimeMillis()
                 val due = history.intervals.filter { (k, _) -> (nextDue[k] ?: 0L) <= now }
                 if (due.isEmpty()) continue
-                val defs = due.keys.mapNotNull { catalog.value.get(it) }
-                val got = session.sample(defs) ?: continue
-                history.store(got.filterKeys { it in due }, System.currentTimeMillis())
+                // 表示中のメーターで読んでいる項目は、その最新の値を使う (同じ項目を記録のためにもう一度読まない)
+                val live = session.values.value
+                val activeKeys = session.activePids.mapTo(HashSet()) { it.key }
+                val reuse = due.keys.filter { it in activeKeys && live[it] != null }.associateWith { live[it]!! }
+                val defs = due.keys.filter { it !in reuse }.mapNotNull { catalog.value.get(it) }
+                val got = if (defs.isEmpty()) emptyMap() else (session.sample(defs) ?: continue)
+                history.store((reuse + got).filterKeys { it in due }, System.currentTimeMillis())
                 due.forEach { (k, ms) -> nextDue[k] = now + ms }
             }
         }
