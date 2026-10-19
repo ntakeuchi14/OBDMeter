@@ -659,6 +659,9 @@ private fun ColorTab(g: GaugeConfig, update: ((GaugeDesign) -> GaugeDesign) -> U
     ColorLine("文字の色 (目盛りの数字・名前・単位)", d.labelColor, GaugeColors.SubText) { c -> update { it.copy(labelColor = c) } }
 
     Head("針 (ポインター)")
+    Head("値の動き")
+    SliderLine("なめらかさ", d.smoothing * 100, 0f..100f, "%.0f%%") { v -> update { it.copy(smoothing = snap(v, 5f) / 100f) } }
+    Hint("小さくするほど値の変化にすぐ追従し (反応が速い)、大きくするほど針や数値がなめらかに動きます (少し遅れます)。50% が従来の動きです。")
     SwitchLine("針を表示", null, d.showNeedle) { v -> update { it.copy(showNeedle = v) } }
     if (d.showNeedle) {
         ColorLine("針の色", d.needleColor, GaugeColors.Text) { c -> update { it.copy(needleColor = c) } }

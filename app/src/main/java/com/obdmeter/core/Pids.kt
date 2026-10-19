@@ -131,6 +131,7 @@ object Pids {
             bmw("BMW_AFR2", "空燃比 バンク2 (BMW)", "AFR2", "", 10.0, 20.0, 0x5A51, 2, decimals = 1) { u16(it) / 1024.0 * 14.7 },
             bmw("BMW_LAMBDA1", "ラムダ バンク1 (BMW)", "λ1", "λ", 0.7, 1.3, 0x5A50, 2, decimals = 2) { u16(it) / 1024.0 },
             bmw("BMW_LAMBDA2", "ラムダ バンク2 (BMW)", "λ2", "λ", 0.7, 1.3, 0x5A51, 2, decimals = 2) { u16(it) / 1024.0 },
+            bmw("BMW_PEDAL", "アクセルペダル開度 (BMW)", "アクセル", "%", 0.0, 100.0, 0x5A29, 1) { it[0] * 0.390625 },
             bmw("BMW_OIL_PRESSURE", "油圧 (BMW)", "油圧", "bar", 0.0, 6.0, 0x5A25, 2, decimals = 1) { s16(it) / 1000.0 },
         )
     }

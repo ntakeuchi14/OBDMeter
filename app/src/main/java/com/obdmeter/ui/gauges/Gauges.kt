@@ -150,6 +150,7 @@ data class GaugeLook(
     val barMidColor: Color = Color(0xFFFFC107),
     val barMidFrom: Double? = null,
     val glow: Float = 0f,
+    val smoothing: Float = 0.5f,
     val showTicks: Boolean = true,
     val arcRoundCap: Boolean = false,
     val trackColor: Color? = null,
@@ -224,7 +225,7 @@ fun GaugeCard(
             modifier.padding(2.dp)
         }
     ) {
-        val v = rememberDisplayValue(def, if (unsupported) null else value)
+        val v = rememberDisplayValue(def, if (unsupported) null else value, look.smoothing)
         val image = rememberGaugeImage(look.image)
         val fonts = rememberGaugeFonts(look)
         when (style) {
@@ -260,25 +261,33 @@ private const val DISPLAY_INTERVAL_MS = 200L
  * さらに [PidDef.displayStep] 単位 (回転数なら 10rpm) に丸める。
  */
 @Composable
-private fun rememberDisplayValue(def: PidDef, value: Double?): Double? {
+private fun rememberDisplayValue(def: PidDef, value: Double?, smoothing: Float = 0.5f): Double? {
     val latest by rememberUpdatedState(value)
     var shown by remember(def.key) { mutableStateOf(value) }
-    LaunchedEffect(def.key) {
+    LaunchedEffect(def.key, smoothing) {
         var ema = Double.NaN
+        // なめらかさ: 0 → ならさず短い間隔で更新、0.5 → 従来 (半分ずつ近づける・200ms)、1 → ゆっくり
+        val alpha = (1.0 - smoothing * 0.85).coerceIn(0.15, 1.0)
+        val interval = displayIntervalMs(smoothing)
         while (true) {
             val x = latest
             if (x == null) {
                 ema = Double.NaN
                 shown = null
             } else {
-                ema = if (ema.isNaN()) x else ema + (x - ema) * 0.5
+                ema = if (ema.isNaN()) x else ema + (x - ema) * alpha
                 val step = def.displayStep
                 shown = if (step > 0) Math.round(ema / step) * step else ema
             }
-            delay(DISPLAY_INTERVAL_MS)
+            delay(interval)
         }
     }
     return shown
+}
+
+/** 表示値を更新する間隔 (なめらかさに応じて 60〜320ms。0.5 で従来の 200ms) */
+internal fun displayIntervalMs(smoothing: Float): Long = (60 + 280 * smoothing.coerceIn(0f, 1f)).toLong().let {
+    if (abs(smoothing - 0.5f) < 0.001f) DISPLAY_INTERVAL_MS else it
 }
 
 internal fun isWarn(def: PidDef, v: Double?): Boolean =
@@ -288,12 +297,12 @@ private fun fraction(def: PidDef, v: Double): Float =
     ((v - def.min) / (def.max - def.min)).toFloat().coerceIn(0f, 1f)
 
 @Composable
-private fun animated(def: PidDef, value: Double?): Float {
+private fun animated(def: PidDef, value: Double?, smoothing: Float = 0.5f): Float {
     // 値が一瞬途切れても針を 0 に戻さず、最後の位置で止めておく (ちらつき防止)
     val last = remember { floatArrayOf(0f) }
     val target = value?.let { fraction(def, it) }?.also { last[0] = it } ?: last[0]
     // 表示値の更新間隔と同じ長さで等速に動かし、次の値へ途切れなくつなぐ
-    return animateFloatAsState(target, tween(DISPLAY_INTERVAL_MS.toInt(), easing = LinearEasing), label = "gauge").value
+    return animateFloatAsState(target, tween(displayIntervalMs(smoothing).toInt(), easing = LinearEasing), label = "gauge").value
 }
 
 /** 画像を縦横比を保ったまま、[center] を中心に一辺 [box] の正方形に収めて描く */
@@ -328,7 +337,7 @@ fun AnalogGauge(
     fonts: GaugeFontSet = GaugeFontSet(FontFamily.Monospace, null),
 ) {
     val tm = rememberTextMeasurer()
-    val f = animated(def, value)
+    val f = animated(def, value, look.smoothing)
     val warn = isWarn(def, value)
     Canvas(modifier) {
         val d = min(size.width, size.height)
@@ -576,7 +585,7 @@ fun BarGauge(
     fonts: GaugeFontSet = GaugeFontSet(FontFamily.Monospace, null),
 ) {
     val tm = rememberTextMeasurer()
-    val f = animated(def, value)
+    val f = animated(def, value, look.smoothing)
     val warn = isWarn(def, value)
     Canvas(modifier) {
         val h = size.height

@@ -97,6 +97,7 @@ fun GaugeDesign.toLook(def: PidDef, style: GaugeStyle): GaugeLook {
         barMidColor = barMidColor.color(Color(0xFFFFC107)),
         barMidFrom = barMidFrom,
         glow = glow.coerceIn(0f, 1f),
+        smoothing = smoothing.coerceIn(0f, 1f),
         showTicks = showTicks,
         arcRoundCap = arcRoundCap,
         trackColor = trackColor?.let { Color(it) },

@@ -226,6 +226,8 @@ data class GaugeDesign(
     /** アナログ: 現在値の弧の先に丸い点を付ける */
     val arcTipDot: Boolean = false,
     val arcTipColor: Long? = null,
+    /** 値・針の動きのなめらかさ (0 = 即座に追従、1 = とてもなめらか)。0.5 が従来の動き */
+    val smoothing: Float = 0.5f,
     /** 発光 (にじみ) の強さ (0〜1) */
     val glow: Float = 0f,
     /** 数値の後ろに消えている 7 セグ (8) をうっすら出す */
