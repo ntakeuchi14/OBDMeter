@@ -362,6 +362,22 @@ data class Dashboard(
 object Layout {
     const val COLS = 24
     const val ROWS = 12
+    /** メーターの最小の大きさ (マス) */
+    const val MIN_SIZE = 2
+
+    /** 幅の範囲 (ページの 2 倍まで) */
+    val widthRange: IntRange get() = MIN_SIZE..COLS * 2
+    val heightRange: IntRange get() = MIN_SIZE..ROWS * 2
+    /** 幅 [w] のメーターを置ける横の位置 (ページの外にはみ出してよいが、つかめるよう 1 マスはページ内に残す) */
+    fun xRange(w: Int): IntRange = (1 - w)..(COLS - 1)
+    fun yRange(h: Int): IntRange = (1 - h)..(ROWS - 1)
+
+    /** 位置・大きさを置ける範囲に収める。戻り値は (x, y, w, h) */
+    fun clampPlacement(x: Int, y: Int, w: Int, h: Int): IntArray {
+        val cw = w.coerceIn(widthRange)
+        val ch = h.coerceIn(heightRange)
+        return intArrayOf(x.coerceIn(xRange(cw)), y.coerceIn(yRange(ch)), cw, ch)
+    }
 
     /** 位置が未設定のメーターに id と配置を与える (旧データの移行・初期データ用) */
     fun normalize(d: Dashboard): Dashboard {

@@ -74,59 +74,7 @@ import kotlin.math.min
 /** 折れ線グラフの記録 (アプリ全体で 1 つ)。画面のルートとフロート表示で渡す */
 val LocalHistory = staticCompositionLocalOf<HistoryStore?> { null }
 
-/** 折れ線グラフの 1 項目 */
-/** グラフの項目。[right] = 右の縦軸に属する */
-class ChartSeries(val def: PidDef, val value: Double?, val right: Boolean = true)
 
-/**
- * グラフの横軸の時間。記録の無い時間 (区間の間) を [pad] の幅に詰める。
- * 「詰めた時間」(c) と実際の時刻 (t) を相互に変換する。区間が無ければそのまま
- */
-internal class TimeAxis(val segs: List<Pair<Long, Long>>, val pad: Long) {
-    /** 各区間の、詰めた時間での開始位置 */
-    val cs = LongArray(segs.size).also { arr ->
-        var c = 0L
-        segs.forEachIndexed { i, (a, b) -> arr[i] = c; c += (b - a) + pad }
-    }
-
-    private fun segAt(t: Long): Int {
-        var lo = 0; var hi = segs.size - 1; var r = -1
-        while (lo <= hi) { val m = (lo + hi) / 2; if (segs[m].first <= t) { r = m; lo = m + 1 } else hi = m - 1 }
-        return r
-    }
-
-    fun toC(t: Long): Long {
-        if (segs.isEmpty()) return t
-        val i = segAt(t)
-        if (i < 0) return cs[0] - (segs[0].first - t)
-        val (a, b) = segs[i]
-        return if (t <= b) cs[i] + (t - a)
-        else if (i == segs.lastIndex) cs[i] + (b - a) + (t - b)
-        else cs[i] + (b - a) + minOf(t - b, pad)
-    }
-
-    fun toReal(c: Long): Long {
-        if (segs.isEmpty()) return c
-        if (c < cs[0]) return segs[0].first - (cs[0] - c)
-        var lo = 0; var hi = cs.size - 1; var i = 0
-        while (lo <= hi) { val m = (lo + hi) / 2; if (cs[m] <= c) { i = m; lo = m + 1 } else hi = m - 1 }
-        val (a, b) = segs[i]
-        val off = c - cs[i]
-        return if (off <= b - a) a + off else b + (off - (b - a))
-    }
-
-    /** 実時刻 [from]〜[to] と重なる区間 (重なる部分だけ)。区間が無ければ [from]〜[to] そのもの */
-    fun overlaps(from: Long, to: Long): List<Pair<Long, Long>> =
-        if (segs.isEmpty()) listOf(from to to)
-        else segs.mapIndexedNotNull { i, (a, b) ->
-            val bb = if (i == segs.lastIndex) maxOf(b, to) else b
-            val s = maxOf(a, from); val e = minOf(bb, to)
-            if (s <= e) s to e else null
-        }
-}
-
-/** 左右の縦軸の範囲 (null = その軸に項目が無い) */
-internal class ChartAxes(val left: Pair<Double, Double>?, val right: Pair<Double, Double>?)
 
 /** 線の色の自動割り当て */
 val CHART_PALETTE = listOf(
@@ -314,12 +262,6 @@ internal fun TableGauge(series: List<ChartSeries>, look: GaugeLook, fonts: Gauge
 // 折れ線グラフ
 // ---------------------------------------------------------------------------------------------
 
-/** 目盛りの間隔の候補 (ミリ秒) */
-private val TIME_STEPS = listOf(
-    60_000L, 120_000L, 300_000L, 600_000L, 900_000L, 1_800_000L,
-    3_600_000L, 7_200_000L, 10_800_000L, 21_600_000L, 43_200_000L,
-    86_400_000L, 172_800_000L, 604_800_000L, 1_209_600_000L, 2_592_000_000L,
-)
 
 /**
  * 複数項目の折れ線グラフ。記録 ([HistoryStore]) を読み、項目ごとに記録のある時刻を線でつなぐ。
@@ -367,7 +309,7 @@ internal fun ChartGauge(
     // 範囲を丸めて、動かすたびに読み直さないようにする
     val q = (span / 50).coerceAtLeast(1000L)
     // 記録の無い時間を詰める: 記録のある区間を調べる (表示の右端から 1 画面の 10 倍・最低 1 日さかのぼる)
-    val gapMs = maxOf(look.chartIntervalMs * 3, span / 200, 5_000L)
+    val gapMs = gapThreshold(look.chartIntervalMs, span)
     val segEnd = (end / q + 1) * q
     val segFrom = segEnd - maxOf(span * 10, 86_400_000L)
     val segs by produceState(emptyList<Pair<Long, Long>>(), keys, look.chartSkipGaps, gapMs, segFrom, segEnd, now / 15_000) {
@@ -395,24 +337,13 @@ internal fun ChartGauge(
     }
 
     // タップした時刻に一番近い記録の時刻にそろえ、各項目はその時刻に一番近い記録の値を出す
-    fun nearest(pts: List<Sample>, t: Long): Sample? = pts.minByOrNull { abs(it.t - t) }
-    val cursorTime: Long? = cursorAt?.let { c ->
-        data.values.mapNotNull { nearest(it, c) }.minByOrNull { abs(it.t - c) }?.t ?: c
-    }
+    val cursorTime: Long? = cursorAt?.let { snapCursor(data, it) }
     val cursorValues: Map<String, Double?> = remember(cursorTime, data, keys, span) {
-        if (cursorTime == null) emptyMap() else
-            keys.associateWith { k ->
-                // 選んだ時刻から離れすぎた記録は出さない (1 画面の 1/20 まで)
-                nearest(data[k].orEmpty(), cursorTime)?.takeIf { abs(it.t - cursorTime) <= max(span / 20, 2_000L) }?.v?.toDouble()
-            }
+        if (cursorTime == null) emptyMap() else valuesAt(data, keys, cursorTime, span)
     }
 
     // 左右の縦軸の範囲 (属する項目の最小〜最大をまとめたもの。項目が無い軸は出さない)
-    val axes = remember(plotSeries) {
-        fun range(list: List<ChartSeries>) =
-            if (list.isEmpty()) null else list.minOf { it.def.min } to list.maxOf { it.def.max }
-        ChartAxes(range(plotSeries.filter { !it.right }), range(plotSeries.filter { it.right }))
-    }
+    val axes = remember(plotSeries) { ChartAxes.of(plotSeries) }
     val axisW = 34.dp
 
     Column(modifier.padding(4.dp)) {
@@ -532,7 +463,7 @@ internal fun ChartGauge(
                 drawAxis(axes.left, false)
                 drawAxis(axes.right, true)
                 // 時刻の目盛り
-                val step = TIME_STEPS.firstOrNull { it * 5 >= span } ?: TIME_STEPS.last()
+                val step = timeStep(span)
                 val fmt = SimpleDateFormat(if (step >= 21_600_000L) "M/d HH:mm" else "HH:mm", Locale.getDefault())
                 val tz = java.util.TimeZone.getDefault()
                 var lastLabelEnd = -1f

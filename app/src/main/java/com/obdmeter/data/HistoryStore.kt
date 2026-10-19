@@ -13,12 +13,6 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.InputStream
 import java.io.OutputStream
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
-
-/** 記録した値 1 つ (時刻はミリ秒) */
-class Sample(val t: Long, val v: Float)
 
 /**
  * 折れ線グラフ用の値の記録。項目ごとに「時刻 (秒単位)・値」を端末のデータベースに保存する。
@@ -33,20 +27,7 @@ class HistoryStore(context: Context, private val scope: CoroutineScope) {
         const val MAX_INTERVAL_SEC = 600
         const val MAX_MONTHS = 24
         const val MONTH_MS = 2_629_746_000L // 1 か月 (平均 30.44 日)
-        const val CSV_HEADER = "key,datetime,value"
-
-        /** CSV の時刻の書式 (端末のタイムゾーン) */
-        fun dateFormat() = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US)
-
-        /** CSV 1 行を (キー, 時刻ミリ秒, 値) にする。読めなければ null */
-        fun parseCsvLine(line: String, formats: List<SimpleDateFormat>): Triple<String, Long, Double>? {
-            val cols = line.split(',').map { it.trim().trim('"') }
-            if (cols.size < 3) return null
-            val key = cols[0].takeIf { it.isNotEmpty() } ?: return null
-            val t = formats.firstNotNullOfOrNull { f -> runCatching { f.parse(cols[1])?.time }.getOrNull() } ?: return null
-            val v = cols[2].toDoubleOrNull()?.takeIf { !it.isNaN() && !it.isInfinite() } ?: return null
-            return Triple(key, t, v)
-        }
+        const val CSV_HEADER = HistoryCsv.HEADER
     }
 
     private class Helper(context: Context) : SQLiteOpenHelper(context, "history.db", null, 2) {
@@ -156,16 +137,9 @@ class HistoryStore(context: Context, private val scope: CoroutineScope) {
                         "AND t >= ? AND t <= ? GROUP BY b ORDER BY b",
                     arrayOf(bucket.toString()) + keys.toTypedArray() + arrayOf(from.toString(), to.toString()),
                 ).use { c ->
-                    var a = -1L
-                    var b = -1L
-                    while (c.moveToNext()) {
-                        val lo = c.getLong(1)
-                        val hi = c.getLong(2)
-                        if (a < 0) { a = lo; b = hi }
-                        else if (lo - b <= gapMs) b = maxOf(b, hi)
-                        else { out += a to b; a = lo; b = hi }
-                    }
-                    if (a >= 0) out += a to b
+                    val buckets = ArrayList<Pair<Long, Long>>()
+                    while (c.moveToNext()) buckets += c.getLong(1) to c.getLong(2)
+                    out += HistoryCsv.mergeSegments(buckets, gapMs)
                 }
             }
             out
@@ -184,7 +158,7 @@ class HistoryStore(context: Context, private val scope: CoroutineScope) {
 
     /** [keys] の記録を CSV (key,datetime,value) で書き出す。書き出した行数を返す */
     suspend fun exportCsv(keys: Collection<String>, out: OutputStream): Int = withContext(Dispatchers.IO) {
-        val fmt = dateFormat()
+        val fmt = HistoryCsv.dateFormat()
         var n = 0
         out.bufferedWriter(Charsets.UTF_8).use { w ->
             w.write(CSV_HEADER); w.write("\n")
@@ -194,9 +168,7 @@ class HistoryStore(context: Context, private val scope: CoroutineScope) {
                     keys.toTypedArray(),
                 ).use { c ->
                     while (c.moveToNext()) {
-                        w.write(c.getString(0)); w.write(",")
-                        w.write(fmt.format(Date(c.getLong(1)))); w.write(",")
-                        w.write(formatValue(c.getDouble(2))); w.write("\n")
+                        w.write(HistoryCsv.line(c.getString(0), c.getLong(1), c.getDouble(2), fmt)); w.write("\n")
                         n++
                     }
                 }
@@ -210,11 +182,7 @@ class HistoryStore(context: Context, private val scope: CoroutineScope) {
      * @return 読み込んだ行数と、読めなかった行数
      */
     suspend fun importCsv(input: InputStream): Pair<Int, Int> = withContext(Dispatchers.IO) {
-        val formats = listOf(
-            dateFormat(),
-            SimpleDateFormat("yyyy/MM/dd HH:mm:ss", Locale.US),
-            SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", Locale.US),
-        ).onEach { it.isLenient = false }
+        val formats = HistoryCsv.importFormats()
         var ok = 0
         var bad = 0
         input.bufferedReader(Charsets.UTF_8).useLines { lines ->
@@ -238,8 +206,8 @@ class HistoryStore(context: Context, private val scope: CoroutineScope) {
             for ((i, raw) in lines.withIndex()) {
                 val line = raw.removePrefix("﻿").trim()
                 if (line.isEmpty()) continue
-                if (i == 0 && line.lowercase().startsWith("key")) continue // 見出し行
-                val row = parseCsvLine(line, formats)
+                if (i == 0 && HistoryCsv.isHeader(line)) continue // 見出し行
+                val row = HistoryCsv.parseLine(line, formats)
                 if (row == null) { bad++; continue }
                 batch += row
                 ok++
@@ -250,9 +218,6 @@ class HistoryStore(context: Context, private val scope: CoroutineScope) {
         _revision.value++
         ok to bad
     }
-
-    private fun formatValue(v: Double): String =
-        if (v == Math.rint(v) && kotlin.math.abs(v) < 1e15) v.toLong().toString() else v.toString()
 
     private fun cleanup(now: Long) {
         val keep = retentionMs.coerceIn(3_600_000L, MAX_MONTHS * MONTH_MS)

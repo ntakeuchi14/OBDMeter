@@ -529,11 +529,10 @@ private fun GaugeOnGrid(
         val dx = (move.x / cellWPx).roundToInt()
         val dy = (move.y / cellHPx).roundToInt()
         // ページの外へのはみ出しも可 (つかめるよう、少なくとも 1 マスはページ内に残す)
-        val w = (g.w + (resize.x / cellWPx).roundToInt()).coerceIn(2, Layout.COLS * 2)
-        val h = (g.h + (resize.y / cellHPx).roundToInt()).coerceIn(2, Layout.ROWS * 2)
-        val x = (g.x + dx).coerceIn(1 - w, Layout.COLS - 1)
-        val y = (g.y + dy).coerceIn(1 - h, Layout.ROWS - 1)
-        return intArrayOf(x, y, w, h)
+        return Layout.clampPlacement(
+            g.x + dx, g.y + dy,
+            g.w + (resize.x / cellWPx).roundToInt(), g.h + (resize.y / cellHPx).roundToInt(),
+        )
     }
 
     val r = preview()

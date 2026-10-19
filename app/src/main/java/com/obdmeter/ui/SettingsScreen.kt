@@ -551,10 +551,7 @@ private fun PollIntervalSection(vm: MainViewModel, s: AppSettings) {
         color = GaugeColors.SubText, fontSize = 12.sp,
     )
     val keys = remember(dashboards) {
-        dashboards.flatMap { it.gauges }.flatMap { g ->
-            (if (g.style == com.obdmeter.data.GaugeStyle.CHART || g.style == com.obdmeter.data.GaugeStyle.TABLE) g.chartAllKeys
-            else listOf(g.pidKey)) + listOfNotNull(g.fallbackKey)
-        }.distinct()
+        dashboards.flatMap { it.gauges }.flatMap { g -> com.obdmeter.data.ReadPlan.gaugeKeys(g) + listOfNotNull(g.fallbackKey) }.distinct()
     }
     val changed = s.pollIntervalsMs.count { it.value > 0 }
     TextButton(onClick = { open = !open }) {

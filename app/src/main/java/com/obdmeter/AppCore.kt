@@ -9,9 +9,8 @@ import com.obdmeter.data.CustomPid
 import com.obdmeter.data.Dashboard
 import com.obdmeter.data.Defaults
 import com.obdmeter.data.FontEntry
-import com.obdmeter.data.GaugeStyle
 import com.obdmeter.data.HistoryStore
-import com.obdmeter.data.historyRetentionMs
+import com.obdmeter.data.ReadPlan
 import com.obdmeter.data.Repository
 import com.obdmeter.session.LogBuffer
 import com.obdmeter.session.ObdSession
@@ -79,17 +78,7 @@ class AppCore private constructor(context: Context) {
         // 画面に出ているページ (アプリ / フロート) の項目だけを読み出す
         scope.launch {
             combine(dashboards, catalog, appVisible, appPage, floatPage) { pages, cat, visible, app, float ->
-                val shown = listOfNotNull(
-                    if (visible) app else null,
-                    if (!visible) float else null,
-                ).mapNotNull { id -> pages.firstOrNull { it.id == id } }
-                    // まだ何も表示していないとき (起動直後) はアプリのページ
-                    .ifEmpty { listOfNotNull(pages.firstOrNull { it.id == app }) }
-                val gauges = shown.flatMap { it.gauges }
-                // 折れ線グラフは追加した項目も読む
-                gauges.flatMap { g -> if (g.style == GaugeStyle.CHART || g.style == GaugeStyle.TABLE) g.chartAllKeys else listOf(g.pidKey) }
-                    .mapNotNull { cat.get(it) }.distinctBy { it.key } to
-                    gauges.mapNotNull { g -> g.fallbackKey?.let { fb -> cat.get(fb)?.let { g.pidKey to it } } }.toMap()
+                ReadPlan.activeItems(ReadPlan.shownPages(pages, visible, app, float), cat)
             }.collect { (pids, fallbacks) ->
                 session.activePids = pids
                 session.activeFallbacks = fallbacks
@@ -100,19 +89,8 @@ class AppCore private constructor(context: Context) {
             combine(dashboards, appVisible, appPage, floatPage) { pages, visible, app, float ->
                 Triple(pages, visible, if (visible) app else float)
             }.collect { (pages, _, shownPage) ->
-                val charts = pages.flatMap { it.gauges }.filter { it.style == GaugeStyle.CHART }
-                // 「表示中だけ記録する」グラフは、そのページを表示している間だけ記録する
-                val recording = pages.flatMap { p ->
-                    p.gauges.filter { it.style == GaugeStyle.CHART && (!it.design.recordOnlyWhenShown || p.id == shownPage) }
-                }
-                val iv = HashMap<String, Long>()
-                recording.forEach { g ->
-                    val sec = g.design.recordIntervalSec.toInt()
-                        .coerceIn(HistoryStore.MIN_INTERVAL_SEC, HistoryStore.MAX_INTERVAL_SEC)
-                    g.chartAllKeys.forEach { k -> iv[k] = minOf(iv[k] ?: Long.MAX_VALUE, sec * 1000L) }
-                }
-                history.intervals = iv
-                history.retentionMs = charts.maxOfOrNull { it.design.historyRetentionMs } ?: (3 * HistoryStore.MONTH_MS)
+                history.intervals = ReadPlan.recordIntervals(pages, shownPage)
+                history.retentionMs = ReadPlan.retentionMs(pages)
             }
         }
         // 項目ごとの取得周期
@@ -133,10 +111,8 @@ class AppCore private constructor(context: Context) {
                 val due = history.intervals.filter { (k, _) -> (nextDue[k] ?: 0L) <= now }
                 if (due.isEmpty()) continue
                 // 表示中のメーターで読んでいる項目は、その最新の値を使う (同じ項目を記録のためにもう一度読まない)
-                val live = session.values.value
-                val activeKeys = session.activePids.mapTo(HashSet()) { it.key }
-                val reuse = due.keys.filter { it in activeKeys && live[it] != null }.associateWith { live[it]!! }
-                val defs = due.keys.filter { it !in reuse }.mapNotNull { catalog.value.get(it) }
+                val (reuse, need) = ReadPlan.splitSample(due.keys, session.values.value, session.activePids.mapTo(HashSet()) { it.key })
+                val defs = need.mapNotNull { catalog.value.get(it) }
                 val got = if (defs.isEmpty()) emptyMap() else (session.sample(defs) ?: continue)
                 history.store((reuse + got).filterKeys { it in due }, System.currentTimeMillis())
                 due.forEach { (k, ms) -> nextDue[k] = now + ms }
