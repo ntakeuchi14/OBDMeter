@@ -140,6 +140,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                     dashboards = repo.dashboards.first(),
                     customPids = repo.customPids.first(),
                     fonts = repo.fonts.first(),
+                    pollIntervalsMs = repo.settings.first().pollIntervalsMs,
                 )
                 val images = BackupFiles.export(app, uri, manifest)
                 "エクスポートしました (ページ ${manifest.dashboards.size}、カスタム PID ${manifest.customPids.size}、" +
@@ -188,15 +189,19 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                             mode = mode,
                             newId = { seq++ },
                             fontRename = fontRename,
+                            currentIntervals = repo.settings.first().pollIntervalsMs,
                         )
                         repo.saveCustomPids(result.customPids)
                         repo.saveDashboards(result.dashboards)
+                        repo.updateSettings { it.copy(pollIntervalsMs = result.pollIntervalsMs) }
                     }
                 }
                 val missing = BackupLogic.referencedImages(backup.manifest.dashboards).size - rename.size
                 buildString {
                     append(if (mode == ImportMode.REPLACE) "置き換えました" else "追加しました")
-                    append(" (ページ ${backup.pageCount}、カスタム PID ${backup.customPidCount}、画像 ${rename.size}、フォント ${fontRename.size})")
+                    append(" (ページ ${backup.pageCount}、カスタム PID ${backup.customPidCount}、画像 ${rename.size}、フォント ${fontRename.size}")
+                    backup.manifest.pollIntervalsMs?.let { append("、取得周期 ${it.size} 項目") }
+                    append(")")
                     if (missing > 0) append("。画像 $missing 枚はファイルに含まれていなかったため外しました")
                 }
             }.onSuccess { _backupMessage.value = it }

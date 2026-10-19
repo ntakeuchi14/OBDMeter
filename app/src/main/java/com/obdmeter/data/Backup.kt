@@ -26,6 +26,8 @@ data class BackupManifest(
     val customPids: List<CustomPid> = emptyList(),
     /** 取り込んだフォントの一覧 (ファイルは zip の fonts/ に入る) */
     val fonts: List<FontEntry> = emptyList(),
+    /** 項目ごとの取得周期 (項目キー → ミリ秒)。古いファイルには無い (null) */
+    val pollIntervalsMs: Map<String, Int>? = null,
 ) {
     companion object {
         const val FORMAT = "obdmeter-backup"
@@ -59,6 +61,8 @@ class LoadedBackup(
 data class MergeResult(
     val dashboards: List<Dashboard>,
     val customPids: List<CustomPid>,
+    /** 適用後の項目ごとの取得周期 */
+    val pollIntervalsMs: Map<String, Int> = emptyMap(),
 )
 
 object BackupLogic {
@@ -103,6 +107,7 @@ object BackupLogic {
         mode: ImportMode,
         newId: () -> Long,
         fontRename: Map<String, String> = emptyMap(),
+        currentIntervals: Map<String, Int> = emptyMap(),
     ): MergeResult {
         // 画像・フォントの参照を付け替える (取り込めなかったものは外して既定に戻す)
         fun fixImages(d: Dashboard) = d.copy(gauges = d.gauges.map { g ->
@@ -119,6 +124,8 @@ object BackupLogic {
             return MergeResult(
                 dashboards = pages.ifEmpty { Defaults.dashboards },
                 customPids = incoming.customPids,
+                // ファイルに取得周期が無ければ (古いファイル) 今の設定を残す
+                pollIntervalsMs = incoming.pollIntervalsMs ?: currentIntervals,
             )
         }
 
@@ -146,11 +153,16 @@ object BackupLogic {
                     g.copy(
                         pidKey = keyRename[g.pidKey] ?: g.pidKey,
                         fallbackKey = g.fallbackKey?.let { keyRename[it] ?: it },
+                        chartKeys = g.chartKeys.map { keyRename[it] ?: it },
+                        itemLabels = g.itemLabels.mapKeys { (k, _) -> keyRename[k] ?: k },
+                        chartAxis = g.chartAxis.mapKeys { (k, _) -> keyRename[k] ?: k },
                     )
                 })
             }
             Layout.normalize(fixed.copy(id = newId(), name = name))
         }
-        return MergeResult(dashboards = current + added, customPids = pids)
+        // 取得周期: 今の設定はそのまま、ファイルにだけある項目の設定を加える
+        val incomingIv = incoming.pollIntervalsMs.orEmpty().mapKeys { (k, _) -> keyRename[k] ?: k }
+        return MergeResult(dashboards = current + added, customPids = pids, pollIntervalsMs = incomingIv + currentIntervals)
     }
 }
