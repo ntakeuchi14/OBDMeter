@@ -623,7 +623,7 @@ fun isUnsupported(def: PidDef, supported: Set<Int>?): Boolean {
     if (supported == null) return false
     return when (def.kind) {
         PidDef.Kind.MODE01 -> def.pid !in supported
-        PidDef.Kind.ADAPTER_VOLTAGE, PidDef.Kind.CUSTOM, PidDef.Kind.REQUEST, PidDef.Kind.BMW_BLOCK -> false
+        PidDef.Kind.ADAPTER_VOLTAGE, PidDef.Kind.CUSTOM, PidDef.Kind.REQUEST, PidDef.Kind.BMW_BLOCK, PidDef.Kind.DEVICE -> false
         PidDef.Kind.DERIVED -> def.deps.mapNotNull { Pids.get(it) }.any { isUnsupported(it, supported) }
     }
 }
@@ -636,5 +636,6 @@ fun PidDef.sourceLabel(): String = when (kind) {
     PidDef.Kind.BMW_BLOCK -> "BMW DME 測定値 %04X".format(blockId)
     PidDef.Kind.ADAPTER_VOLTAGE -> "アダプター測定"
     PidDef.Kind.DERIVED -> "計算値"
+    PidDef.Kind.DEVICE -> "端末のセンサー"
 }
 

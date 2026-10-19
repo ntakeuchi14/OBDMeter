@@ -100,7 +100,7 @@ object Pids {
                 if (maf == null || spd == null || maf < 0.1) null
                 else (spd / (maf * 3600 / 14.7 / 745)).coerceAtMost(99.9)
             }),
-    ) + BmwItems.ALL
+    ) + BmwItems.ALL + DeviceItems.ALL
 
     private val byKey = ALL.associateBy { it.key }
 

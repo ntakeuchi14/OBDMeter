@@ -11,6 +11,8 @@ import com.obdmeter.data.Defaults
 import com.obdmeter.data.FontEntry
 import com.obdmeter.data.HistoryStore
 import com.obdmeter.data.ReadPlan
+import com.obdmeter.core.DeviceItems
+import com.obdmeter.sensors.DeviceSensors
 import com.obdmeter.data.Repository
 import com.obdmeter.session.LogBuffer
 import com.obdmeter.session.ObdSession
@@ -38,6 +40,8 @@ class AppCore private constructor(context: Context) {
     val session = ObdSession(app, scope, log)
     /** 折れ線グラフ用の値の記録 */
     val history = HistoryStore(app, scope)
+    /** 端末のセンサー (傾き・加速度など。テスト用の項目) */
+    val deviceSensors = DeviceSensors(app, scope)
 
     val settings: StateFlow<AppSettings> =
         repo.settings.stateIn(scope, SharingStarted.Eagerly, AppSettings())
@@ -52,6 +56,16 @@ class AppCore private constructor(context: Context) {
     val catalog: StateFlow<PidCatalog> = customPids
         .map { list -> PidCatalog(list.mapNotNull { runCatching { it.toDef() }.getOrNull() }) }
         .stateIn(scope, SharingStarted.Eagerly, PidCatalog())
+
+    /** メーターに出す値 (車から読んだ値 + 端末のセンサーの値) */
+    val values: StateFlow<Map<String, Double>> = combine(session.values, deviceSensors.values) { car, dev ->
+        if (dev.isEmpty()) car else car + dev
+    }.stateIn(scope, SharingStarted.Eagerly, emptyMap())
+
+    /** グラフの記録で使っている端末のセンサーの項目 */
+    private val recordingDeviceKeys = MutableStateFlow<Set<String>>(emptySet())
+    /** 表示中のページで使っている端末のセンサーの項目 */
+    private val shownDeviceKeys = MutableStateFlow<Set<String>>(emptySet())
 
     /** アプリの画面が前面に出ているか */
     val appVisible = MutableStateFlow(false)
@@ -80,8 +94,10 @@ class AppCore private constructor(context: Context) {
             combine(dashboards, catalog, appVisible, appPage, floatPage) { pages, cat, visible, app, float ->
                 ReadPlan.activeItems(ReadPlan.shownPages(pages, visible, app, float), cat)
             }.collect { (pids, fallbacks) ->
-                session.activePids = pids
+                // 端末のセンサーの項目は車に問い合わせない
+                session.activePids = pids.filter { !DeviceItems.isDevice(it) }
                 session.activeFallbacks = fallbacks
+                shownDeviceKeys.value = pids.filter { DeviceItems.isDevice(it) }.mapTo(HashSet()) { it.key }
             }
         }
         // 折れ線グラフで使っている項目と記録間隔・保存期間 (同じ項目を複数のグラフで使うときは短いほうの間隔)
@@ -91,29 +107,36 @@ class AppCore private constructor(context: Context) {
             }.collect { (pages, _, shownPage) ->
                 history.intervals = ReadPlan.recordIntervals(pages, shownPage)
                 history.retentionMs = ReadPlan.retentionMs(pages)
+                recordingDeviceKeys.value = history.intervals.keys.filterTo(HashSet()) { it.startsWith("DEV_") }
             }
         }
         // 項目ごとの取得周期
         scope.launch {
             settings.collect { s -> session.pollIntervals = s.pollIntervalsMs.mapValues { it.value.toLong() } }
         }
+        // 端末のセンサーは、表示中か記録中の項目のぶんだけ動かす
+        scope.launch {
+            combine(shownDeviceKeys, recordingDeviceKeys) { a, b -> a + b }.collect { deviceSensors.setActive(it) }
+        }
         // 記録: 接続した直後に全項目を 1 回読み、その後は項目ごとの間隔で読む
-        // (表示中のページに無い項目も読む)
+        // (表示中のページに無い項目も読む。端末のセンサーの項目は接続していなくても記録する)
         scope.launch {
             val nextDue = HashMap<String, Long>()
             var wasConnected = false
             while (true) {
                 delay(1000)
                 val connected = session.state.value is ConnectionState.Connected
-                if (!connected) { wasConnected = false; continue }
-                if (!wasConnected) { nextDue.clear(); wasConnected = true }
+                if (connected && !wasConnected) nextDue.keys.removeAll { !it.startsWith("DEV_") }
+                wasConnected = connected
                 val now = System.currentTimeMillis()
-                val due = history.intervals.filter { (k, _) -> (nextDue[k] ?: 0L) <= now }
+                val due = history.intervals.filter { (k, _) -> (nextDue[k] ?: 0L) <= now && (connected || k.startsWith("DEV_")) }
                 if (due.isEmpty()) continue
-                // 表示中のメーターで読んでいる項目は、その最新の値を使う (同じ項目を記録のためにもう一度読まない)
-                val (reuse, need) = ReadPlan.splitSample(due.keys, session.values.value, session.activePids.mapTo(HashSet()) { it.key })
-                val defs = need.mapNotNull { catalog.value.get(it) }
-                val got = if (defs.isEmpty()) emptyMap() else (session.sample(defs) ?: continue)
+                // 表示中のメーターで読んでいる項目 (と端末のセンサー) は、その最新の値を使う
+                val live = values.value
+                val activeKeys = session.activePids.mapTo(HashSet()) { it.key } + deviceSensors.values.value.keys
+                val (reuse, need) = ReadPlan.splitSample(due.keys, live, activeKeys)
+                val defs = need.filter { !it.startsWith("DEV_") }.mapNotNull { catalog.value.get(it) }
+                val got = if (defs.isEmpty() || !connected) emptyMap() else (session.sample(defs) ?: continue)
                 history.store((reuse + got).filterKeys { it in due }, System.currentTimeMillis())
                 due.forEach { (k, ms) -> nextDue[k] = now + ms }
             }

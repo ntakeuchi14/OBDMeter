@@ -56,7 +56,7 @@ class ObdReader(
         PidDef.Kind.MODE01 -> supported?.contains(def.pid) ?: true
         PidDef.Kind.ADAPTER_VOLTAGE -> adapterVoltageSupported
         PidDef.Kind.DERIVED -> def.deps.mapNotNull { Pids.get(it) }.all { isAvailable(it) }
-        PidDef.Kind.CUSTOM, PidDef.Kind.REQUEST, PidDef.Kind.BMW_BLOCK -> true
+        PidDef.Kind.CUSTOM, PidDef.Kind.REQUEST, PidDef.Kind.BMW_BLOCK, PidDef.Kind.DEVICE -> true
     }
 
     /**
@@ -77,10 +77,10 @@ class ObdReader(
         // 派生項目の依存先も読む
         val direct = LinkedHashMap<String, PidDef>()
         for (d in defs) {
-            if (d.kind == PidDef.Kind.DERIVED) {
-                d.deps.mapNotNull { Pids.get(it) }.forEach { direct[it.key] = it }
-            } else {
-                direct[d.key] = d
+            when (d.kind) {
+                PidDef.Kind.DERIVED -> d.deps.mapNotNull { Pids.get(it) }.forEach { direct[it.key] = it }
+                PidDef.Kind.DEVICE -> {} // 端末のセンサーは車に問い合わせない
+                else -> direct[d.key] = d
             }
         }
         val c = Counter()
@@ -240,7 +240,7 @@ class ObdReader(
                         .onFailure { e -> if (d.key !in failing) logger.log(CommLogger.Direction.ERROR, "${d.shortName}: ${e.message}") }
                         .getOrNull()
                 }
-            PidDef.Kind.DERIVED, PidDef.Kind.BMW_BLOCK -> null
+            PidDef.Kind.DERIVED, PidDef.Kind.BMW_BLOCK, PidDef.Kind.DEVICE -> null
         }
         val std = d.kind == PidDef.Kind.MODE01
         if (v != null) {

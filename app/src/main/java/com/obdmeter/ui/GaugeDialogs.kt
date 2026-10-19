@@ -137,7 +137,8 @@ fun ItemPickerDialog(
                         }
                         HorizontalDivider()
                     }
-                    val (bmw, std) = com.obdmeter.core.Pids.ALL.filter(::matches).partition(com.obdmeter.core.Pids::isBmwSpecific)
+                    val (device, car) = com.obdmeter.core.Pids.ALL.filter(::matches).partition(com.obdmeter.core.DeviceItems::isDevice)
+                    val (bmw, std) = car.partition(com.obdmeter.core.Pids::isBmwSpecific)
                     if (bmw.isNotEmpty()) {
                         item { SectionHeader("BMW 固有の項目") }
                         items(bmw, key = { it.key }) { d -> PickerRow(d, isUnsupported(d, supported)) { onPick(d) } }
@@ -145,6 +146,10 @@ fun ItemPickerDialog(
                     item { SectionHeader("標準の項目") }
                     items(std, key = { it.key }) { d ->
                         PickerRow(d, isUnsupported(d, supported)) { onPick(d) }
+                    }
+                    if (device.isNotEmpty()) {
+                        item { SectionHeader("端末のセンサー (車につながなくても動く・反応の確認用)") }
+                        items(device, key = { it.key }) { d -> PickerRow(d, false) { onPick(d) } }
                     }
                 }
             }

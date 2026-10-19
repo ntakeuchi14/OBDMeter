@@ -57,7 +57,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     val catalog: StateFlow<PidCatalog> = core.catalog
 
     val connection: StateFlow<ConnectionState> = session.state
-    val values: StateFlow<Map<String, Double>> = session.values
+    val values: StateFlow<Map<String, Double>> = core.values
     val rate: StateFlow<Double> = session.rate
     val supported: StateFlow<Set<Int>?> = session.supported
     val floatActive: StateFlow<Boolean> = core.floatActive

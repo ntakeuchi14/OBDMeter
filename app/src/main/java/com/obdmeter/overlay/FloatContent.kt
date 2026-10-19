@@ -52,7 +52,7 @@ fun FloatGauge(
     val settings by core.settings.collectAsState()
     val pages by core.dashboards.collectAsState()
     val catalog by core.catalog.collectAsState()
-    val values by core.session.values.collectAsState()
+    val values by core.values.collectAsState()
     val supported by core.session.supported.collectAsState()
     val state by core.session.state.collectAsState()
     val fonts by core.fonts.collectAsState()

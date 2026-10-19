@@ -36,7 +36,8 @@ data class PidDef(
      * MODE01: 標準 PID / ADAPTER_VOLTAGE: アダプター測定 / DERIVED: 計算値 /
      * CUSTOM: ユーザー登録のカスタム PID / REQUEST: Mode 01 以外の標準要求 (Mode 06 の失火カウンタなど)
      */
-    enum class Kind { MODE01, ADAPTER_VOLTAGE, DERIVED, CUSTOM, REQUEST, BMW_BLOCK }
+    /** DEVICE = 車ではなく端末のセンサー (傾き・加速度・明るさなど)。接続していなくても値が出る */
+    enum class Kind { MODE01, ADAPTER_VOLTAGE, DERIVED, CUSTOM, REQUEST, BMW_BLOCK, DEVICE }
 
     val isCustom: Boolean get() = kind == Kind.CUSTOM
 
