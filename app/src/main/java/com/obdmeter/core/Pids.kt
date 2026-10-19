@@ -119,6 +119,29 @@ object Pids {
     /** BMW 固有の項目 (DME の測定値・オイルレベルなど)。項目を選ぶ一覧で先頭に出す */
     fun isBmwSpecific(d: PidDef): Boolean = d.kind == PidDef.Kind.BMW_BLOCK || d.name.contains("BMW")
 
+    /** MSD80 の測定値一覧 ([MSD80_TABLE]) をすべて項目にする (キーは MSD80_xxxx) */
+    private fun msd80Items(): List<PidDef> = MSD80_TABLE.flatMap { it.lines() }.mapNotNull { line ->
+        val f = line.split('|')
+        if (f.size < 9) return@mapNotNull null
+        val id = f[0].toIntOrNull(16) ?: return@mapNotNull null
+        val name = f[1]
+        val mul = f[4].toDoubleOrNull() ?: return@mapNotNull null
+        val add = f[5].toDoubleOrNull() ?: 0.0
+        val (size, raw) = when (f[3]) {
+            "u8" -> 1 to { b: IntArray -> b[0].toDouble() }
+            "s8" -> 1 to { b: IntArray -> (if (b[0] >= 0x80) b[0] - 0x100 else b[0]).toDouble() }
+            "u16" -> 2 to { b: IntArray -> u16(b) }
+            "s16" -> 2 to { b: IntArray -> s16(b) }
+            "u32" -> 4 to { b: IntArray -> ((b[0].toLong() shl 24) or (b[1].toLong() shl 16) or (b[2].toLong() shl 8) or b[3].toLong()).toDouble() }
+            else -> return@mapNotNull null
+        }
+        val short = if (name.length <= 14) name else name.take(13) + "…"
+        bmw(
+            "MSD80_%04X".format(id), "$name (BMW %04X)".format(id), short, f[2],
+            f[6].toDoubleOrNull() ?: 0.0, f[7].toDoubleOrNull() ?: 100.0, id, size, decimals = f[8].toIntOrNull() ?: 0,
+        ) { b -> raw(b) * mul + add }
+    }
+
     private val BMW_ITEMS: List<PidDef> by lazy {
         (1..6).map { misfireLife(it) } + listOf(
             bmw("OIL_LEVEL_LONG", "オイルレベル 長期平均 (BMW)", "オイル量平均", "mm", 0.0, 75.0, 0x4400, 1, decimals = 1) { it[0] * OIL_LEVEL_STEP },
@@ -133,7 +156,7 @@ object Pids {
             bmw("BMW_LAMBDA2", "ラムダ バンク2 (BMW)", "λ2", "λ", 0.7, 1.3, 0x5A51, 2, decimals = 2) { u16(it) / 1024.0 },
             bmw("BMW_PEDAL", "アクセルペダル開度 (BMW)", "アクセル", "%", 0.0, 100.0, 0x5A29, 1) { it[0] * 0.390625 },
             bmw("BMW_OIL_PRESSURE", "油圧 (BMW)", "油圧", "bar", 0.0, 6.0, 0x5A25, 2, decimals = 1) { s16(it) / 1000.0 },
-        )
+        ) + msd80Items()
     }
 
     internal fun decodeMisfire(d: IntArray): Double {
