@@ -303,8 +303,11 @@ class ObdSession(
             // イグニッション OFF (ECU は応答するが値を返さない) の判定
             // 判定は標準 PID だけで行う (カスタム PID はイグニッション OFF でも読めるため)
             val nowOff = r.ignitionOff
-            val anyMode01Ok = r.stdOk > 0
-            if (nowOff != ignitionOff && (nowOff || anyMode01Ok)) {
+            // 復帰は「標準 PID が読めた」か「拒否が無く何かしら読めた」とき。
+            // 表示中が BMW 固有の項目だけだと標準 PID を問い合わせないので、前者だけだと
+            // エンジン始動直後 (クランキング中) に OFF と判定されたまま 1 秒 1 回に固まってしまう
+            val anyOk = r.stdOk > 0 || (r.stdRefused == 0 && r.ok > 0)
+            if (nowOff != ignitionOff && (nowOff || anyOk)) {
                 ignitionOff = nowOff
                 log.log(CommLogger.Direction.INFO,
                     if (ignitionOff) "ECU は応答していますが値を返しません (イグニッション OFF)" else "イグニッション ON を検出しました")
