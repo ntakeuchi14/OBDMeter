@@ -11,6 +11,13 @@ object PollPlan {
     /** 表示用に使える番号の数 (F0〜F8) */
     const val MAX_GROUPS = 9
 
+    /** 宛先の並び順のキー。標準 (宛先指定なし) → ヘッダー指定 → 拡張アドレス (BMW 方式) の順 */
+    fun addressKey(d: PidDef): String {
+        val r = d.request ?: return ""
+        if (r.header.isEmpty() && r.canExtAddress.isEmpty()) return ""
+        return (if (r.canExtAddress.isEmpty()) "1/" else "2/") + r.header + "/" + r.canExtAddress
+    }
+
     /**
      * 項目ごとの取得周期を、このサイクルで読む項目に当てはめたもの。
      * 派生項目 (ブーストなど) に周期を設定してあれば、その依存先にも当てる

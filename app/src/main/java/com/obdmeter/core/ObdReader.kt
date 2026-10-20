@@ -88,7 +88,8 @@ class ObdReader(
         val now = clock()
         // BMW の測定値はまとめて 1 回で読む (どれも周期が来ていなければ読まない)
         val block = direct.values.filter { it.kind == PidDef.Kind.BMW_BLOCK }
-        for (d in direct.values) if (d.kind != PidDef.Kind.BMW_BLOCK) {
+        // アダプターの宛先の切り替え (ATSH など) を減らすよう、宛先ごとにまとめて読む (並びは安定)
+        for (d in direct.values.sortedBy { PollPlan.addressKey(it) }) if (d.kind != PidDef.Kind.BMW_BLOCK) {
             if (!forceAll && notDue(d.key, values, now)) continue
             readItem(d, values, c, forceAll)
             lastRead[d.key] = now
@@ -151,9 +152,18 @@ class ObdReader(
      * BMW の測定値をまとめて読む。登録が断られたら 1 つずつ試し、断られた測定値だけを外す
      * (DME のソフトによって対応している測定値が違うため)
      */
-    /** DME が F0 以外の番号への登録を断った (1 つしか登録できない)。以後はまとめて F0 で読む */
+    /** DME が F0 以外の番号で読めなかった (1 つしか登録できない)。以後はまとめて F0 で読む */
     var multiBlockUnsupported = false
         private set
+    /** 読めたことのある番号 (F0, F1, …) */
+    private val lidOk = HashSet<Int>()
+
+    private fun giveUpMultiBlock(reason: String) {
+        if (multiBlockUnsupported) return
+        multiBlockUnsupported = true
+        lidOk.clear()
+        logger.log(CommLogger.Direction.INFO, "測定値の登録を複数持てない DME のため、まとめて読みます ($reason)")
+    }
 
     private fun readBlock(items: List<PidDef>, values: MutableMap<String, Double>, c: Counter, forceAll: Boolean, lid: Int = PollPlan.LID_FIRST) {
         val use = items.filter { d -> blockRejected[d.key]?.let { forceAll || cycle - it >= 300 } ?: true }
@@ -165,6 +175,7 @@ class ObdReader(
         var total = 0
         for (d in ids) { offsets[d.blockId] = total; total += d.blockSize }
         val data = protocol.query(Pids.bmwBlockRequest(ids, lid))
+        if (data != null && data.size >= total) lidOk += lid
         if (data != null && data.size >= total) {
             for (d in use) {
                 val off = offsets.getValue(d.blockId)
@@ -181,6 +192,13 @@ class ObdReader(
             return
         }
         val refused = protocol.lastResponded
+        // F0 以外の番号が一度も読めていない (応答なし・拒否どちらも) → 複数の登録は使えない。
+        // F0 が急に読めなくなったのが、別の番号を登録した後なら、登録が 1 つしか持てず上書きされた
+        if (!multiBlockUnsupported && (lid != PollPlan.LID_FIRST && lid !in lidOk ||
+                lid == PollPlan.LID_FIRST && lidOk.any { it != PollPlan.LID_FIRST })) {
+            giveUpMultiBlock(if (refused) "否定応答" else "応答なし")
+            return
+        }
         if (!refused) {
             // 応答なし (通信の一時的な失敗など): 直前の値は残し、次のサイクルでまた試す
             for (d in use) {
@@ -191,12 +209,7 @@ class ObdReader(
             c.failed += use.size
             return
         }
-        if (lid != PollPlan.LID_FIRST) {
-            // F0 以外の番号が使えない DME かもしれない: 測定値のせいにせず、以後は F0 だけで読む
-            multiBlockUnsupported = true
-            logger.log(CommLogger.Direction.INFO, "この DME は測定値の登録を 1 つしか持てないため、まとめて読みます")
-            return
-        }
+        if (lid != PollPlan.LID_FIRST) return // 読めていた番号の一時的な失敗。次のサイクルでまた試す
         c.refused += use.size
         if (use.size == 1) {
             blockRejected[use[0].key] = cycle

@@ -176,3 +176,65 @@ class ObdReaderTest {
         assertEquals("断られた測定値は外して 1 回で読む", 1, p.queries.size)
     }
 }
+
+class ObdReaderMultiBlockTest {
+    private val dme = mapOf(0x581F to intArrayOf(184), 0x4807 to intArrayOf(0x0B, 0xB8))
+    private val coolant = Pids.get("BMW_COOLANT")!!
+    private val rpm = Pids.get("BMW_RPM")!!
+
+    /** F0 以外には何も返さない DME */
+    private class SilentOtherLids(m: Map<Int, IntArray>) : ObdProtocol {
+        private val inner = FakeBmwProtocol(m)
+        val queries get() = inner.queries
+        private var silent = false
+        override val lastResponded: Boolean get() = !silent && inner.lastResponded
+        override fun initAdapter() = "x"
+        override fun connectVehicle() = "x"
+        override fun readPid(pid: Int): IntArray? = null
+        override fun close() {}
+        override fun query(request: PidRequest): IntArray? {
+            silent = request.mode == 0x21 && request.pid[0] != 0xF0
+            if (silent) { inner.queries += request.toString(); return null }
+            return inner.query(request)
+        }
+    }
+
+    @Test
+    fun noResponseOnOtherNumberFallsBackImmediately() {
+        val p = SilentOtherLids(dme)
+        val reader = ObdReader(p)
+        reader.intervals = mapOf("BMW_COOLANT" to 5_000L)
+        val values = HashMap<String, Double>()
+        reader.poll(listOf(coolant, rpm), values)
+        assertTrue(reader.multiBlockUnsupported)
+        p.queries.clear()
+        reader.poll(listOf(coolant, rpm), values)
+        assertEquals(listOf("21 F0"), p.queries.map { it.take(5) })
+        assertEquals(90.0, values.getValue("BMW_COOLANT"), 1e-6)
+    }
+
+    @Test
+    fun sampleNumberFailureDoesNotDropItems() {
+        val p = SilentOtherLids(dme)
+        val reader = ObdReader(p)
+        val values = HashMap<String, Double>()
+        reader.poll(listOf(coolant), values, forceAll = true)
+        assertTrue(reader.multiBlockUnsupported)
+        reader.poll(listOf(coolant), values, forceAll = true)
+        assertEquals("以後の記録用の読み出しも F0", "21 F0", p.queries.last().take(5))
+        assertEquals(90.0, values.getValue("BMW_COOLANT"), 1e-6)
+    }
+
+    @Test
+    fun readsItemsGroupedByAddress() {
+        val p = FakeBmwProtocol(replies = mapOf("30 C101 @7E0" to intArrayOf(1)))
+        val flap = Pids.get("BMW_EXHAUST_FLAP")!!
+        val oil = Pids.get("OIL_LEVEL")!!
+        val misfire = Pids.get("MISFIRE_1")
+        val items = listOfNotNull(flap, misfire, oil)
+        ObdReader(p).poll(items, HashMap())
+        // 標準 (宛先指定なし) が先、7E0 宛ての 2 つは続けて
+        val order = p.queries.map { if (it.endsWith("@7E0")) "7E0" else "std" }
+        assertEquals(order.sortedBy { if (it == "std") 0 else 1 }, order)
+    }
+}
