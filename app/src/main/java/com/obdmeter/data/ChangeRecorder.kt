@@ -21,7 +21,9 @@ data class HistoryRow(
  * 線は途切れず、余計な行も増えない。末尾の行の書き換えは [TAIL_FLUSH_MS] ごと
  * (値が変わったとき・途切れたときは、その前に最後に見た時刻まで書く)。
  *
- * 値を見る間隔の 3 倍 (最低 [MIN_GAP_MS]) より長く見ていなかったら、途切れた (接続が切れた・表示していなかった) とみなす。
+ * 値を見る間隔の 3 倍 (最低 [MIN_GAP_MS]) より長く見ていなかった (接続が切れた・端末がスリープしていた など) ときも、
+ * 値が前と同じなら続きとして扱い、末尾の行を動かすだけにする (同じ値は区間ごとに最大 2 行)。
+ * 値が違っていたときだけ、前の区間を最後に見た時刻で閉じて、途切れの後の区間として書き始める。
  * 時刻はすべて秒単位に丸める
  */
 class ChangeRecorder {
@@ -42,6 +44,18 @@ class ChangeRecorder {
 
     private val states = HashMap<ReadPlan.RecordTarget, State>()
 
+    /** [target] の状態を持っているか (無ければ [seed] で記録の最後の行から始められる) */
+    fun has(target: ReadPlan.RecordTarget): Boolean = target in states
+
+    /**
+     * 記録に残っている最後の行から状態を作る (アプリを起動し直した後も、同じ値なら行を増やさないため)。
+     * [last] は最後の行、[lastIsTail] はそれが動かせる末尾の行 (1 つ前の行と同じ値で、途切れずに見ていた行) か
+     */
+    fun seed(target: ReadPlan.RecordTarget, last: HistoryRow?, lastIsTail: Boolean) {
+        if (last == null || target in states) return
+        states[target] = State(last.v, last.t, last.t, if (lastIsTail) last.t else null)
+    }
+
     private fun sec(t: Long) = t / 1000 * 1000
 
     /** 最後に見た時刻まで末尾の行を書く */
@@ -61,8 +75,8 @@ class ChangeRecorder {
         val s = states[target]
         val gap = maxOf(intervalMs * 3, MIN_GAP_MS)
         when {
-            s == null || time - s.seen > gap -> {
-                // 初めて・途切れたあと: 前の続きを書き切ってから、新しい区間を始める
+            s == null || (time - s.seen > gap && v != s.value) -> {
+                // 初めて・途切れたあとに値が変わっていた: 前の続きを書き切ってから、新しい区間を始める
                 if (s != null) flush(target, s, out)
                 out += HistoryRow(target.slot, target.key, sec(time), v, cont = false)
                 states[target] = State(v, time, time, null)
@@ -74,6 +88,7 @@ class ChangeRecorder {
                 s.value = v; s.seen = time; s.stored = time; s.tail = null
             }
             else -> {
+                // 変わっていない (途切れていても値が同じなら続きとして扱う)
                 s.seen = time
                 if (time - s.stored >= TAIL_FLUSH_MS) flush(target, s, out)
             }

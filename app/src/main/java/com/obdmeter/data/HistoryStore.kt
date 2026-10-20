@@ -106,6 +106,22 @@ class HistoryStore(context: Context, private val scope: CoroutineScope) {
         _revision.value++
     }
 
+    /**
+     * グラフ [slot] の項目 [key] の最後の行と、それが動かせる末尾の行 (1 つ前の行と同じ値で、途切れずに見ていた行) か
+     */
+    suspend fun lastRow(slot: String, key: String): Pair<HistoryRow, Boolean>? = withContext(Dispatchers.IO) {
+        runCatching {
+            db.rawQuery(
+                "SELECT t, v, c FROM samples WHERE g = ? AND k = ? ORDER BY t DESC LIMIT 2", arrayOf(slot, key),
+            ).use { c ->
+                if (!c.moveToFirst()) return@use null
+                val last = HistoryRow(slot, key, c.getLong(0), c.getDouble(1), c.getInt(2) == 1)
+                val tail = last.cont && c.moveToNext() && c.getDouble(1) == last.v
+                last to tail
+            }
+        }.getOrNull()
+    }
+
     /** 値を記録する ([rows] はグラフ → 項目キー → 値)。時刻は秒単位に丸める */
     suspend fun store(rows: Map<String, Map<String, Double>>, time: Long) = withContext(Dispatchers.IO) {
         if (rows.isEmpty()) return@withContext

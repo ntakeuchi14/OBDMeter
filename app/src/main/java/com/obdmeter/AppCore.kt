@@ -186,7 +186,11 @@ class AppCore private constructor(context: Context) {
                     val ms = if (t.key in need && !t.key.startsWith("DEV_")) maxOf(rule.intervalMs, ReadPlan.CHANGE_SAMPLE_MIN_MS) else rule.intervalMs
                     nextDue[t] = now + ms
                     val v = read[t.key] ?: continue
-                    if (rule.onChangeOnly) changeRows += changes.observe(t, v, time, ms)
+                    if (rule.onChangeOnly) {
+                        // アプリを起動し直した後は、記録の最後の行から続ける
+                        if (!changes.has(t)) history.lastRow(t.slot, t.key).let { changes.seed(t, it?.first, it?.second == true) }
+                        changeRows += changes.observe(t, v, time, ms)
+                    }
                     else rows.getOrPut(t.slot) { HashMap() }[t.key] = v
                 }
                 history.store(rows, time)

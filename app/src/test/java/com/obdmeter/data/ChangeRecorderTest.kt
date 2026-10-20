@@ -32,16 +32,35 @@ class ChangeRecorderTest {
     }
 
     @Test
-    fun interruptionStartsNewRunAfterClosingOldOne() {
+    fun interruptionWithChangedValueStartsNewRun() {
         val r = ChangeRecorder()
         r.observe(t, 3.0, 0, 1_000)
         r.observe(t, 3.0, 2_000, 1_000)
-        // 1 分見ていなかった (接続が切れていた)
-        val rows = r.observe(t, 3.0, 62_000, 1_000)
+        // 1 分見ていなかった (接続が切れていた) 後に値が変わっていた
+        val rows = r.observe(t, 4.0, 62_000, 1_000)
         assertEquals(
-            listOf(Triple(2L, 3.0, true) to null, Triple(62L, 3.0, false) to null),
+            listOf(Triple(2L, 3.0, true) to null, Triple(62L, 4.0, false) to null),
             rows.map { it.short() },
         )
+    }
+
+    @Test
+    fun interruptionWithSameValueJustMovesTail() {
+        val r = ChangeRecorder()
+        r.observe(t, 3.0, 0, 1_000)
+        r.observe(t, 3.0, 6_000, 1_000)  // 末尾の行 (6 秒)
+        // 3 時間スリープしていた後も同じ値: 末尾の行を動かすだけ
+        val rows = r.observe(t, 3.0, 3 * 3_600_000L, 1_000)
+        assertEquals(listOf(Triple(10_800L, 3.0, true) to 6L), rows.map { it.short() })
+        assertTrue(r.observe(t, 3.0, 3 * 3_600_000L + 1_000, 1_000).isEmpty())
+    }
+
+    @Test
+    fun seededFromLastRowContinuesAfterRestart() {
+        val r = ChangeRecorder()
+        r.seed(t, HistoryRow(t.slot, t.key, 100_000, 3.0, cont = true), lastIsTail = true)
+        val rows = r.observe(t, 3.0, 200_000, 1_000)
+        assertEquals("起動し直しても同じ値なら末尾を動かすだけ", listOf(Triple(200L, 3.0, true) to 100L), rows.map { it.short() })
     }
 
     @Test
