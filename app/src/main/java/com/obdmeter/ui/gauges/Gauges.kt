@@ -392,8 +392,8 @@ fun AnalogGauge(
             val arcColor = if (warn) GaugeColors.Warn else look.accent
             drawArc(arcColor, start, sweep * f, false,
                 arcTopLeft, arcSize, style = Stroke(stroke, cap = cap))
-            // 弧の先の丸い点
-            if (look.arcTipDot) {
+            // 弧の先の丸い点 (ピーク値を出すときは、点をピーク値の位置に置いて印にする)
+            if (look.arcTipDot && peak == null) {
                 val ta = Math.toRadians((start + sweep * f).toDouble())
                 val tp = Offset(center.x + arcR * cos(ta).toFloat(), center.y + arcR * sin(ta).toFloat())
                 drawCircle(look.arcTipColor, stroke * 0.32f, tp)
@@ -430,8 +430,14 @@ fun AnalogGauge(
             }
         }
 
+        // 弧の先の丸い点を付けるときは、その点をピーク値の印にする (弧の上、ピーク値の位置)
+        if (peak != null && look.arcTipDot && stroke > 0f) {
+            val pa = Math.toRadians((start + sweep * fraction(def, peak)).toDouble())
+            val pp = Offset(center.x + arcR * cos(pa).toFloat(), center.y + arcR * sin(pa).toFloat())
+            drawCircle(look.arcTipColor, stroke * 0.32f, pp)
+        }
         // ピーク値の印 (目盛りの外側から内側に向いた三角形)
-        if (peak != null) {
+        if (peak != null && !(look.arcTipDot && stroke > 0f)) {
             val pa = Math.toRadians((start + sweep * fraction(def, peak)).toDouble())
             val ca = cos(pa).toFloat()
             val sa = sin(pa).toFloat()
