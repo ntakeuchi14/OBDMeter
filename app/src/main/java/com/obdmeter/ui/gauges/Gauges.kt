@@ -160,6 +160,10 @@ data class GaugeLook(
     val ghostAlpha: Float = 0.15f,
     val chartIntervalMs: Long = 60_000L,
     val chartSkipGaps: Boolean = true,
+    val legendPosition: com.obdmeter.data.LegendPosition = com.obdmeter.data.LegendPosition.TOP,
+    val legendAlign: com.obdmeter.data.LegendAlign = com.obdmeter.data.LegendAlign.START,
+    val legendScale: Float = 1f,
+    val legendBgAlpha: Float = 0.5f,
     /** 折れ線グラフの線の色 (項目の順。足りない分は自動) */
     val chartColors: List<Color?> = emptyList(),
     val showPeak: Boolean = false,

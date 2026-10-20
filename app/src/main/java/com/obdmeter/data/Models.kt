@@ -281,11 +281,35 @@ data class GaugeDesign(
     val recordOnChange: Boolean = false,
     /** 折れ線グラフで、どの項目にも記録が無い時間を詰めて表示する */
     val chartSkipGaps: Boolean = true,
+    /** 折れ線グラフの凡例の位置 */
+    val legendPosition: LegendPosition = LegendPosition.TOP,
+    /** 折れ線グラフの凡例の寄せ方 (上・下に置くとき) */
+    val legendAlign: LegendAlign = LegendAlign.START,
+    /** 折れ線グラフの凡例の大きさ (文字と色の丸。1 = 標準) */
+    val legendScale: Float = 1f,
+    /** 折れ線グラフの凡例をグラフ内に置くときの背景の濃さ (0 = 透明) */
+    val legendBgAlpha: Float = 0.5f,
     /** 折れ線グラフ: そのページを表示している間だけ記録する (false = ほかのページを表示中も記録する) */
     val recordOnlyWhenShown: Boolean = false,
     /** 項目ごとの線の色 (並びは「表示する項目」→ 追加した項目の順。null = 自動) */
     val chartColors: List<Long?> = emptyList(),
 )
+
+/** 折れ線グラフの凡例 (項目名と現在値) の位置 */
+enum class LegendPosition(val label: String) {
+    TOP("上"),
+    BOTTOM("下"),
+    INSIDE_TOP_LEFT("グラフ内 左上"),
+    INSIDE_TOP_RIGHT("グラフ内 右上"),
+    INSIDE_BOTTOM_LEFT("グラフ内 左下"),
+    INSIDE_BOTTOM_RIGHT("グラフ内 右下"),
+    HIDDEN("出さない"),
+    ;
+    val inside: Boolean get() = name.startsWith("INSIDE")
+}
+
+/** 凡例を上・下に置くときの横の寄せ方 */
+enum class LegendAlign(val label: String) { START("左寄せ"), CENTER("中央"), END("右寄せ") }
 
 /** メーター外周のリング */
 enum class RingStyle(val label: String) {

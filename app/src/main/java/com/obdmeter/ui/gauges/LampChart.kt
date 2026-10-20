@@ -28,6 +28,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
@@ -364,40 +365,53 @@ internal fun ChartGauge(
     val axes = remember(plotSeries) { ChartAxes.of(plotSeries) }
     val axisW = 34.dp
 
-    Column(modifier.padding(4.dp)) {
-        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Top) {
-            // 各項目の現在値 (時刻を選んでいるときはその時刻の値)
-            FlowRow(
-                Modifier.weight(1f),
-                horizontalArrangement = Arrangement.spacedBy(10.dp),
-            ) {
-                if (cursorTime != null) {
+    val legendPos = look.legendPosition
+    val ls = look.legendScale
+    /** 凡例: 各項目の現在値 (時刻を選んでいるときはその日時とその時刻の値) */
+    val legend: @Composable (Modifier, Alignment.Horizontal) -> Unit = { m, align ->
+        FlowRow(m, horizontalArrangement = Arrangement.spacedBy((10 * ls).dp, align)) {
+            if (cursorTime != null) {
+                Text(
+                    SimpleDateFormat("yyyy/MM/dd HH:mm:ss", Locale.getDefault()).format(Date(cursorTime)),
+                    color = GaugeColors.Accent, fontSize = (11 * look.labelSize * ls).sp, maxLines = 1,
+                    fontWeight = FontWeight.Bold,
+                )
+            }
+            series.forEachIndexed { i, s ->
+                val shown = if (cursorTime != null) cursorValues[s.def.key] else s.value
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Box(Modifier.size((8 * ls).dp).clip(CircleShape).background(chartColor(look, i)))
+                    Spacer(Modifier.width((4 * ls).dp))
                     Text(
-                        SimpleDateFormat("yyyy/MM/dd HH:mm:ss", Locale.getDefault()).format(Date(cursorTime)),
-                        color = GaugeColors.Accent, fontSize = (11 * look.labelSize).sp, maxLines = 1,
-                        fontWeight = FontWeight.Bold,
+                        s.def.shortName + " ",
+                        color = look.labelColor, fontFamily = fonts.label,
+                        fontSize = (11 * look.labelSize * ls).sp, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                    )
+                    Text(
+                        s.def.format(shown) + if (look.showUnit) " ${s.def.unitText}" else "",
+                        color = chartColor(look, i), fontFamily = fonts.value, fontWeight = FontWeight.Bold,
+                        fontSize = (13 * look.valueSize * ls).sp, maxLines = 1,
+                        style = androidx.compose.ui.text.TextStyle(shadow = glowShadow(chartColor(look, i), look.glow, 30f)),
                     )
                 }
-                series.forEachIndexed { i, s ->
-                    val shown = if (cursorTime != null) cursorValues[s.def.key] else s.value
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Box(Modifier.size(8.dp).clip(CircleShape).background(chartColor(look, i)))
-                        Spacer(Modifier.width(4.dp))
-                        Text(
-                            s.def.shortName + " ",
-                            color = look.labelColor, fontFamily = fonts.label,
-                            fontSize = (11 * look.labelSize).sp, maxLines = 1, overflow = TextOverflow.Ellipsis,
-                        )
-                        Text(
-                            s.def.format(shown) + if (look.showUnit) " ${s.def.unitText}" else "",
-                            color = chartColor(look, i), fontFamily = fonts.value, fontWeight = FontWeight.Bold,
-                            fontSize = (13 * look.valueSize).sp, maxLines = 1,
-                            style = androidx.compose.ui.text.TextStyle(shadow = glowShadow(chartColor(look, i), look.glow, 30f)),
-                        )
-                    }
-                }
             }
-            if (interactive && history != null) ChartCsvButtons(history, g, keys)
+        }
+    }
+    val alignH = when (look.legendAlign) {
+        com.obdmeter.data.LegendAlign.START -> Alignment.Start
+        com.obdmeter.data.LegendAlign.CENTER -> Alignment.CenterHorizontally
+        com.obdmeter.data.LegendAlign.END -> Alignment.End
+    }
+    val csv = interactive && history != null
+
+    Column(modifier.padding(4.dp)) {
+        if (legendPos == com.obdmeter.data.LegendPosition.TOP) {
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Top) {
+                legend(Modifier.weight(1f), alignH)
+                if (csv) ChartCsvButtons(history!!, g, keys)
+            }
+        } else if (csv) {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) { ChartCsvButtons(history!!, g, keys) }
         }
 
         BoxWithConstraints(
@@ -556,6 +570,27 @@ internal fun ChartGauge(
                     drawCenteredText(tm, if (history == null) "" else "この期間の記録はありません", Offset(padL + pw / 2, plotH / 2), labelStyle)
                 }
             }
+            // グラフ内に置く凡例 (縦軸の目盛りと時刻の文字にかからない位置)
+            if (legendPos.inside) {
+                val padL = if (axes.left != null) axisW else 0.dp
+                val padR = if (axes.right != null) axisW else 0.dp
+                val top = legendPos == com.obdmeter.data.LegendPosition.INSIDE_TOP_LEFT ||
+                    legendPos == com.obdmeter.data.LegendPosition.INSIDE_TOP_RIGHT
+                val left = legendPos == com.obdmeter.data.LegendPosition.INSIDE_TOP_LEFT ||
+                    legendPos == com.obdmeter.data.LegendPosition.INSIDE_BOTTOM_LEFT
+                legend(
+                    Modifier
+                        .align(
+                            if (top) { if (left) Alignment.TopStart else Alignment.TopEnd }
+                            else { if (left) Alignment.BottomStart else Alignment.BottomEnd }
+                        )
+                        .padding(start = padL + 2.dp, end = padR + 2.dp, top = 2.dp, bottom = 16.dp)
+                        .widthIn(max = maxWidth - padL - padR)
+                        .background(Color.Black.copy(alpha = look.legendBgAlpha), RoundedCornerShape(6.dp))
+                        .padding(horizontal = 6.dp, vertical = 3.dp),
+                    if (left) Alignment.Start else Alignment.End,
+                )
+            }
             if (endAt != null || cursorAt != null) {
                 Text(
                     if (endAt != null) "過去を表示中 (ダブルタップで現在へ)" else "時刻を選択中 (ダブルタップで現在値へ)",
@@ -564,6 +599,9 @@ internal fun ChartGauge(
                     color = GaugeColors.Text, fontSize = 10.sp,
                 )
             }
+        }
+        if (legendPos == com.obdmeter.data.LegendPosition.BOTTOM) {
+            legend(Modifier.fillMaxWidth().padding(top = 2.dp), alignH)
         }
     }
 }

@@ -1044,6 +1044,29 @@ private fun ChartSettings(
     SwitchLine("記録の無い時間を詰めて表示", "どの項目にも記録が無い時間 (エンジン停止中など) を飛ばして、切れ目に点線を出します",
         d.chartSkipGaps) { v -> update { it.copy(chartSkipGaps = v) } }
 
+    Head("凡例 (項目名と現在値)")
+    Row(Modifier.horizontalScroll(rememberScrollState())) {
+        com.obdmeter.data.LegendPosition.entries.forEach { p ->
+            FilterChip(d.legendPosition == p, { update { it.copy(legendPosition = p) } }, { Text(p.label) },
+                Modifier.padding(end = 6.dp))
+        }
+    }
+    if (d.legendPosition != com.obdmeter.data.LegendPosition.HIDDEN) {
+        if (!d.legendPosition.inside) {
+            Row(Modifier.horizontalScroll(rememberScrollState())) {
+                com.obdmeter.data.LegendAlign.entries.forEach { a ->
+                    FilterChip(d.legendAlign == a, { update { it.copy(legendAlign = a) } }, { Text(a.label) },
+                        Modifier.padding(end = 6.dp))
+                }
+            }
+        }
+        SliderLine("大きさ", d.legendScale, 0.4f..3f, "×%.2f") { v -> update { it.copy(legendScale = snap(v, 0.05f)) } }
+        if (d.legendPosition.inside) {
+            SliderLine("背景の濃さ", d.legendBgAlpha, 0f..1f, "%.2f") { v -> update { it.copy(legendBgAlpha = snap(v, 0.05f)) } }
+        }
+        Hint("タップした時刻の日時と値もここに出ます。グラフ内に置くと、線の上に重ねて表示します。")
+    }
+
     Head("記録するタイミング")
     SwitchLine("このページを表示している間だけ記録する",
         "ON にすると、ほかのページを表示している間はこのグラフの項目を記録しません (車との通信が減り、ほかのメーターの反応が良くなります)",
