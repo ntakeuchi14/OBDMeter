@@ -357,8 +357,10 @@ internal fun ChartGauge(
 
     // タップした時刻に一番近い記録の時刻にそろえ、各項目はその時刻に一番近い記録の値を出す
     val cursorTime: Long? = cursorAt?.let { snapCursor(data, it) }
-    val cursorValues: Map<String, Double?> = remember(cursorTime, data, keys, span) {
-        if (cursorTime == null) emptyMap() else valuesAt(data, keys, cursorTime, span)
+    val cursorValues: Map<String, Double?> = remember(cursorTime, data, keys, span, look.chartStep) {
+        if (cursorTime == null) emptyMap()
+        else if (look.chartStep) valuesAtStep(data, keys, cursorTime)
+        else valuesAt(data, keys, cursorTime, span)
     }
 
     // 左右の縦軸の範囲 (属する項目の最小〜最大をまとめたもの。項目が無い軸は出さない)
@@ -537,7 +539,14 @@ internal fun ChartGauge(
                     fun x(p: Sample) = xAt(p.t)
                     fun y(p: Sample) = yAt(s.right, p.v.toDouble())
                     val path = Path()
-                    pts.forEachIndexed { idx, p -> if (idx == 0) path.moveTo(x(p), y(p)) else path.lineTo(x(p), y(p)) }
+                    pts.forEachIndexed { idx, p ->
+                        if (idx == 0) path.moveTo(x(p), y(p))
+                        else {
+                            // 階段状: 次の記録の時刻まで前の値のまま横に引いてから縦に変える
+                            if (look.chartStep) path.lineTo(x(p), y(pts[idx - 1]))
+                            path.lineTo(x(p), y(p))
+                        }
+                    }
                     clipRect(padL, 0f, padL + pw, plotH) {
                         // 発光: 太く薄い線を下に重ねてにじませる
                         if (look.glow > 0f) {

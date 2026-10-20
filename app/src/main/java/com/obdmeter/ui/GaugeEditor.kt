@@ -1077,7 +1077,7 @@ private fun ChartSettings(
     val interval = d.recordIntervalSec.toInt().coerceIn(HistoryStore.MIN_INTERVAL_SEC, HistoryStore.MAX_INTERVAL_SEC)
     SwitchLine("変化したときだけ記録する",
         "記録する間隔を使わず、項目の取得周期 (設定画面) ごとに値を見て、前回記録した値から変わったときだけ記録します。" +
-            "変わらない間は、最後に見た時刻の記録を 1 つだけ更新して持つので、線は途切れず記録も増えません",
+            "記録は値が変わった時刻だけになり、グラフは次に変わるまで前の値が続く階段状の線で描きます",
         d.recordOnChange) { v -> update { it.copy(recordOnChange = v) } }
     if (d.recordOnChange) {
         Hint(

@@ -119,6 +119,7 @@ fun GaugeDesign.toLook(def: PidDef, style: GaugeStyle): GaugeLook {
         chartIntervalMs = if (recordOnChange) 1_000L
             else (recordIntervalSec.coerceIn(1f, 600f) * 1000).toLong(),
         chartSkipGaps = chartSkipGaps,
+        chartStep = recordOnChange,
         legendPosition = legendPosition,
         legendAlign = legendAlign,
         legendScale = legendScale.coerceIn(0.4f, 3f),

@@ -86,4 +86,12 @@ class ChartMathTest {
         assertEquals(180_000L, gapThreshold(60_000, 3_600_000))
         assertEquals(432_000L, gapThreshold(1_000, 86_400_000))
     }
+
+    @Test
+    fun stepValuesHoldPreviousRecord() {
+        val data = mapOf("A" to listOf(Sample(1_000, 1f), Sample(10_000, 2f)))
+        assertEquals(1.0, valuesAtStep(data, listOf("A"), 9_000)["A"]!!, 1e-9)
+        assertEquals(2.0, valuesAtStep(data, listOf("A"), 50_000)["A"]!!, 1e-9)
+        assertEquals(null, valuesAtStep(data, listOf("A"), 500)["A"])
+    }
 }

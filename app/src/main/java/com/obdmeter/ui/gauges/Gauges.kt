@@ -160,6 +160,8 @@ data class GaugeLook(
     val ghostAlpha: Float = 0.15f,
     val chartIntervalMs: Long = 60_000L,
     val chartSkipGaps: Boolean = true,
+    /** 折れ線グラフを階段状に描く (次の記録まで前の値が続く。変化したときだけ記録するグラフ) */
+    val chartStep: Boolean = false,
     val legendPosition: com.obdmeter.data.LegendPosition = com.obdmeter.data.LegendPosition.TOP,
     val legendAlign: com.obdmeter.data.LegendAlign = com.obdmeter.data.LegendAlign.START,
     val legendScale: Float = 1f,

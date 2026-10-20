@@ -96,5 +96,11 @@ internal fun valuesAt(data: Map<String, List<Sample>>, keys: List<String>, time:
         nearestSample(data[k].orEmpty(), time)?.takeIf { abs(it.t - time) <= max(span / 20, 2_000L) }?.v?.toDouble()
     }
 
+/**
+ * 階段状のグラフで、時刻 [time] での各項目の値 (その時刻以前の最後の記録の値。無ければ null)
+ */
+internal fun valuesAtStep(data: Map<String, List<Sample>>, keys: List<String>, time: Long): Map<String, Double?> =
+    keys.associateWith { k -> data[k].orEmpty().lastOrNull { it.t <= time }?.v?.toDouble() }
+
 /** 記録の無い時間とみなす間隔 (記録間隔の 3 倍、1 画面の 1/200、5 秒のうち一番長いもの) */
 internal fun gapThreshold(intervalMs: Long, span: Long): Long = maxOf(intervalMs * 3, span / 200, 5_000L)

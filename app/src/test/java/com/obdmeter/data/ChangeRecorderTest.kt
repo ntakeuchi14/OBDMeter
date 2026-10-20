@@ -25,8 +25,8 @@ class ChangeRecorderTest {
         rows.clear()
         rows += r.observe(t, 1.0, 13_000, 1_000)
         assertEquals(
-            "変わったら、前の値を最後に見た時刻 (12 秒) まで書いてから新しい値",
-            listOf(Triple(12L, 0.0, true) to 10L, Triple(13L, 1.0, true) to null),
+            "変わったら、前の値の末尾の行 (10 秒) を消して新しい値だけ",
+            listOf(Triple(13L, 1.0, true) to 10L),
             rows.map { it.short() },
         )
     }
