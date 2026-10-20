@@ -167,6 +167,7 @@ fun App(vm: MainViewModel, onKeepScreenOn: (Boolean) -> Unit) {
     var customReturnTo by rememberSaveable { mutableStateOf(Screen.SETTINGS) }
     val settings by vm.settings.collectAsStateWithLifecycle()
     val connection by vm.connection.collectAsStateWithLifecycle()
+    val ready by vm.ready.collectAsStateWithLifecycle()
 
     // 接続中だけ画面を消灯させない
     LaunchedEffect(settings.keepScreenOn, connection) {
@@ -191,6 +192,8 @@ fun App(vm: MainViewModel, onKeepScreenOn: (Boolean) -> Unit) {
             .background(GaugeColors.Background)
             .safeDrawingPadding()
     ) {
+        // 保存内容を読み終えるまでは何も出さない (既定の画面や古い画面が一瞬見えるのを防ぐ)
+        if (!ready) return@Box
         when (screen) {
             Screen.DASHBOARD -> DashboardScreen(
                 vm,

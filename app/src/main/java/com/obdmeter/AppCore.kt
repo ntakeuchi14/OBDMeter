@@ -23,6 +23,8 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.withTimeoutOrNull
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
@@ -51,6 +53,12 @@ class AppCore private constructor(context: Context) {
         repo.customPids.stateIn(scope, SharingStarted.Eagerly, emptyList())
     val fonts: StateFlow<List<FontEntry>> =
         repo.fonts.stateIn(scope, SharingStarted.Eagerly, emptyList())
+
+    /**
+     * 保存してある設定・ページ・カスタム PID・フォントを読み終えたか。
+     * 読み終えるまでは既定の画面 (初期ページ) が見えないよう、画面を出さない
+     */
+    val ready = MutableStateFlow(false)
 
     /** 標準項目 + カスタム PID。式が不正なカスタム PID は一覧から外す */
     val catalog: StateFlow<PidCatalog> = customPids
@@ -89,6 +97,19 @@ class AppCore private constructor(context: Context) {
     @Volatile var reconnectOnReturn = false
 
     init {
+        scope.launch {
+            // 保存内容を読み、上の StateFlow にも反映されるのを待つ (念のため最大 3 秒)
+            val d = repo.dashboards.first()
+            val s = repo.settings.first()
+            val c = repo.customPids.first()
+            repo.fonts.first()
+            withTimeoutOrNull(3_000) {
+                dashboards.first { it == d }
+                settings.first { it == s }
+                customPids.first { it == c }
+            }
+            ready.value = true
+        }
         // 画面に出ているページ (アプリ / フロート) の項目だけを読み出す
         scope.launch {
             combine(dashboards, catalog, appVisible, appPage, floatPage) { pages, cat, visible, app, float ->

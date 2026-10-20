@@ -93,7 +93,8 @@ fun DashboardScreen(vm: MainViewModel, onNavigate: (Screen) -> Unit, onCreateCus
     val settings by vm.settings.collectAsStateWithLifecycle()
     val catalog by vm.catalog.collectAsStateWithLifecycle()
 
-    val pager = rememberPagerState { dashboards.size }
+    // 最後に表示していたページから始める (先頭ページが一瞬見えないよう、最初からそのページで作る)
+    val pager = rememberPagerState(initialPage = remember { vm.initialPageIndex() }) { dashboards.size }
     val scope = rememberCoroutineScope()
 
     /** レイアウト編集モード (メーターをドラッグで移動・サイズ変更) */

@@ -351,6 +351,15 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
      * ダッシュボードを開いたときに表示するページ: このプロセスで表示中だったページ、
      * 無ければ前回の起動で最後に表示していたページ。ページの一覧が読み込まれるまで待つ
      */
+    /** 保存内容を読み終えたか ([AppCore.ready]) */
+    val ready: StateFlow<Boolean> = core.ready
+
+    /** 最初に表示するページの位置 (最後に表示していたページ。無ければ先頭)。読み終えた後に呼ぶ */
+    fun initialPageIndex(): Int {
+        val id = core.appPage.value ?: settings.value.lastPageId ?: return 0
+        return dashboards.value.indexOfFirst { it.id == id }.coerceAtLeast(0)
+    }
+
     suspend fun pageToRestore(): Long? {
         val id = core.appPage.value ?: repo.settings.first().lastPageId ?: return null
         return withTimeoutOrNull(3000) { dashboards.first { list -> list.any { it.id == id } } }?.let { id }
