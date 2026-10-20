@@ -248,7 +248,7 @@ class HistoryStore(context: Context, private val scope: CoroutineScope) {
                     db.execSQL(
                         "INSERT OR IGNORE INTO samples (g, k, t, v) SELECT ?, k, t, v FROM samples " +
                             "WHERE g = '' AND k IN (${keys.joinToString(",") { "?" }})",
-                        arrayOf<Any>(g) + keys.toTypedArray(),
+                        (listOf<Any>(g) + keys).toTypedArray(),
                     )
                 }
                 db.delete("samples", "g = ''", null)
