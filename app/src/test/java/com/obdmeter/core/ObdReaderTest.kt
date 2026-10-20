@@ -17,6 +17,8 @@ class FakeBmwProtocol(
     /** F0 以外の測定値ブロックを断る DME */
     private val onlyF0: Boolean = false,
 ) : ObdProtocol {
+    /** true の間は全部の要求を否定応答で断る (イグニッション OFF の DME) */
+    var refuseAll = false
     val queries = mutableListOf<String>()
     private val defined = HashMap<Int, List<Pair<Int, Int>>>()
     private var responded = false
@@ -30,6 +32,7 @@ class FakeBmwProtocol(
     override fun query(request: PidRequest): IntArray? {
         queries += request.toString()
         responded = false
+        if (refuseAll) { responded = true; return null }
         if (request.mode == 0x21) {
             val lid = request.pid[0]
             if (onlyF0 && lid != 0xF0) { responded = true; return null }
@@ -90,6 +93,27 @@ class ObdReaderTest {
         reader.poll(listOf(coolant, rpm, battery), values)
         assertEquals(listOf("21 F0", "21 F1"), p.queries.map { it.take(5) })
         assertEquals(90.0, values.getValue("BMW_COOLANT"), 1e-6)
+    }
+
+    @Test
+    fun refusalsDuringIgnitionOffAreNotRemembered() {
+        var now = 1_000_000L
+        val p = FakeBmwProtocol(dme)
+        p.refuseAll = true
+        val reader = ObdReader(p, clock = { now })
+        reader.ignitionOff = true
+        reader.intervals = mapOf("BMW_COOLANT" to 5_000L)
+        val values = HashMap<String, Double>()
+        repeat(3) { now += 1_000; reader.poll(listOf(coolant, rpm), values) }
+        assertTrue("OFF 中の拒否で複数登録をあきらめない", !reader.multiBlockUnsupported)
+        p.refuseAll = false
+        reader.onIgnitionOn()
+        p.queries.clear()
+        now += 10_000
+        reader.poll(listOf(coolant, rpm), values)
+        assertEquals("ON にしたら周期ごとの登録ですぐ全部読める", listOf("21 F0", "21 F1"), p.queries.map { it.take(5) })
+        assertEquals(90.0, values.getValue("BMW_COOLANT"), 1e-6)
+        assertEquals(3000.0, values.getValue("BMW_RPM"), 1e-6)
     }
 
     @Test

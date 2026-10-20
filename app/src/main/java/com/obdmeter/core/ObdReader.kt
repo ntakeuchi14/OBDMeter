@@ -158,6 +158,21 @@ class ObdReader(
     /** 読めたことのある番号 (F0, F1, …) */
     private val lidOk = HashSet<Int>()
 
+    /**
+     * イグニッション OFF 中かどうか (セッションが設定する)。OFF 中の DME は測定値の登録を断るので、
+     * その拒否を「この DME は非対応」と覚えてしまわないようにする
+     */
+    var ignitionOff = false
+
+    /** イグニッション ON になったら、OFF 中に覚えた「非対応」を忘れてやり直す */
+    fun onIgnitionOn() {
+        ignitionOff = false
+        multiBlockUnsupported = false
+        lidOk.clear()
+        blockRejected.clear()
+        failStreak.clear()
+    }
+
     private fun giveUpMultiBlock(reason: String) {
         if (multiBlockUnsupported) return
         multiBlockUnsupported = true
@@ -192,6 +207,12 @@ class ObdReader(
             return
         }
         val refused = protocol.lastResponded
+        if (ignitionOff) {
+            // OFF 中の拒否・無応答は当然なので何も覚えない (1 つずつ確かめることもしない)
+            for (d in use) values.remove(d.key)
+            if (refused) c.refused += use.size else c.failed += use.size
+            return
+        }
         // F0 以外の番号が一度も読めていない (応答なし・拒否どちらも) → 複数の登録は使えない。
         // F0 が急に読めなくなったのが、別の番号を登録した後なら、登録が 1 つしか持てず上書きされた
         if (!multiBlockUnsupported && (lid != PollPlan.LID_FIRST && lid !in lidOk ||

@@ -270,6 +270,7 @@ class ObdSession(
         _supported.value = reader.supported
         // 対応 PID 一覧も拒否された (7F 01 22) なら、イグニッション OFF で接続している
         var ignitionOff = reader.supported == null && p.lastResponded
+        reader.ignitionOff = ignitionOff
         _state.value = ConnectionState.Connected(desc, ignitionOff)
 
         val values = HashMap<String, Double>()
@@ -309,6 +310,7 @@ class ObdSession(
             val anyOk = r.stdOk > 0 || (r.stdRefused == 0 && r.ok > 0)
             if (nowOff != ignitionOff && (nowOff || anyOk)) {
                 ignitionOff = nowOff
+                if (ignitionOff) reader.ignitionOff = true else reader.onIgnitionOn()
                 log.log(CommLogger.Direction.INFO,
                     if (ignitionOff) "ECU は応答していますが値を返しません (イグニッション OFF)" else "イグニッション ON を検出しました")
                 if (!ignitionOff && reader.supported == null) {
