@@ -434,7 +434,7 @@ fun AnalogGauge(
         if (peak != null && look.arcTipDot && stroke > 0f) {
             val pa = Math.toRadians((start + sweep * fraction(def, peak)).toDouble())
             val pp = Offset(center.x + arcR * cos(pa).toFloat(), center.y + arcR * sin(pa).toFloat())
-            drawCircle(look.arcTipColor, stroke * 0.32f, pp)
+            drawCircle(look.peakColor, stroke * 0.32f, pp)
         }
         // ピーク値の印 (目盛りの外側から内側に向いた三角形)
         if (peak != null && !(look.arcTipDot && stroke > 0f)) {

@@ -537,7 +537,10 @@ private fun AngleTab(g: GaugeConfig, def: com.obdmeter.core.PidDef?, update: ((G
         SwitchLine("弧の先に丸い点を付ける", "ピーク値を表示しているときは、点がピーク値の印になります (三角の印の代わり)", d.arcTipDot) { v ->
             update { it.copy(arcTipDot = v) }
         }
-        if (d.arcTipDot) ColorLine("点の色", d.arcTipColor, Color.White) { c -> update { it.copy(arcTipColor = c) } }
+        if (d.arcTipDot) {
+            if (d.showPeak) Hint("ピーク値を表示しているので、点の色は「ピーク値の印の色」になります")
+            else ColorLine("点の色", d.arcTipColor, Color.White) { c -> update { it.copy(arcTipColor = c) } }
+        }
         ColorLine("背景の弧の色 (既定 = 灰色)", d.trackColor, GaugeColors.Track) { c -> update { it.copy(trackColor = c) } }
         SwitchLine("目盛りの線を表示", "OFF にすると目盛りの線を描きません (数字は下の設定)", d.showTicks) { v -> update { it.copy(showTicks = v) } }
     }
