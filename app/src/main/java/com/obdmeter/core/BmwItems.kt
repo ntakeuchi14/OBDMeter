@@ -57,9 +57,9 @@ internal object BmwItems {
         decode = { d -> d[2] * OIL_LEVEL_STEP },
     )
 
-    /** 排気フラップ (STATUS_AGK, 30 C1 01): LV_EF = 0 / 1 */
+    /** 排気フラップ (STATUS_AGK, 30 C1 01): LV_EF = 1 で閉、0 で開 (実車で確認) */
     private fun exhaustFlap() = PidDef(
-        key = "BMW_EXHAUST_FLAP", name = "排気フラップ 作動状態 (BMW)", shortName = "排気フラップ", unit = "",
+        key = "BMW_EXHAUST_FLAP", name = "排気フラップ 閉=1 / 開=0 (BMW)", shortName = "排気フラップ閉", unit = "",
         min = 0.0, max = 1.0, decimals = 0,
         kind = PidDef.Kind.REQUEST,
         request = PidRequest(0x30, intArrayOf(0xC1, 0x01), header = "7E0"),
