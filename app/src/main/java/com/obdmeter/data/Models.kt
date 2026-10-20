@@ -257,7 +257,7 @@ data class GaugeDesign(
     val tableUnitInline: Boolean = false,
     /** 値テーブルで、項目名を別の欄にせず値の枠の左上に表示する */
     val tableNameInline: Boolean = false,
-    /** 値テーブルの項目名・単位の文字の大きさ (倍率) */
+    /** 名前・単位の文字の大きさ (倍率)。すべての表示形式で使う (名前は値テーブルの項目名にも使う) */
     val tableNameSize: Float = 1f,
     val tableUnitSize: Float = 1f,
     /** 値テーブルの各行の下・各段の右の余白 (行の高さ・段の幅に対する比率) */

@@ -703,6 +703,7 @@ private fun ColorTab(g: GaugeConfig, update: ((GaugeDesign) -> GaugeDesign) -> U
     SwitchLine("名前を表示", null, d.showName) { v -> update { it.copy(showName = v) } }
     if (d.showName) {
         ColorLine("名前の色 (既定 = 文字の色)", d.nameColor, labelDefault) { c -> update { it.copy(nameColor = c) } }
+        SliderLine("名前の大きさ", d.tableNameSize * 100, 30f..300f, "%.0f%%") { v -> update { it.copy(tableNameSize = snap(v, 5f) / 100f) } }
         SliderLine("名前の横位置 (右が +)", d.nameOffsetX * 100, -60f..60f, "%.0f") { v ->
             update { it.copy(nameOffsetX = snap(v, 1f) / 100f) }
         }
@@ -713,6 +714,7 @@ private fun ColorTab(g: GaugeConfig, update: ((GaugeDesign) -> GaugeDesign) -> U
     SwitchLine("単位を表示", null, d.showUnit) { v -> update { it.copy(showUnit = v) } }
     if (d.showUnit) {
         ColorLine("単位の色 (既定 = 文字の色)", d.unitColor, labelDefault) { c -> update { it.copy(unitColor = c) } }
+        SliderLine("単位の大きさ", d.tableUnitSize * 100, 30f..300f, "%.0f%%") { v -> update { it.copy(tableUnitSize = snap(v, 5f) / 100f) } }
         SliderLine("単位の横位置 (右が +)", d.unitOffsetX * 100, -60f..60f, "%.0f") { v ->
             update { it.copy(unitOffsetX = snap(v, 1f) / 100f) }
         }
