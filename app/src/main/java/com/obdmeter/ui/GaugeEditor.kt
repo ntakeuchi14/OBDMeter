@@ -1048,12 +1048,23 @@ private fun ChartSettings(
 
     Head("記録する間隔")
     val interval = d.recordIntervalSec.toInt().coerceIn(HistoryStore.MIN_INTERVAL_SEC, HistoryStore.MAX_INTERVAL_SEC)
-    SliderLine("間隔 (秒)", interval.toFloat(), HistoryStore.MIN_INTERVAL_SEC.toFloat()..HistoryStore.MAX_INTERVAL_SEC.toFloat(),
-        "%.0f 秒") { v -> update { it.copy(recordIntervalSec = (if (v < 60f) snap(v, 1f) else snap(v, 10f)).coerceAtLeast(1f)) } }
-    Hint(
-        "接続した直後にすべての項目を 1 回記録し、その後はこの間隔で記録します " +
-            "(グラフのページを表示していなくても記録します)。"
-    )
+    SwitchLine("変化したときだけ記録する",
+        "記録する間隔を使わず、項目の取得周期 (設定画面) ごとに値を見て、前回記録した値から変わったときだけ記録します。" +
+            "変化が無くても 1 分に 1 回は記録して、線が途切れないようにします",
+        d.recordOnChange) { v -> update { it.copy(recordOnChange = v) } }
+    if (d.recordOnChange) {
+        Hint(
+            "取得周期を設定していない項目は 0.2 秒ごとに値を見ます。このページを表示していない間に記録のために読む項目は、" +
+                "1 秒に 1 回までにします。同じ項目を間隔で記録するグラフがほかにあれば、そちらに合わせて毎回記録します。"
+        )
+    } else {
+        SliderLine("間隔 (秒)", interval.toFloat(), HistoryStore.MIN_INTERVAL_SEC.toFloat()..HistoryStore.MAX_INTERVAL_SEC.toFloat(),
+            "%.0f 秒") { v -> update { it.copy(recordIntervalSec = (if (v < 60f) snap(v, 1f) else snap(v, 10f)).coerceAtLeast(1f)) } }
+        Hint(
+            "接続した直後にすべての項目を 1 回記録し、その後はこの間隔で記録します " +
+                "(グラフのページを表示していなくても記録します)。"
+        )
+    }
 
     Head("記録を残す期間")
     Row(Modifier.horizontalScroll(rememberScrollState())) {
@@ -1070,7 +1081,8 @@ private fun ChartSettings(
     val mb = days * 86_400f / interval * g.chartAllKeys.size * 40 / 1_000_000f
     Hint(
         "期間を過ぎた記録は自動で消えます (複数のグラフがあるときは一番長い期間)。" +
-            "この設定で最大約 ${"%.1f".format(mb)} MB を使います。"
+            if (d.recordOnChange) "変化したときだけ記録するので、使う容量は値の変わり方しだいです。"
+            else "この設定で最大約 ${"%.1f".format(mb)} MB を使います。"
     )
 
     Head("記録の CSV")

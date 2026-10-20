@@ -47,6 +47,27 @@ class ReadPlanTest {
     }
 
     @Test
+    fun changeOnlyChartUsesPollIntervalAndDefersToFixedCharts() {
+        val onChange = GaugeConfig(
+            pidKey = "OIL", style = GaugeStyle.CHART, id = 5, chartKeys = listOf("SPEED", "IAT"),
+            design = GaugeDesign(recordOnChange = true),
+        )
+        val ps = pages + Dashboard(4, "変化だけ", gauges = listOf(onChange))
+        val rules = ReadPlan.recordRules(ps, shownPage = 1, pollIntervals = mapOf("OIL" to 30_000L))
+        assertEquals(ReadPlan.RecordRule(30_000L, true), rules["OIL"])
+        assertEquals("取得周期が無ければ最短で見る", ReadPlan.RecordRule(ReadPlan.CHANGE_MIN_MS, true), rules["IAT"])
+        assertEquals("間隔で記録するグラフにもある項目は毎回記録", ReadPlan.RecordRule(ReadPlan.CHANGE_MIN_MS, false), rules["SPEED"])
+    }
+
+    @Test
+    fun recordsOnlyChangesOrHeartbeat() {
+        assertEquals(true, ReadPlan.shouldRecordChange(1.0, null, null, 0))
+        assertEquals(false, ReadPlan.shouldRecordChange(1.0, 1.0, 0, 1_000))
+        assertEquals(true, ReadPlan.shouldRecordChange(2.0, 1.0, 0, 1_000))
+        assertEquals(true, ReadPlan.shouldRecordChange(1.0, 1.0, 0, ReadPlan.CHANGE_HEARTBEAT_MS))
+    }
+
+    @Test
     fun retentionIsLongestChart() {
         assertEquals(3 * HistoryStore.MONTH_MS, ReadPlan.retentionMs(pages))
         assertEquals(24 * 3_600_000L, ReadPlan.retentionMs(listOf(pages[2])))

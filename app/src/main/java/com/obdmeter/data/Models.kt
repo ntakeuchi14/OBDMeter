@@ -274,6 +274,11 @@ data class GaugeDesign(
     val historyHours: Int = 0,
     /** 記録する間隔 (秒、1〜600)。接続した直後に 1 回記録し、その後この間隔で記録する */
     val recordIntervalSec: Float = 60f,
+    /**
+     * 折れ線グラフ: 記録する間隔を使わず、項目の取得周期で値を見て、前回記録した値から変わったときだけ記録する
+     * (変化が無くても [com.obdmeter.data.ReadPlan.CHANGE_HEARTBEAT_MS] ごとに 1 回は記録し、線を途切れさせない)
+     */
+    val recordOnChange: Boolean = false,
     /** 折れ線グラフで、どの項目にも記録が無い時間を詰めて表示する */
     val chartSkipGaps: Boolean = true,
     /** 折れ線グラフ: そのページを表示している間だけ記録する (false = ほかのページを表示中も記録する) */

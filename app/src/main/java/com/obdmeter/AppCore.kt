@@ -42,6 +42,8 @@ class AppCore private constructor(context: Context) {
     val session = ObdSession(app, scope, log)
     /** 折れ線グラフ用の値の記録 */
     val history = HistoryStore(app, scope)
+    /** 折れ線グラフの項目の記録のしかた (間隔・変化したときだけか) */
+    @Volatile private var recordRules: Map<String, ReadPlan.RecordRule> = emptyMap()
     /** 端末のセンサー (傾き・加速度など。テスト用の項目) */
     val deviceSensors = DeviceSensors(app, scope)
 
@@ -125,10 +127,11 @@ class AppCore private constructor(context: Context) {
         }
         // 折れ線グラフで使っている項目と記録間隔・保存期間 (同じ項目を複数のグラフで使うときは短いほうの間隔)
         scope.launch {
-            combine(dashboards, appVisible, appPage, floatPage) { pages, visible, app, float ->
-                Triple(pages, visible, if (visible) app else float)
-            }.collect { (pages, _, shownPage) ->
-                history.intervals = ReadPlan.recordIntervals(pages, shownPage)
+            combine(dashboards, appVisible, appPage, floatPage, settings) { pages, visible, app, float, s ->
+                Triple(pages, if (visible) app else float, s.pollIntervalsMs.mapValues { it.value.toLong() })
+            }.collect { (pages, shownPage, poll) ->
+                recordRules = ReadPlan.recordRules(pages, shownPage, poll)
+                history.intervals = recordRules.mapValues { it.value.intervalMs }
                 history.retentionMs = ReadPlan.retentionMs(pages)
                 recordingDeviceKeys.value = history.intervals.keys.filterTo(HashSet()) { it.startsWith("DEV_") }
             }
@@ -143,15 +146,19 @@ class AppCore private constructor(context: Context) {
         }
         // 記録: 接続した直後に全項目を 1 回読み、その後は項目ごとの間隔で読む
         // (表示中のページに無い項目も読む。端末のセンサーの項目は接続していなくても記録する)
+        // 「変化したときだけ記録する」項目は、項目の取得周期ごとに値を見て、前回記録した値から変わったときだけ記録する
         scope.launch {
             val nextDue = HashMap<String, Long>()
+            val lastValue = HashMap<String, Double>()
+            val lastAt = HashMap<String, Long>()
             var wasConnected = false
             while (true) {
-                delay(1000)
+                delay(ReadPlan.CHANGE_MIN_MS)
                 val connected = session.state.value is ConnectionState.Connected
                 if (connected && !wasConnected) nextDue.keys.removeAll { !it.startsWith("DEV_") }
                 wasConnected = connected
                 val now = System.currentTimeMillis()
+                val rules = recordRules
                 val due = history.intervals.filter { (k, _) -> (nextDue[k] ?: 0L) <= now && (connected || k.startsWith("DEV_")) }
                 if (due.isEmpty()) continue
                 // 表示中のメーターで読んでいる項目 (と端末のセンサー) は、その最新の値を使う
@@ -160,8 +167,16 @@ class AppCore private constructor(context: Context) {
                 val (reuse, need) = ReadPlan.splitSample(due.keys, live, activeKeys)
                 val defs = need.filter { !it.startsWith("DEV_") }.mapNotNull { catalog.value.get(it) }
                 val got = if (defs.isEmpty() || !connected) emptyMap() else (session.sample(defs) ?: continue)
-                history.store((reuse + got).filterKeys { it in due }, System.currentTimeMillis())
-                due.forEach { (k, ms) -> nextDue[k] = now + ms }
+                val t = System.currentTimeMillis()
+                val store = (reuse + got).filter { (k, v) ->
+                    k in due && (rules[k]?.onChangeOnly != true || ReadPlan.shouldRecordChange(v, lastValue[k], lastAt[k], t))
+                }
+                history.store(store, t)
+                store.forEach { (k, v) -> lastValue[k] = v; lastAt[k] = t }
+                due.forEach { (k, ms) ->
+                    // 表示していない項目を記録のために読むときは、変化だけの記録でも 1 秒に 1 回まで
+                    nextDue[k] = now + if (k in need && !k.startsWith("DEV_")) maxOf(ms, ReadPlan.CHANGE_SAMPLE_MIN_MS) else ms
+                }
             }
         }
     }
