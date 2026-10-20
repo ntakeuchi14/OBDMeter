@@ -43,7 +43,7 @@ class AppCore private constructor(context: Context) {
     /** 折れ線グラフ用の値の記録 */
     val history = HistoryStore(app, scope)
     /** 折れ線グラフの項目の記録のしかた (間隔・変化したときだけか) */
-    @Volatile private var recordRules: Map<String, ReadPlan.RecordRule> = emptyMap()
+    @Volatile private var recordRules: Map<ReadPlan.RecordTarget, ReadPlan.RecordRule> = emptyMap()
     /** 端末のセンサー (傾き・加速度など。テスト用の項目) */
     val deviceSensors = DeviceSensors(app, scope)
 
@@ -125,15 +125,22 @@ class AppCore private constructor(context: Context) {
                 shownDeviceKeys.value = pids.filter { DeviceItems.isDevice(it) }.mapTo(HashSet()) { it.key }
             }
         }
-        // 折れ線グラフで使っている項目と記録間隔・保存期間 (同じ項目を複数のグラフで使うときは短いほうの間隔)
+        // 折れ線グラフごとの記録のしかたと保存期間 (記録はグラフごとに別々)
         scope.launch {
+            // 保存内容を読み終えるまでは何もしない (初期値のページで古い記録を消さないように)
+            ready.first { it }
+            var adopted = false
             combine(dashboards, appVisible, appPage, floatPage, settings) { pages, visible, app, float, s ->
                 Triple(pages, if (visible) app else float, s.pollIntervalsMs.mapValues { it.value.toLong() })
             }.collect { (pages, shownPage, poll) ->
+                if (!adopted) {
+                    // 以前の版の、項目ごとに共有していた記録を各グラフへ振り分ける (1 回だけ)
+                    adopted = true
+                    history.adoptShared(ReadPlan.chartKeys(pages))
+                }
                 recordRules = ReadPlan.recordRules(pages, shownPage, poll)
-                history.intervals = recordRules.mapValues { it.value.intervalMs }
-                history.retentionMs = ReadPlan.retentionMs(pages)
-                recordingDeviceKeys.value = history.intervals.keys.filterTo(HashSet()) { it.startsWith("DEV_") }
+                history.retentions = ReadPlan.retentions(pages)
+                recordingDeviceKeys.value = recordRules.keys.mapNotNullTo(HashSet()) { t -> t.key.takeIf { it.startsWith("DEV_") } }
             }
         }
         // 項目ごとの取得周期
@@ -148,34 +155,40 @@ class AppCore private constructor(context: Context) {
         // (表示中のページに無い項目も読む。端末のセンサーの項目は接続していなくても記録する)
         // 「変化したときだけ記録する」項目は、項目の取得周期ごとに値を見て、前回記録した値から変わったときだけ記録する
         scope.launch {
-            val nextDue = HashMap<String, Long>()
-            val lastValue = HashMap<String, Double>()
-            val lastAt = HashMap<String, Long>()
+            val nextDue = HashMap<ReadPlan.RecordTarget, Long>()
+            val lastValue = HashMap<ReadPlan.RecordTarget, Double>()
+            val lastAt = HashMap<ReadPlan.RecordTarget, Long>()
             var wasConnected = false
             while (true) {
                 delay(ReadPlan.CHANGE_MIN_MS)
                 val connected = session.state.value is ConnectionState.Connected
-                if (connected && !wasConnected) nextDue.keys.removeAll { !it.startsWith("DEV_") }
+                if (connected && !wasConnected) nextDue.keys.removeAll { !it.key.startsWith("DEV_") }
                 wasConnected = connected
                 val now = System.currentTimeMillis()
-                val rules = recordRules
-                val due = history.intervals.filter { (k, _) -> (nextDue[k] ?: 0L) <= now && (connected || k.startsWith("DEV_")) }
+                val due = recordRules.filter { (t, _) -> (nextDue[t] ?: 0L) <= now && (connected || t.key.startsWith("DEV_")) }
                 if (due.isEmpty()) continue
+                // 同じ項目を複数のグラフで記録するときも、読むのは 1 回
+                val dueKeys = due.keys.mapTo(HashSet()) { it.key }
                 // 表示中のメーターで読んでいる項目 (と端末のセンサー) は、その最新の値を使う
                 val live = values.value
                 val activeKeys = session.activePids.mapTo(HashSet()) { it.key } + deviceSensors.values.value.keys
-                val (reuse, need) = ReadPlan.splitSample(due.keys, live, activeKeys)
+                val (reuse, need) = ReadPlan.splitSample(dueKeys, live, activeKeys)
                 val defs = need.filter { !it.startsWith("DEV_") }.mapNotNull { catalog.value.get(it) }
                 val got = if (defs.isEmpty() || !connected) emptyMap() else (session.sample(defs) ?: continue)
-                val t = System.currentTimeMillis()
-                val store = (reuse + got).filter { (k, v) ->
-                    k in due && (rules[k]?.onChangeOnly != true || ReadPlan.shouldRecordChange(v, lastValue[k], lastAt[k], t))
+                val read = reuse + got
+                val time = System.currentTimeMillis()
+                val rows = HashMap<String, HashMap<String, Double>>()
+                for ((t, rule) in due) {
+                    val v = read[t.key] ?: continue
+                    if (rule.onChangeOnly && !ReadPlan.shouldRecordChange(v, lastValue[t], lastAt[t], time)) continue
+                    rows.getOrPut(t.slot) { HashMap() }[t.key] = v
+                    lastValue[t] = v
+                    lastAt[t] = time
                 }
-                history.store(store, t)
-                store.forEach { (k, v) -> lastValue[k] = v; lastAt[k] = t }
-                due.forEach { (k, ms) ->
+                history.store(rows, time)
+                for ((t, rule) in due) {
                     // 表示していない項目を記録のために読むときは、変化だけの記録でも 1 秒に 1 回まで
-                    nextDue[k] = now + if (k in need && !k.startsWith("DEV_")) maxOf(ms, ReadPlan.CHANGE_SAMPLE_MIN_MS) else ms
+                    nextDue[t] = now + if (t.key in need && !t.key.startsWith("DEV_")) maxOf(rule.intervalMs, ReadPlan.CHANGE_SAMPLE_MIN_MS) else rule.intervalMs
                 }
             }
         }

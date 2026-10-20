@@ -15,9 +15,10 @@ import java.io.InputStream
 import java.io.OutputStream
 
 /**
- * 折れ線グラフ用の値の記録。項目ごとに「時刻 (秒単位)・値」を端末のデータベースに保存する。
- * - 記録するのは [intervals] の項目 (どこかの折れ線グラフで使われている項目)。間隔の管理は呼び出し側
- * - 保存期間 ([retentionMs]) を過ぎた記録は自動で消す
+ * 折れ線グラフ用の値の記録。グラフごと ([HistorySlot]) ・項目ごとに「時刻 (秒単位)・値」を端末のデータベースに保存する。
+ * 同じ項目でもグラフが違えば別々に記録する (グラフを新しく置くと、記録は空から始まる)。
+ * - 何をいつ記録するかは呼び出し側 ([com.obdmeter.AppCore]) が決める
+ * - グラフごとの保存期間 ([retentions]) を過ぎた記録と、無くなったグラフの記録は自動で消す
  * - CSV (項目キー, 年月日時分秒, 値) で書き出し・読み込みができる
  */
 class HistoryStore(context: Context, private val scope: CoroutineScope) {
@@ -30,25 +31,38 @@ class HistoryStore(context: Context, private val scope: CoroutineScope) {
         const val CSV_HEADER = HistoryCsv.HEADER
     }
 
-    private class Helper(context: Context) : SQLiteOpenHelper(context, "history.db", null, 2) {
+    private class Helper(context: Context) : SQLiteOpenHelper(context, "history.db", null, 3) {
         override fun onCreate(db: SQLiteDatabase) {
-            // 同じ項目・同じ時刻の記録は 1 つだけ (読み込みで重ねても増えない)
-            db.execSQL("CREATE TABLE samples (k TEXT NOT NULL, t INTEGER NOT NULL, v REAL NOT NULL, PRIMARY KEY (k, t)) WITHOUT ROWID")
+            // 同じグラフ・同じ項目・同じ時刻の記録は 1 つだけ (読み込みで重ねても増えない)
+            db.execSQL(
+                "CREATE TABLE samples (g TEXT NOT NULL, k TEXT NOT NULL, t INTEGER NOT NULL, v REAL NOT NULL, " +
+                    "PRIMARY KEY (g, k, t)) WITHOUT ROWID"
+            )
         }
         override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
-            // 旧形式 (1 秒ごとの細かい記録) は引き継がない
-            db.execSQL("DROP TABLE IF EXISTS samples")
-            onCreate(db)
+            if (oldVersion == 2) {
+                // 項目ごとに共有していた記録は、いったんグラフ未定 ("") として残し、
+                // 起動後にその項目を使っているグラフへ振り分ける ([adoptShared])
+                db.execSQL("ALTER TABLE samples RENAME TO samples_old")
+                onCreate(db)
+                db.execSQL("INSERT INTO samples (g, k, t, v) SELECT '', k, t, v FROM samples_old")
+                db.execSQL("DROP TABLE samples_old")
+            } else {
+                // 旧形式 (1 秒ごとの細かい記録) は引き継がない
+                db.execSQL("DROP TABLE IF EXISTS samples")
+                onCreate(db)
+            }
         }
     }
 
     private val helper = Helper(context.applicationContext)
     private val db: SQLiteDatabase by lazy { helper.writableDatabase }
 
-    /** 記録する項目のキーと記録間隔 (ミリ秒) */
-    @Volatile var intervals: Map<String, Long> = emptyMap()
-    /** 保存期間 (ミリ秒) */
-    @Volatile var retentionMs: Long = 3 * MONTH_MS
+    /**
+     * 今あるグラフと、それぞれの保存期間 (ミリ秒)。null = まだ分からない (起動直後は何も消さない)。
+     * ここに無いグラフの記録は、片付けのときに消す
+     */
+    @Volatile var retentions: Map<String, Long>? = null
 
     private val _revision = MutableStateFlow(0L)
     /** 記録が増えるたびに変わる (グラフの読み直しに使う) */
@@ -65,18 +79,18 @@ class HistoryStore(context: Context, private val scope: CoroutineScope) {
         }
     }
 
-    /** 値を記録する。時刻は秒単位に丸める */
-    suspend fun store(values: Map<String, Double>, time: Long) = withContext(Dispatchers.IO) {
-        if (values.isEmpty()) return@withContext
+    /** 値を記録する ([rows] はグラフ → 項目キー → 値)。時刻は秒単位に丸める */
+    suspend fun store(rows: Map<String, Map<String, Double>>, time: Long) = withContext(Dispatchers.IO) {
+        if (rows.isEmpty()) return@withContext
         val t = time / 1000 * 1000
         runCatching {
             db.beginTransaction()
             try {
                 val cv = ContentValues()
-                for ((k, v) in values) {
+                for ((g, values) in rows) for ((k, v) in values) {
                     if (v.isNaN() || v.isInfinite()) continue
                     cv.clear()
-                    cv.put("k", k); cv.put("t", t); cv.put("v", v)
+                    cv.put("g", g); cv.put("k", k); cv.put("t", t); cv.put("v", v)
                     db.insertWithOnConflict("samples", null, cv, SQLiteDatabase.CONFLICT_REPLACE)
                 }
                 db.setTransactionSuccessful()
@@ -91,14 +105,14 @@ class HistoryStore(context: Context, private val scope: CoroutineScope) {
      * [from]〜[to] の記録を読む。点が多いときは [maxPoints] 程度にまとめる
      * (区間ごとの最小と最大を残すので、山や谷は消えない)
      */
-    suspend fun load(key: String, from: Long, to: Long, maxPoints: Int): List<Sample> = withContext(Dispatchers.IO) {
+    suspend fun load(slot: String, key: String, from: Long, to: Long, maxPoints: Int): List<Sample> = withContext(Dispatchers.IO) {
         val out = ArrayList<Sample>()
         val bucket = ((to - from) / (maxPoints / 2).coerceAtLeast(1)).coerceAtLeast(1000L)
         runCatching {
             db.rawQuery(
                 "SELECT (t - ?) / ? AS b, MIN(v), MAX(v), MIN(t), MAX(t), COUNT(*) FROM samples " +
-                    "WHERE k = ? AND t >= ? AND t <= ? GROUP BY b ORDER BY b",
-                arrayOf(from.toString(), bucket.toString(), key, from.toString(), to.toString()),
+                    "WHERE g = ? AND k = ? AND t >= ? AND t <= ? GROUP BY b ORDER BY b",
+                arrayOf(from.toString(), bucket.toString(), slot, key, from.toString(), to.toString()),
             ).use { c ->
                 while (c.moveToNext()) {
                     val lo = c.getFloat(1)
@@ -114,28 +128,28 @@ class HistoryStore(context: Context, private val scope: CoroutineScope) {
     }
 
     /** 直前と直後の記録 (表示範囲の外とも線をつなぐため) */
-    suspend fun neighbors(key: String, from: Long, to: Long): Pair<Sample?, Sample?> = withContext(Dispatchers.IO) {
+    suspend fun neighbors(slot: String, key: String, from: Long, to: Long): Pair<Sample?, Sample?> = withContext(Dispatchers.IO) {
         fun one(sql: String, arg: Long): Sample? = runCatching {
-            db.rawQuery(sql, arrayOf(key, arg.toString())).use { c -> if (c.moveToFirst()) Sample(c.getLong(0), c.getFloat(1)) else null }
+            db.rawQuery(sql, arrayOf(slot, key, arg.toString())).use { c -> if (c.moveToFirst()) Sample(c.getLong(0), c.getFloat(1)) else null }
         }.getOrNull()
-        one("SELECT t, v FROM samples WHERE k = ? AND t < ? ORDER BY t DESC LIMIT 1", from) to
-            one("SELECT t, v FROM samples WHERE k = ? AND t > ? ORDER BY t ASC LIMIT 1", to)
+        one("SELECT t, v FROM samples WHERE g = ? AND k = ? AND t < ? ORDER BY t DESC LIMIT 1", from) to
+            one("SELECT t, v FROM samples WHERE g = ? AND k = ? AND t > ? ORDER BY t ASC LIMIT 1", to)
     }
 
     /**
      * [from]〜[to] で、[keys] のどれかに記録がある時間帯 (開始, 終了) を古い順に返す。
      * 記録の間が [gapMs] より空いたところで区切る (グラフで記録の無い時間を詰めるため)
      */
-    suspend fun segments(keys: Collection<String>, from: Long, to: Long, gapMs: Long): List<Pair<Long, Long>> =
+    suspend fun segments(slot: String, keys: Collection<String>, from: Long, to: Long, gapMs: Long): List<Pair<Long, Long>> =
         withContext(Dispatchers.IO) {
             if (keys.isEmpty()) return@withContext emptyList()
             val bucket = (gapMs / 2).coerceAtLeast(1000L)
             val out = ArrayList<Pair<Long, Long>>()
             runCatching {
                 db.rawQuery(
-                    "SELECT t / ? AS b, MIN(t), MAX(t) FROM samples WHERE k IN (${keys.joinToString(",") { "?" }}) " +
+                    "SELECT t / ? AS b, MIN(t), MAX(t) FROM samples WHERE g = ? AND k IN (${keys.joinToString(",") { "?" }}) " +
                         "AND t >= ? AND t <= ? GROUP BY b ORDER BY b",
-                    arrayOf(bucket.toString()) + keys.toTypedArray() + arrayOf(from.toString(), to.toString()),
+                    arrayOf(bucket.toString(), slot) + keys.toTypedArray() + arrayOf(from.toString(), to.toString()),
                 ).use { c ->
                     val buckets = ArrayList<Pair<Long, Long>>()
                     while (c.moveToNext()) buckets += c.getLong(1) to c.getLong(2)
@@ -146,26 +160,26 @@ class HistoryStore(context: Context, private val scope: CoroutineScope) {
         }
 
     /** [keys] の記録の一番古い時刻 (無ければ null) */
-    suspend fun earliest(keys: Collection<String>): Long? = withContext(Dispatchers.IO) {
+    suspend fun earliest(slot: String, keys: Collection<String>): Long? = withContext(Dispatchers.IO) {
         if (keys.isEmpty()) return@withContext null
         runCatching {
             db.rawQuery(
-                "SELECT MIN(t) FROM samples WHERE k IN (${keys.joinToString(",") { "?" }})",
-                keys.toTypedArray(),
+                "SELECT MIN(t) FROM samples WHERE g = ? AND k IN (${keys.joinToString(",") { "?" }})",
+                arrayOf(slot) + keys.toTypedArray(),
             ).use { c -> if (c.moveToFirst() && !c.isNull(0)) c.getLong(0) else null }
         }.getOrNull()
     }
 
     /** [keys] の記録を CSV (key,datetime,value) で書き出す。書き出した行数を返す */
-    suspend fun exportCsv(keys: Collection<String>, out: OutputStream): Int = withContext(Dispatchers.IO) {
+    suspend fun exportCsv(slot: String, keys: Collection<String>, out: OutputStream): Int = withContext(Dispatchers.IO) {
         val fmt = HistoryCsv.dateFormat()
         var n = 0
         out.bufferedWriter(Charsets.UTF_8).use { w ->
             w.write(CSV_HEADER); w.write("\n")
             if (keys.isNotEmpty()) {
                 db.rawQuery(
-                    "SELECT k, t, v FROM samples WHERE k IN (${keys.joinToString(",") { "?" }}) ORDER BY k, t",
-                    keys.toTypedArray(),
+                    "SELECT k, t, v FROM samples WHERE g = ? AND k IN (${keys.joinToString(",") { "?" }}) ORDER BY k, t",
+                    arrayOf(slot) + keys.toTypedArray(),
                 ).use { c ->
                     while (c.moveToNext()) {
                         w.write(HistoryCsv.line(c.getString(0), c.getLong(1), c.getDouble(2), fmt)); w.write("\n")
@@ -178,10 +192,10 @@ class HistoryStore(context: Context, private val scope: CoroutineScope) {
     }
 
     /**
-     * CSV (key,datetime,value) を読み込む。同じ項目・同じ時刻の記録は上書きする。
+     * CSV (key,datetime,value) をグラフ [slot] の記録として読み込む。同じ項目・同じ時刻の記録は上書きする。
      * @return 読み込んだ行数と、読めなかった行数
      */
-    suspend fun importCsv(input: InputStream): Pair<Int, Int> = withContext(Dispatchers.IO) {
+    suspend fun importCsv(slot: String, input: InputStream): Pair<Int, Int> = withContext(Dispatchers.IO) {
         val formats = HistoryCsv.importFormats()
         var ok = 0
         var bad = 0
@@ -194,7 +208,7 @@ class HistoryStore(context: Context, private val scope: CoroutineScope) {
                     val cv = ContentValues()
                     for ((k, t, v) in batch) {
                         cv.clear()
-                        cv.put("k", k); cv.put("t", t / 1000 * 1000); cv.put("v", v)
+                        cv.put("g", slot); cv.put("k", k); cv.put("t", t / 1000 * 1000); cv.put("v", v)
                         db.insertWithOnConflict("samples", null, cv, SQLiteDatabase.CONFLICT_REPLACE)
                     }
                     db.setTransactionSuccessful()
@@ -219,8 +233,41 @@ class HistoryStore(context: Context, private val scope: CoroutineScope) {
         ok to bad
     }
 
+    /**
+     * 以前の版で項目ごとに共有していた記録 (グラフ未定) を、その項目を使っているグラフそれぞれへ写して消す。
+     * [slots] はグラフ → 使っている項目キー
+     */
+    suspend fun adoptShared(slots: Map<String, Collection<String>>) = withContext(Dispatchers.IO) {
+        runCatching {
+            val has = db.rawQuery("SELECT 1 FROM samples WHERE g = '' LIMIT 1", null).use { it.moveToFirst() }
+            if (!has) return@runCatching
+            db.beginTransaction()
+            try {
+                for ((g, keys) in slots) {
+                    if (keys.isEmpty()) continue
+                    db.execSQL(
+                        "INSERT OR IGNORE INTO samples (g, k, t, v) SELECT ?, k, t, v FROM samples " +
+                            "WHERE g = '' AND k IN (${keys.joinToString(",") { "?" }})",
+                        arrayOf<Any>(g) + keys.toTypedArray(),
+                    )
+                }
+                db.delete("samples", "g = ''", null)
+                db.setTransactionSuccessful()
+            } finally {
+                db.endTransaction()
+            }
+            _revision.value++
+        }
+    }
+
     private fun cleanup(now: Long) {
-        val keep = retentionMs.coerceIn(3_600_000L, MAX_MONTHS * MONTH_MS)
-        db.delete("samples", "t < ?", arrayOf((now - keep).toString()))
+        val slots = retentions ?: return
+        for ((g, ms) in slots) {
+            val keep = ms.coerceIn(3_600_000L, MAX_MONTHS * MONTH_MS)
+            db.delete("samples", "g = ? AND t < ?", arrayOf(g, (now - keep).toString()))
+        }
+        // 消したグラフ・折れ線グラフでなくなったメーターの記録 (グラフ未定の旧記録は [adoptShared] に任せる)
+        if (slots.isEmpty()) db.delete("samples", "g <> ''", null)
+        else db.delete("samples", "g <> '' AND g NOT IN (${slots.keys.joinToString(",") { "?" }})", slots.keys.toTypedArray())
     }
 }

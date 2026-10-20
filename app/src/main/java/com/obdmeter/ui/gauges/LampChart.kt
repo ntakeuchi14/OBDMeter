@@ -292,8 +292,11 @@ internal fun ChartGauge(
     fonts: GaugeFontSet,
     interactive: Boolean,
     modifier: Modifier,
+    /** このグラフの記録の置き場所 ([com.obdmeter.data.HistorySlot])。null = 記録を出さない */
+    slot: String?,
 ) {
-    val history = LocalHistory.current
+    val history = LocalHistory.current?.takeIf { slot != null }
+    val g = slot.orEmpty()
     val tm = rememberTextMeasurer()
     // 現在値が変わるたびにグラフ全体を描き直さないよう、描画に使うものは中身が同じ間は同じものを使う
     @Suppress("NAME_SHADOWING") val look = remember(look) { look }
@@ -318,7 +321,7 @@ internal fun ChartGauge(
         }
     }
     // 記録の一番古い時刻 (ここまでさかのぼれる)
-    val earliest by produceState<Long?>(null, keys, revision) { value = history?.earliest(keys) }
+    val earliest by produceState<Long?>(null, keys, revision) { value = history?.earliest(g, keys) }
 
     val end = endAt ?: now
     // 範囲を丸めて、動かすたびに読み直さないようにする
@@ -329,7 +332,7 @@ internal fun ChartGauge(
     val segFrom = segEnd - maxOf(span * 10, 86_400_000L)
     val segs by produceState(emptyList<Pair<Long, Long>>(), keys, look.chartSkipGaps, gapMs, segFrom, segEnd, now / 15_000) {
         value = if (!look.chartSkipGaps || history == null) emptyList()
-        else history.segments(keys, segFrom, segEnd, gapMs)
+        else history.segments(g, keys, segFrom, segEnd, gapMs)
     }
     val axis = remember(segs, gapMs) { TimeAxis(segs, gapMs) }
     val cEnd = axis.toC(end)
@@ -341,11 +344,11 @@ internal fun ChartGauge(
     val data by produceState(emptyMap<String, List<Sample>>(), keys, ranges, revision) {
         if (history != null) value = keys.associateWith { k ->
             // 表示範囲の外の直前・直後の点も入れて、端まで線がつながるようにする
-            val (before, after) = history.neighbors(k, qStart, qEnd)
+            val (before, after) = history.neighbors(g, k, qStart, qEnd)
             val body = ranges.flatMap { (a, b) ->
                 // 区間ごとに、詰めた幅に応じた点の数で読む
                 val pts = (800L * (b - a + 1) / span.coerceAtLeast(1)).toInt().coerceIn(20, 800)
-                history.load(k, a, b, pts)
+                history.load(g, k, a, b, pts)
             }
             listOfNotNull(before) + body + listOfNotNull(after)
         }
@@ -394,7 +397,7 @@ internal fun ChartGauge(
                     }
                 }
             }
-            if (interactive && history != null) ChartCsvButtons(history, keys)
+            if (interactive && history != null) ChartCsvButtons(history, g, keys)
         }
 
         BoxWithConstraints(
@@ -567,14 +570,14 @@ internal fun ChartGauge(
 
 /** グラフの記録の CSV 書き出し・読み込みボタン (アプリの画面でだけ出す) */
 @Composable
-private fun ChartCsvButtons(history: HistoryStore, keys: List<String>) {
+private fun ChartCsvButtons(history: HistoryStore, slot: String, keys: List<String>) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val exporter = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("text/csv")) { uri ->
         if (uri == null) return@rememberLauncherForActivityResult
         scope.launch {
             val msg = runCatching {
-                val n = context.contentResolver.openOutputStream(uri)?.use { history.exportCsv(keys, it) }
+                val n = context.contentResolver.openOutputStream(uri)?.use { history.exportCsv(slot, keys, it) }
                     ?: error("ファイルを開けませんでした")
                 "$n 件を書き出しました"
             }.getOrElse { "書き出しに失敗しました: ${it.message}" }
@@ -585,7 +588,7 @@ private fun ChartCsvButtons(history: HistoryStore, keys: List<String>) {
         if (uri == null) return@rememberLauncherForActivityResult
         scope.launch {
             val msg = runCatching {
-                val (ok, bad) = context.contentResolver.openInputStream(uri)?.use { history.importCsv(it) }
+                val (ok, bad) = context.contentResolver.openInputStream(uri)?.use { history.importCsv(slot, it) }
                     ?: error("ファイルを開けませんでした")
                 "$ok 件を読み込みました" + if (bad > 0) " (読めない行 $bad 件)" else ""
             }.getOrElse { "読み込みに失敗しました: ${it.message}" }
@@ -601,7 +604,7 @@ private fun ChartCsvButtons(history: HistoryStore, keys: List<String>) {
             if (!launched) {
                 scope.launch {
                     val msg = runCatching {
-                        val (n, where) = exportToDownloads(context, history, keys, name)
+                        val (n, where) = exportToDownloads(context, history, slot, keys, name)
                         "$n 件を $where に保存しました"
                     }.getOrElse { "書き出しに失敗しました: ${it.message}" }
                     Toast.makeText(context, msg, Toast.LENGTH_LONG).show()
@@ -620,6 +623,7 @@ private fun ChartCsvButtons(history: HistoryStore, keys: List<String>) {
 private suspend fun exportToDownloads(
     context: android.content.Context,
     history: HistoryStore,
+    slot: String,
     keys: List<String>,
     name: String,
 ): Pair<Int, String> = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
@@ -631,12 +635,12 @@ private suspend fun exportToDownloads(
         }
         val uri = context.contentResolver.insert(android.provider.MediaStore.Downloads.EXTERNAL_CONTENT_URI, values)
             ?: error("保存先を作れませんでした")
-        val n = context.contentResolver.openOutputStream(uri)?.use { history.exportCsv(keys, it) } ?: error("ファイルを開けませんでした")
+        val n = context.contentResolver.openOutputStream(uri)?.use { history.exportCsv(slot, keys, it) } ?: error("ファイルを開けませんでした")
         n to "Download/OBDMeter/$name"
     } else {
         val dir = context.getExternalFilesDir(android.os.Environment.DIRECTORY_DOWNLOADS) ?: context.filesDir
         val f = java.io.File(dir, name)
-        val n = f.outputStream().use { history.exportCsv(keys, it) }
+        val n = f.outputStream().use { history.exportCsv(slot, keys, it) }
         n to f.absolutePath
     }
 }

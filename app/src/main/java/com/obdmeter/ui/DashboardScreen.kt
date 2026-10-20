@@ -1,5 +1,6 @@
 package com.obdmeter.ui
 
+import com.obdmeter.data.HistorySlot
 import androidx.compose.ui.platform.LocalContext
 import android.widget.Toast
 import kotlinx.coroutines.withTimeoutOrNull
@@ -309,6 +310,7 @@ fun DashboardScreen(vm: MainViewModel, onNavigate: (Screen) -> Unit, onCreateCus
             catalog = catalog,
             supported = supported,
             liveValue = values[gaugeInSettings.pidKey],
+            historySlot = HistorySlot.of(current.id, gaugeInSettings.id),
             onChange = { updated -> vm.updateGauge(current.id, updated.id) { updated } },
             onBringToFront = { vm.bringToFront(current.id, gaugeInSettings.id) },
             onDelete = { vm.removeGauge(current.id, gaugeInSettings.id); settingsFor = null },
@@ -461,7 +463,8 @@ private fun DashboardCanvas(
                     onLongPress = { peakResets[g.id] = (peakResets[g.id] ?: 0) + 1 },
                     onCopy = onCopy,
                 ) {
-                    GaugeView(g, def, values, supported, peakResets[g.id] ?: 0, catalog = catalog, interactive = !editing)
+                    GaugeView(g, def, values, supported, peakResets[g.id] ?: 0, catalog = catalog, interactive = !editing,
+                        historySlot = HistorySlot.of(dashboard.id, g.id))
                 }
             }
         }
@@ -482,6 +485,8 @@ fun GaugeView(
     catalog: PidCatalog? = null,
     /** 折れ線グラフをドラッグで操作できるか */
     interactive: Boolean = false,
+    /** 折れ線グラフの記録の置き場所 ([HistorySlot]) */
+    historySlot: String? = null,
 ) {
     if (def != null) {
         GaugeCard(
@@ -495,6 +500,7 @@ fun GaugeView(
             peakResetKey = peakResetKey,
             series = if (g.style == GaugeStyle.CHART || g.style == GaugeStyle.TABLE) chartSeries(g, def, values, catalog) else emptyList(),
             interactive = interactive,
+            historySlot = historySlot,
         )
     } else {
         // 削除されたカスタム PID など

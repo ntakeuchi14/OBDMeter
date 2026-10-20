@@ -210,6 +210,8 @@ fun GaugeCard(
     series: List<ChartSeries> = emptyList(),
     /** 折れ線グラフをドラッグで操作できるか (編集中・フロート表示では false) */
     interactive: Boolean = false,
+    /** 折れ線グラフの記録の置き場所 ([com.obdmeter.data.HistorySlot]) */
+    historySlot: String? = null,
 ) {
     val shape = RoundedCornerShape(14.dp)
     // ピーク値 (生の値で記録する。表示用のならし前の値)
@@ -238,7 +240,7 @@ fun GaugeCard(
                 series.ifEmpty { listOf(ChartSeries(def, value)) }, look, fonts, Modifier.fillMaxSize(),
             )
             GaugeStyle.CHART -> ChartGauge(
-                series.ifEmpty { listOf(ChartSeries(def, value)) }, look, fonts, interactive, Modifier.fillMaxSize(),
+                series.ifEmpty { listOf(ChartSeries(def, value)) }, look, fonts, interactive, Modifier.fillMaxSize(), historySlot,
             )
         }
     }

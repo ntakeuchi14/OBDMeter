@@ -40,31 +40,39 @@ object ReadPlan {
      */
     data class RecordRule(val intervalMs: Long, val onChangeOnly: Boolean)
 
+    /** 記録の単位: グラフ [slot] ([HistorySlot]) の項目 [key] */
+    data class RecordTarget(val slot: String, val key: String)
+
+    /** 折れ線グラフ (ページとメーターの id 付き) */
+    private fun charts(pages: List<Dashboard>): Sequence<Pair<Dashboard, GaugeConfig>> =
+        pages.asSequence().flatMap { p -> p.gauges.asSequence().filter { it.style == GaugeStyle.CHART }.map { p to it } }
+
     /**
-     * 記録する項目と記録のしかた。同じ項目を複数のグラフで使うときは短いほうの間隔で、
-     * 「変化したときだけ」は使っているグラフが全部そうなっているときだけ。
+     * 記録するもの (グラフごと・項目ごと) と記録のしかた。記録はグラフごとに別々に持つ。
      * 「変化したときだけ」のグラフでは、項目の取得周期 ([pollIntervals]、無ければ [CHANGE_MIN_MS]) ごとに値を見る。
-     * 「表示中だけ記録する」グラフは、そのページ ([shownPage]) を表示している間だけ数える
+     * 「表示中だけ記録する」グラフは、そのページ ([shownPage]) を表示している間だけ
      */
-    fun recordRules(pages: List<Dashboard>, shownPage: Long?, pollIntervals: Map<String, Long> = emptyMap()): Map<String, RecordRule> {
-        val iv = HashMap<String, Long>()
-        val fixed = HashSet<String>()
-        for (p in pages) for (g in p.gauges) {
-            if (g.style != GaugeStyle.CHART) continue
+    fun recordRules(pages: List<Dashboard>, shownPage: Long?, pollIntervals: Map<String, Long> = emptyMap()): Map<RecordTarget, RecordRule> {
+        val out = HashMap<RecordTarget, RecordRule>()
+        for ((p, g) in charts(pages)) {
             if (g.design.recordOnlyWhenShown && p.id != shownPage) continue
             val sec = g.design.recordIntervalSec.toInt().coerceIn(HistoryStore.MIN_INTERVAL_SEC, HistoryStore.MAX_INTERVAL_SEC)
+            val slot = HistorySlot.of(p.id, g.id)
             for (k in g.chartAllKeys) {
                 val ms = if (g.design.recordOnChange) maxOf(pollIntervals[k] ?: 0L, CHANGE_MIN_MS) else sec * 1000L
-                iv[k] = minOf(iv[k] ?: Long.MAX_VALUE, ms)
-                if (!g.design.recordOnChange) fixed += k
+                out[RecordTarget(slot, k)] = RecordRule(ms, g.design.recordOnChange)
             }
         }
-        return iv.mapValues { (k, ms) -> RecordRule(ms, k !in fixed) }
+        return out
     }
 
-    /** 記録する項目と記録間隔 (ミリ秒)。[recordRules] の間隔だけ */
-    fun recordIntervals(pages: List<Dashboard>, shownPage: Long?, pollIntervals: Map<String, Long> = emptyMap()): Map<String, Long> =
-        recordRules(pages, shownPage, pollIntervals).mapValues { it.value.intervalMs }
+    /** グラフごとの記録の保存期間 (ミリ秒) */
+    fun retentions(pages: List<Dashboard>): Map<String, Long> =
+        charts(pages).associate { (p, g) -> HistorySlot.of(p.id, g.id) to g.design.historyRetentionMs }
+
+    /** グラフごとの使っている項目 (以前の共有の記録を振り分けるため) */
+    fun chartKeys(pages: List<Dashboard>): Map<String, List<String>> =
+        charts(pages).associate { (p, g) -> HistorySlot.of(p.id, g.id) to g.chartAllKeys }
 
     /**
      * 「変化したときだけ」の項目で、今回の値 [v] を記録するか。前回記録した値 [last] (時刻 [lastAt]) と違うか、
@@ -73,11 +81,6 @@ object ReadPlan {
     fun shouldRecordChange(v: Double, last: Double?, lastAt: Long?, now: Long): Boolean =
         last == null || lastAt == null || v != last || now - lastAt >= CHANGE_HEARTBEAT_MS
 
-    /** 記録を残す期間 (ミリ秒)。グラフが複数あれば一番長いもの。グラフが無ければ 3 か月 */
-    fun retentionMs(pages: List<Dashboard>): Long =
-        pages.flatMap { it.gauges }.filter { it.style == GaugeStyle.CHART }.maxOfOrNull { it.design.historyRetentionMs }
-            ?: (3 * HistoryStore.MONTH_MS)
-
     /**
      * 記録する項目 [due] を、表示用にすでに読んでいて値がある項目 (そのまま使う) と、記録のために読む項目に分ける
      */
@@ -85,4 +88,9 @@ object ReadPlan {
         val reuse = due.filter { it in activeKeys && live[it] != null }.associateWith { live.getValue(it) }
         return reuse to due.filter { it !in reuse }
     }
+}
+
+/** 折れ線グラフの記録の置き場所 (グラフごと)。ページとメーターの id から作る */
+object HistorySlot {
+    fun of(pageId: Long, gaugeId: Long): String = "$pageId:$gaugeId"
 }

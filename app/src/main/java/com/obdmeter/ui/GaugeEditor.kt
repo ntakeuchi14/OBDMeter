@@ -101,6 +101,8 @@ fun GaugeSettingsDialog(
     catalog: PidCatalog,
     supported: Set<Int>?,
     liveValue: Double?,
+    /** プレビューのグラフに出す記録 */
+    historySlot: String?,
     onChange: (GaugeConfig) -> Unit,
     onBringToFront: () -> Unit,
     onDelete: () -> Unit,
@@ -162,6 +164,7 @@ fun GaugeSettingsDialog(
                                     series = if (draft.style == GaugeStyle.CHART || draft.style == GaugeStyle.TABLE) {
                                         chartSeries(draft, def, mapOf(def.key to (previewValue ?: 0.0)), catalog)
                                     } else emptyList(),
+                                    historySlot = historySlot,
                                 )
                             } else {
                                 Text("項目が見つかりません", color = GaugeColors.SubText)
@@ -1047,6 +1050,7 @@ private fun ChartSettings(
         d.recordOnlyWhenShown) { v -> update { it.copy(recordOnlyWhenShown = v) } }
 
     Head("記録する間隔")
+    Hint("記録はグラフごとに別々です。同じ項目をほかのグラフでも使っていても、このグラフの設定で記録します (新しく置いたグラフは空から始まります)。")
     val interval = d.recordIntervalSec.toInt().coerceIn(HistoryStore.MIN_INTERVAL_SEC, HistoryStore.MAX_INTERVAL_SEC)
     SwitchLine("変化したときだけ記録する",
         "記録する間隔を使わず、項目の取得周期 (設定画面) ごとに値を見て、前回記録した値から変わったときだけ記録します。" +
@@ -1055,7 +1059,7 @@ private fun ChartSettings(
     if (d.recordOnChange) {
         Hint(
             "取得周期を設定していない項目は 0.2 秒ごとに値を見ます。このページを表示していない間に記録のために読む項目は、" +
-                "1 秒に 1 回までにします。同じ項目を間隔で記録するグラフがほかにあれば、そちらに合わせて毎回記録します。"
+                "1 秒に 1 回までにします。"
         )
     } else {
         SliderLine("間隔 (秒)", interval.toFloat(), HistoryStore.MIN_INTERVAL_SEC.toFloat()..HistoryStore.MAX_INTERVAL_SEC.toFloat(),

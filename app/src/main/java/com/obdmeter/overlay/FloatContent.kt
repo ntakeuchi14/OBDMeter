@@ -57,7 +57,8 @@ fun FloatGauge(
     val state by core.session.state.collectAsState()
     val fonts by core.fonts.collectAsState()
     // このウィンドウに出すメーター (単独なら 1 つ、グループなら複数)
-    val members = pages.firstNotNullOfOrNull { it.floatUnits()[unitKey] }.orEmpty()
+    val unitPage = pages.firstOrNull { it.floatUnits()[unitKey] != null }
+    val members = unitPage?.floatUnits()?.get(unitKey).orEmpty()
 
     CompositionLocalProvider(
         LocalContentColor provides GaugeColors.Text,
@@ -87,7 +88,8 @@ fun FloatGauge(
                                     .offset(cw * (g.x - b[0]), ch * (g.y - b[1]))
                                     .size(cw * g.w, ch * g.h)
                                     .padding(2.dp)
-                            ) { GaugeView(g, g.resolvedDef(catalog), values, supported, noCard = true, catalog = catalog) }
+                            ) { GaugeView(g, g.resolvedDef(catalog), values, supported, noCard = true, catalog = catalog,
+                                historySlot = unitPage?.let { com.obdmeter.data.HistorySlot.of(it.id, g.id) }) }
                         }
                     }
                 }

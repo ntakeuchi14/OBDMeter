@@ -36,27 +36,33 @@ class ReadPlanTest {
         assertEquals(mapOf("RPM" to "BMW_RPM"), fallbacks.mapValues { it.value.key })
     }
 
+    private fun target(page: Long, gauge: Long, key: String) = ReadPlan.RecordTarget(HistorySlot.of(page, gauge), key)
+
     @Test
-    fun recordIntervalsUseShortestAndRespectShownOnly() {
-        val hidden = ReadPlan.recordIntervals(pages, shownPage = 1)
-        assertEquals(mapOf("RPM" to 10_000L, "SPEED" to 10_000L, "COOLANT" to 10_000L), hidden)
-        val shown = ReadPlan.recordIntervals(pages, shownPage = 3)
-        assertEquals(2_000L, shown["RPM"])
-        assertEquals(2_000L, shown["BMW_COOLANT"])
-        assertEquals(10_000L, shown["SPEED"])
+    fun recordRulesArePerChartAndRespectShownOnly() {
+        val hidden = ReadPlan.recordRules(pages, shownPage = 1)
+        assertEquals(
+            setOf(target(2, 1, "RPM"), target(2, 1, "SPEED"), target(2, 1, "COOLANT")),
+            hidden.keys,
+        )
+        assertEquals(10_000L, hidden.getValue(target(2, 1, "RPM")).intervalMs)
+        val shown = ReadPlan.recordRules(pages, shownPage = 3)
+        assertEquals("同じ項目でもグラフごとに別の記録・別の間隔", 10_000L, shown.getValue(target(2, 1, "RPM")).intervalMs)
+        assertEquals(2_000L, shown.getValue(target(3, 2, "RPM")).intervalMs)
+        assertEquals(2_000L, shown.getValue(target(3, 2, "BMW_COOLANT")).intervalMs)
     }
 
     @Test
-    fun changeOnlyChartUsesPollIntervalAndDefersToFixedCharts() {
+    fun changeOnlyChartUsesPollInterval() {
         val onChange = GaugeConfig(
             pidKey = "OIL", style = GaugeStyle.CHART, id = 5, chartKeys = listOf("SPEED", "IAT"),
             design = GaugeDesign(recordOnChange = true),
         )
         val ps = pages + Dashboard(4, "変化だけ", gauges = listOf(onChange))
         val rules = ReadPlan.recordRules(ps, shownPage = 1, pollIntervals = mapOf("OIL" to 30_000L))
-        assertEquals(ReadPlan.RecordRule(30_000L, true), rules["OIL"])
-        assertEquals("取得周期が無ければ最短で見る", ReadPlan.RecordRule(ReadPlan.CHANGE_MIN_MS, true), rules["IAT"])
-        assertEquals("間隔で記録するグラフにもある項目は毎回記録", ReadPlan.RecordRule(ReadPlan.CHANGE_MIN_MS, false), rules["SPEED"])
+        assertEquals(ReadPlan.RecordRule(30_000L, true), rules[target(4, 5, "OIL")])
+        assertEquals("取得周期が無ければ最短で見る", ReadPlan.RecordRule(ReadPlan.CHANGE_MIN_MS, true), rules[target(4, 5, "IAT")])
+        assertEquals("ほかのグラフの同じ項目は自分の設定のまま", ReadPlan.RecordRule(10_000L, false), rules[target(2, 1, "SPEED")])
     }
 
     @Test
@@ -68,10 +74,13 @@ class ReadPlanTest {
     }
 
     @Test
-    fun retentionIsLongestChart() {
-        assertEquals(3 * HistoryStore.MONTH_MS, ReadPlan.retentionMs(pages))
-        assertEquals(24 * 3_600_000L, ReadPlan.retentionMs(listOf(pages[2])))
-        assertEquals("グラフが無ければ 3 か月", 3 * HistoryStore.MONTH_MS, ReadPlan.retentionMs(listOf(pages[0])))
+    fun retentionsAndKeysArePerChart() {
+        assertEquals(
+            mapOf(HistorySlot.of(2, 1) to 3 * HistoryStore.MONTH_MS, HistorySlot.of(3, 2) to 24 * 3_600_000L),
+            ReadPlan.retentions(pages),
+        )
+        assertEquals(listOf("BMW_COOLANT", "RPM"), ReadPlan.chartKeys(pages)[HistorySlot.of(3, 2)])
+        assertEquals("グラフが無ければ空", emptyMap<String, Long>(), ReadPlan.retentions(listOf(pages[0])))
     }
 
     @Test
