@@ -793,9 +793,12 @@ private fun DrawScope.drawBar(
     }
     if (peak != null) {
         val pp = fraction(def, peak)
-        val a = pointAt(pp, if (simpleLine) -baseThick * 0.5f + (thick - baseThick) / 2 else -baseThick * 0.3f)
-        val b = pointAt(pp, if (simpleLine) baseThick * 1.5f + (thick - baseThick) / 2 else thick + baseThick * 0.3f)
-        drawLine(look.peakColor, a, b, max(3f, baseThick * 0.25f))
+        // 印はその位置のバーの太さに合わせる (先細りの細いところでは短く・細く)
+        val h = max(th(pp), 2f)
+        val o = if (taper > 0f) 0f else (thick - baseThick) / 2
+        val a = pointAt(pp, o - h * 0.35f)
+        val b = pointAt(pp, o + h * 1.35f)
+        drawLine(look.peakColor, a, b, max(2f, h * 0.25f))
         if (look.showPeakValue) {
             val t = tm.measure("MAX " + def.format(peak),
                 TextStyle(color = look.peakColor, fontSize = (unit * 0.12f).toSp(), fontFamily = fonts.value))

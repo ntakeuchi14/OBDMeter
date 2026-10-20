@@ -225,12 +225,27 @@ internal fun TableGauge(series: List<ChartSeries>, look: GaugeLook, fonts: Gauge
                                 )
                                 if (look.showValue || inlineUnit) {
                                     Row(verticalAlignment = Alignment.Bottom) {
-                                        if (look.showValue) Text(
-                                            s.def.format(s.value),
-                                            color = if (isWarn(s.def, s.value)) GaugeColors.Warn else look.valueColor,
-                                            fontFamily = fonts.value, fontWeight = FontWeight.Bold,
-                                            fontSize = base * look.valueSize, maxLines = 1, softWrap = false,
-                                        )
+                                        if (look.showValue) {
+                                            val vColor = if (isWarn(s.def, s.value)) GaugeColors.Warn else look.valueColor
+                                            // 消えている 7 セグを後ろに置き、右端をそろえる
+                                            Box(contentAlignment = Alignment.CenterEnd) {
+                                                if (look.ghostDigits) Text(
+                                                    ghostText(s.def),
+                                                    color = look.valueColor.copy(alpha = look.ghostAlpha),
+                                                    fontFamily = fonts.value, fontWeight = FontWeight.Bold,
+                                                    fontSize = base * look.valueSize, maxLines = 1, softWrap = false,
+                                                )
+                                                Text(
+                                                    s.def.format(s.value),
+                                                    color = vColor,
+                                                    fontFamily = fonts.value, fontWeight = FontWeight.Bold,
+                                                    fontSize = base * look.valueSize, maxLines = 1, softWrap = false,
+                                                    style = androidx.compose.ui.text.TextStyle(
+                                                        shadow = glowShadow(vColor, look.glow, with(density) { (base * look.valueSize).toPx() }),
+                                                    ),
+                                                )
+                                            }
+                                        }
                                         // 単位を値のすぐ後ろに付ける
                                         if (inlineUnit && s.def.unitText.isNotEmpty()) Text(
                                             " " + s.def.unitText,
@@ -374,6 +389,7 @@ internal fun ChartGauge(
                             s.def.format(shown) + if (look.showUnit) " ${s.def.unitText}" else "",
                             color = chartColor(look, i), fontFamily = fonts.value, fontWeight = FontWeight.Bold,
                             fontSize = (13 * look.valueSize).sp, maxLines = 1,
+                            style = androidx.compose.ui.text.TextStyle(shadow = glowShadow(chartColor(look, i), look.glow, 30f)),
                         )
                     }
                 }
@@ -506,6 +522,12 @@ internal fun ChartGauge(
                     val path = Path()
                     pts.forEachIndexed { idx, p -> if (idx == 0) path.moveTo(x(p), y(p)) else path.lineTo(x(p), y(p)) }
                     clipRect(padL, 0f, padL + pw, plotH) {
+                        // 発光: 太く薄い線を下に重ねてにじませる
+                        if (look.glow > 0f) {
+                            val gw = 2.dp.toPx() + 8.dp.toPx() * look.glow
+                            drawPath(path, color.copy(alpha = 0.15f * look.glow), style = Stroke(gw * 1.8f, cap = StrokeCap.Round, join = StrokeJoin.Round))
+                            drawPath(path, color.copy(alpha = 0.30f * look.glow), style = Stroke(gw, cap = StrokeCap.Round, join = StrokeJoin.Round))
+                        }
                         drawPath(path, color, style = Stroke(2.dp.toPx(), cap = StrokeCap.Round, join = StrokeJoin.Round))
                         // 点がまばらなときは記録した位置に点を打つ
                         val visible = pts.count { axis.toC(it.t) in cStart..cEnd }

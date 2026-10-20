@@ -609,9 +609,11 @@ private fun ColorTab(g: GaugeConfig, update: ((GaugeDesign) -> GaugeDesign) -> U
     FontLine("文字 (目盛りの数字・名前・単位)", d.labelFont?.let { lib[it]?.name ?: "(削除されたフォント)" } ?: "既定") { onPickFont("label") }
 
     ColorLine("メーターの色 (現在値の弧・バー)", d.color, GaugeColors.Accent) { c -> update { it.copy(color = c) } }
-    if (g.style == GaugeStyle.BAR || g.style == GaugeStyle.DIGITAL) {
+    if (g.style in setOf(GaugeStyle.BAR, GaugeStyle.DIGITAL, GaugeStyle.TABLE, GaugeStyle.CHART)) {
         Head("蛍光管風")
         SliderLine("発光 (にじみ)", d.glow * 100, 0f..100f, "%.0f%%") { v -> update { it.copy(glow = snap(v, 5f) / 100f) } }
+    }
+    if (g.style in setOf(GaugeStyle.BAR, GaugeStyle.DIGITAL, GaugeStyle.TABLE)) {
         SwitchLine("消えている 7 セグを薄く表示", "数値の後ろに「888」をうっすら出します (7 セグ風のフォントと合わせて使います)", d.ghostDigits) { v ->
             update { it.copy(ghostDigits = v) }
         }
