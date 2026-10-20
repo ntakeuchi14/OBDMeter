@@ -97,6 +97,8 @@ class AppCore private constructor(context: Context) {
     @Volatile var reconnectOnReturn = false
 
     init {
+        // 項目一覧 (約 1,200 項目) を裏で先に作っておく (画面の最初の描画を待たせない)
+        scope.launch(kotlinx.coroutines.Dispatchers.Default) { com.obdmeter.core.Pids.get("RPM") }
         scope.launch {
             // 保存内容を読み、上の StateFlow にも反映されるのを待つ (念のため最大 3 秒)
             val d = repo.dashboards.first()

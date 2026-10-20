@@ -35,10 +35,12 @@ android {
         debug {
             signingConfig = signingConfigs.getByName("debug")
         }
+        // 普段使う版。コードを最適化・縮小して起動と描画を速くする (署名はデバッグ版と同じ鍵なので上書きできる)
         release {
             signingConfig = signingConfigs.getByName("debug")
-            isMinifyEnabled = false
-            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"))
+            isMinifyEnabled = true
+            isShrinkResources = true
+            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
         }
     }
 
@@ -65,6 +67,8 @@ dependencies {
     implementation("androidx.compose.ui:ui-tooling-preview")
     debugImplementation("androidx.compose.ui:ui-tooling")
 
+    // ストアを通さずに入れた APK でも、ライブラリの起動用プロファイルを事前コンパイルさせる (起動が速くなる)
+    implementation("androidx.profileinstaller:profileinstaller:1.4.1")
     implementation("androidx.core:core-ktx:1.16.0")
     implementation("androidx.activity:activity-compose:1.10.1")
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.9.0")

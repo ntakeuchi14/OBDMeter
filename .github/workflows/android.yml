@@ -41,6 +41,12 @@ jobs:
           set -o pipefail
           ./gradlew --no-daemon assembleDebug 2>&1 | tee -a build.log
 
+      # 普段使う版 (最適化あり・起動が速い)
+      - name: Build release APK
+        run: |
+          set -o pipefail
+          ./gradlew --no-daemon assembleRelease 2>&1 | tee -a build.log
+
       # コンパイルエラーをアノテーションとして出す (Actions の画面や API から原因を読めるように)
       - name: Report compile errors
         if: failure()
@@ -61,6 +67,7 @@ jobs:
         run: |
           VERSION=$(git describe --tags --always)
           cp app/build/outputs/apk/debug/app-debug.apk "OBDMeter-${VERSION}-debug.apk"
+          cp app/build/outputs/apk/release/app-release.apk "OBDMeter-${VERSION}-release.apk"
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
@@ -69,9 +76,18 @@ jobs:
           path: OBDMeter-*-debug.apk
           retention-days: 30
 
+      - name: Upload release APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: OBDMeter-release-apk
+          path: OBDMeter-*-release.apk
+          retention-days: 30
+
       # v0.1.0 のようなタグを push したときは GitHub Releases にも APK を添付
       - name: Attach APK to release
         if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
-          files: OBDMeter-*-debug.apk
+          files: |
+            OBDMeter-*-release.apk
+            OBDMeter-*-debug.apk

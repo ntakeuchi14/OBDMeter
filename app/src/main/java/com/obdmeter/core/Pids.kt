@@ -38,7 +38,8 @@ object Pids {
     }
     private fun ab(d: IntArray) = (d[0] * 256 + d[1]).toDouble()
 
-    val ALL: List<PidDef> = listOf(
+    /** 全項目 (BMW の一覧の読み込みに少し時間がかかるので、初めて使うときに作る。起動時に裏で先に作っておく) */
+    val ALL: List<PidDef> by lazy { listOf(
         PidDef("RPM", "エンジン回転数", "回転数", "rpm", 0.0, 8000.0, warnAbove = 7000.0, displayStep = 10.0,
             pid = 0x0C, minBytes = 2, decode = { ab(it) / 4.0 }),
         PidDef("SPEED", "車速", "車速", "km/h", 0.0, 260.0, pid = 0x0D, decode = ::a),
@@ -100,9 +101,9 @@ object Pids {
                 if (maf == null || spd == null || maf < 0.1) null
                 else (spd / (maf * 3600 / 14.7 / 745)).coerceAtMost(99.9)
             }),
-    ) + BmwItems.ALL + DeviceItems.ALL
+    ) + BmwItems.ALL + DeviceItems.ALL }
 
-    private val byKey = ALL.associateBy { it.key }
+    private val byKey by lazy { ALL.associateBy { it.key } }
 
     fun get(key: String): PidDef? = byKey[key]
 
