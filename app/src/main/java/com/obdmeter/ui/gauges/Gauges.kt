@@ -492,10 +492,21 @@ fun AnalogGauge(
         val valueX = center.x + gaugeR * look.valueOffsetX
         if (look.showValue) {
             val valueText = if (unsupported) "非対応" else def.format(value)
-            drawCenteredText(tm, valueText, Offset(valueX, valueY),
-                TextStyle(color = if (warn) GaugeColors.Warn else look.valueColor,
-                    fontSize = (d * (if (unsupported) 0.09f else 0.13f) * look.valueSize).toSp(),
-                    fontWeight = FontWeight.Bold, fontFamily = fonts.value))
+            val vColor = if (warn) GaugeColors.Warn else look.valueColor
+            val vSize = d * (if (unsupported) 0.09f else 0.13f) * look.valueSize
+            val style = TextStyle(color = vColor, fontSize = vSize.toSp(), fontWeight = FontWeight.Bold, fontFamily = fonts.value,
+                shadow = glowShadow(vColor, look.glow, vSize))
+            if (look.ghostDigits && !unsupported) {
+                // 消えている 7 セグ (8) を中央に置き、数値はその右端にそろえる
+                val ghost = tm.measure(ghostText(def), style.copy(color = look.valueColor.copy(alpha = look.ghostAlpha), shadow = null))
+                val gx = valueX - ghost.size.width / 2f
+                val gy = valueY - ghost.size.height / 2f
+                drawText(ghost, topLeft = Offset(gx, gy))
+                val vl = tm.measure(valueText, style)
+                drawText(vl, topLeft = Offset(gx + ghost.size.width - vl.size.width, gy))
+            } else {
+                drawCenteredText(tm, valueText, Offset(valueX, valueY), style)
+            }
         }
         if (look.showUnit) {
             drawCenteredText(tm, def.unitText + scale.unitSuffix,
