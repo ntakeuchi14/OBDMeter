@@ -32,8 +32,6 @@ object ReadPlan {
     const val CHANGE_MIN_MS = 200L
     /** 変化したときだけ記録する項目を、表示していないので記録のために読むときの最短の間隔 */
     const val CHANGE_SAMPLE_MIN_MS = 1_000L
-    /** 変化したときだけ記録する項目でも、変化が無いままこの時間が過ぎたら同じ値を記録する (線を途切れさせない) */
-    const val CHANGE_HEARTBEAT_MS = 60_000L
 
     /**
      * 記録のしかた。[intervalMs] ごとに値を見て、[onChangeOnly] なら前回記録した値から変わったときだけ記録する
@@ -73,13 +71,6 @@ object ReadPlan {
     /** グラフごとの使っている項目 (以前の共有の記録を振り分けるため) */
     fun chartKeys(pages: List<Dashboard>): Map<String, List<String>> =
         charts(pages).associate { (p, g) -> HistorySlot.of(p.id, g.id) to g.chartAllKeys }
-
-    /**
-     * 「変化したときだけ」の項目で、今回の値 [v] を記録するか。前回記録した値 [last] (時刻 [lastAt]) と違うか、
-     * 変化が無いまま [CHANGE_HEARTBEAT_MS] が過ぎていれば記録する
-     */
-    fun shouldRecordChange(v: Double, last: Double?, lastAt: Long?, now: Long): Boolean =
-        last == null || lastAt == null || v != last || now - lastAt >= CHANGE_HEARTBEAT_MS
 
     /**
      * 記録する項目 [due] を、表示用にすでに読んでいて値がある項目 (そのまま使う) と、記録のために読む項目に分ける

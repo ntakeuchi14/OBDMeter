@@ -31,16 +31,19 @@ class HistoryStore(context: Context, private val scope: CoroutineScope) {
         const val CSV_HEADER = HistoryCsv.HEADER
     }
 
-    private class Helper(context: Context) : SQLiteOpenHelper(context, "history.db", null, 3) {
+    private class Helper(context: Context) : SQLiteOpenHelper(context, "history.db", null, 4) {
         override fun onCreate(db: SQLiteDatabase) {
             // 同じグラフ・同じ項目・同じ時刻の記録は 1 つだけ (読み込みで重ねても増えない)
+            // c = 1: 1 つ前の行から途切れずに値を見ていた (変化したときだけ記録するグラフで、間は同じ値が続いていた)
             db.execSQL(
                 "CREATE TABLE samples (g TEXT NOT NULL, k TEXT NOT NULL, t INTEGER NOT NULL, v REAL NOT NULL, " +
-                    "PRIMARY KEY (g, k, t)) WITHOUT ROWID"
+                    "c INTEGER NOT NULL DEFAULT 0, PRIMARY KEY (g, k, t)) WITHOUT ROWID"
             )
         }
         override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
-            if (oldVersion == 2) {
+            if (oldVersion == 3) {
+                db.execSQL("ALTER TABLE samples ADD COLUMN c INTEGER NOT NULL DEFAULT 0")
+            } else if (oldVersion == 2) {
                 // 項目ごとに共有していた記録は、いったんグラフ未定 ("") として残し、
                 // 起動後にその項目を使っているグラフへ振り分ける ([adoptShared])
                 db.execSQL("ALTER TABLE samples RENAME TO samples_old")
@@ -77,6 +80,30 @@ class HistoryStore(context: Context, private val scope: CoroutineScope) {
                 delay(600_000L)
             }
         }
+    }
+
+    /** 「変化したときだけ記録する」グラフの行 ([ChangeRecorder] が決めたもの) を書く */
+    suspend fun storeRows(rows: List<HistoryRow>) = withContext(Dispatchers.IO) {
+        if (rows.isEmpty()) return@withContext
+        runCatching {
+            db.beginTransaction()
+            try {
+                val cv = ContentValues()
+                for (r in rows) {
+                    r.replaceT?.let { old ->
+                        if (old != r.t) db.delete("samples", "g = ? AND k = ? AND t = ?", arrayOf(r.slot, r.key, old.toString()))
+                    }
+                    cv.clear()
+                    cv.put("g", r.slot); cv.put("k", r.key); cv.put("t", r.t / 1000 * 1000); cv.put("v", r.v)
+                    cv.put("c", if (r.cont) 1 else 0)
+                    db.insertWithOnConflict("samples", null, cv, SQLiteDatabase.CONFLICT_REPLACE)
+                }
+                db.setTransactionSuccessful()
+            } finally {
+                db.endTransaction()
+            }
+        }
+        _revision.value++
     }
 
     /** 値を記録する ([rows] はグラフ → 項目キー → 値)。時刻は秒単位に丸める */
@@ -153,7 +180,21 @@ class HistoryStore(context: Context, private val scope: CoroutineScope) {
                 ).use { c ->
                     val buckets = ArrayList<Pair<Long, Long>>()
                     while (c.moveToNext()) buckets += c.getLong(1) to c.getLong(2)
-                    out += HistoryCsv.mergeSegments(buckets, gapMs)
+                    // 途切れずに値を見ていた行 (c = 1) は、1 つ前の行との間も記録のある時間に含める
+                    // (変化したときだけ記録するグラフで、同じ値が続いて行が離れていても詰めない)
+                    db.rawQuery(
+                        "SELECT (SELECT MAX(p.t) FROM samples p WHERE p.g = s.g AND p.k = s.k AND p.t < s.t), s.t " +
+                            "FROM samples s WHERE s.g = ? AND s.k IN (${keys.joinToString(",") { "?" }}) AND s.c = 1 AND s.t >= ?",
+                        arrayOf(slot) + keys.toTypedArray() + arrayOf(from.toString()),
+                    ).use { r ->
+                        while (r.moveToNext()) {
+                            if (r.isNull(0)) continue
+                            val a = maxOf(r.getLong(0), from)
+                            val b = minOf(r.getLong(1), to)
+                            if (a <= b) buckets += a to b
+                        }
+                    }
+                    out += HistoryCsv.mergeSegments(buckets.sortedBy { it.first }, gapMs)
                 }
             }
             out

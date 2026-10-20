@@ -156,8 +156,7 @@ class AppCore private constructor(context: Context) {
         // 「変化したときだけ記録する」項目は、項目の取得周期ごとに値を見て、前回記録した値から変わったときだけ記録する
         scope.launch {
             val nextDue = HashMap<ReadPlan.RecordTarget, Long>()
-            val lastValue = HashMap<ReadPlan.RecordTarget, Double>()
-            val lastAt = HashMap<ReadPlan.RecordTarget, Long>()
+            val changes = com.obdmeter.data.ChangeRecorder()
             var wasConnected = false
             while (true) {
                 delay(ReadPlan.CHANGE_MIN_MS)
@@ -165,7 +164,10 @@ class AppCore private constructor(context: Context) {
                 if (connected && !wasConnected) nextDue.keys.removeAll { !it.key.startsWith("DEV_") }
                 wasConnected = connected
                 val now = System.currentTimeMillis()
-                val due = recordRules.filter { (t, _) -> (nextDue[t] ?: 0L) <= now && (connected || t.key.startsWith("DEV_")) }
+                val rules = recordRules
+                // 記録しなくなった項目 (表示中だけのグラフのページを離れた など) は、最後に見た時刻まで書いて終える
+                history.storeRows(changes.retain(rules.keys))
+                val due = rules.filter { (t, _) -> (nextDue[t] ?: 0L) <= now && (connected || t.key.startsWith("DEV_")) }
                 if (due.isEmpty()) continue
                 // 同じ項目を複数のグラフで記録するときも、読むのは 1 回
                 val dueKeys = due.keys.mapTo(HashSet()) { it.key }
@@ -178,18 +180,17 @@ class AppCore private constructor(context: Context) {
                 val read = reuse + got
                 val time = System.currentTimeMillis()
                 val rows = HashMap<String, HashMap<String, Double>>()
-                for ((t, rule) in due) {
-                    val v = read[t.key] ?: continue
-                    if (rule.onChangeOnly && !ReadPlan.shouldRecordChange(v, lastValue[t], lastAt[t], time)) continue
-                    rows.getOrPut(t.slot) { HashMap() }[t.key] = v
-                    lastValue[t] = v
-                    lastAt[t] = time
-                }
-                history.store(rows, time)
+                val changeRows = ArrayList<com.obdmeter.data.HistoryRow>()
                 for ((t, rule) in due) {
                     // 表示していない項目を記録のために読むときは、変化だけの記録でも 1 秒に 1 回まで
-                    nextDue[t] = now + if (t.key in need && !t.key.startsWith("DEV_")) maxOf(rule.intervalMs, ReadPlan.CHANGE_SAMPLE_MIN_MS) else rule.intervalMs
+                    val ms = if (t.key in need && !t.key.startsWith("DEV_")) maxOf(rule.intervalMs, ReadPlan.CHANGE_SAMPLE_MIN_MS) else rule.intervalMs
+                    nextDue[t] = now + ms
+                    val v = read[t.key] ?: continue
+                    if (rule.onChangeOnly) changeRows += changes.observe(t, v, time, ms)
+                    else rows.getOrPut(t.slot) { HashMap() }[t.key] = v
                 }
+                history.store(rows, time)
+                history.storeRows(changeRows)
             }
         }
     }

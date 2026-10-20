@@ -115,8 +115,8 @@ fun GaugeDesign.toLook(def: PidDef, style: GaugeStyle): GaugeLook {
         lampOnColor = lampOnColor.color(GaugeColors.Warn),
         lampOffColor = lampOffColor.color(Color(0xFF2A2F36)),
         chartSpanMs = chartSpanSec.coerceIn(60, 31 * 86_400) * 1000L,
-        // 変化したときだけ記録するグラフは、変化が無くても 1 分ごとに記録するので、その間隔で線の切れ目を判定する
-        chartIntervalMs = if (recordOnChange) com.obdmeter.data.ReadPlan.CHANGE_HEARTBEAT_MS
+        // 変化したときだけ記録するグラフは、値が続いていた区間を記録側で覚えているので、間隔は最短として扱う
+        chartIntervalMs = if (recordOnChange) 1_000L
             else (recordIntervalSec.coerceIn(1f, 600f) * 1000).toLong(),
         chartSkipGaps = chartSkipGaps,
         tableMaxRows = tableMaxRows.coerceIn(1, 30),

@@ -66,14 +66,6 @@ class ReadPlanTest {
     }
 
     @Test
-    fun recordsOnlyChangesOrHeartbeat() {
-        assertEquals(true, ReadPlan.shouldRecordChange(1.0, null, null, 0))
-        assertEquals(false, ReadPlan.shouldRecordChange(1.0, 1.0, 0, 1_000))
-        assertEquals(true, ReadPlan.shouldRecordChange(2.0, 1.0, 0, 1_000))
-        assertEquals(true, ReadPlan.shouldRecordChange(1.0, 1.0, 0, ReadPlan.CHANGE_HEARTBEAT_MS))
-    }
-
-    @Test
     fun retentionsAndKeysArePerChart() {
         assertEquals(
             mapOf(HistorySlot.of(2, 1) to 3 * HistoryStore.MONTH_MS, HistorySlot.of(3, 2) to 24 * 3_600_000L),

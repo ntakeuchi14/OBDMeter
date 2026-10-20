@@ -276,7 +276,7 @@ data class GaugeDesign(
     val recordIntervalSec: Float = 60f,
     /**
      * 折れ線グラフ: 記録する間隔を使わず、項目の取得周期で値を見て、前回記録した値から変わったときだけ記録する
-     * (変化が無くても [com.obdmeter.data.ReadPlan.CHANGE_HEARTBEAT_MS] ごとに 1 回は記録し、線を途切れさせない)
+     * (変わらない間は、最後に見た時刻の行を 1 つだけ持って更新する。[com.obdmeter.data.ChangeRecorder])
      */
     val recordOnChange: Boolean = false,
     /** 折れ線グラフで、どの項目にも記録が無い時間を詰めて表示する */
