@@ -1,23 +1,33 @@
 package com.obdmeter.session
 
 import com.obdmeter.core.CommLogger
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.flow
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
 data class LogLine(val id: Long, val time: String, val direction: CommLogger.Direction, val text: String)
 
-/** 通信ログを直近 [capacity] 行だけ保持する。実車での原因調査用。 */
+/**
+ * 通信ログを直近 [capacity] 行だけ保持する。実車での原因調査用。
+ * 記録は 1 行足すだけの軽い処理。画面用の一覧のコピーは、ログ画面を開いている間だけ 0.2 秒ごとに作る
+ */
 class LogBuffer(private val capacity: Int = 800) : CommLogger {
     private val lines = ArrayDeque<LogLine>()
     private var nextId = 0L
     private val fmt = SimpleDateFormat("HH:mm:ss.SSS", Locale.US)
 
-    private val _snapshot = MutableStateFlow<List<LogLine>>(emptyList())
-    val snapshot: StateFlow<List<LogLine>> = _snapshot.asStateFlow()
+    /** ログの一覧 (集めている間だけ動く。変わったときだけ流す) */
+    val snapshot: Flow<List<LogLine>> = flow {
+        var sent = -1L
+        while (true) {
+            val (id, copy) = synchronized(lines) { if (nextId == sent) sent to null else nextId to lines.toList() }
+            if (copy != null) { emit(copy); sent = id }
+            delay(200)
+        }
+    }
 
     @Volatile
     var enabled = true
@@ -27,14 +37,13 @@ class LogBuffer(private val capacity: Int = 800) : CommLogger {
         synchronized(lines) {
             lines.addLast(LogLine(nextId++, fmt.format(Date()), direction, text))
             while (lines.size > capacity) lines.removeFirst()
-            _snapshot.value = lines.toList()
         }
     }
 
     fun clear() {
         synchronized(lines) {
             lines.clear()
-            _snapshot.value = emptyList()
+            nextId++
         }
     }
 

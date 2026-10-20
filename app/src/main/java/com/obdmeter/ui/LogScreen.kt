@@ -36,7 +36,7 @@ import com.obdmeter.ui.gauges.GaugeColors
 /** 送受信の生データを表示する。実車でうまく動かないときの調査用 (共有ボタンでテキスト送信可)。 */
 @Composable
 fun LogScreen(vm: MainViewModel, onBack: () -> Unit) {
-    val lines by vm.log.snapshot.collectAsStateWithLifecycle()
+    val lines by vm.log.snapshot.collectAsStateWithLifecycle(initialValue = emptyList())
     var follow by remember { mutableStateOf(true) }
     val listState = rememberLazyListState()
     val context = LocalContext.current
