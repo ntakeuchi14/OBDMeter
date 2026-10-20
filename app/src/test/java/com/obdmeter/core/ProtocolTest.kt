@@ -575,3 +575,58 @@ class ProtocolTest {
         assertNull(values["BMW_OIL_PRESSURE"])
     }
 }
+
+/** エコーせず、応答の前に余計なバイト (00 00 など) を付ける K+DCAN ケーブル (実車の接続テストで見られた形) */
+class FakeJunkDcan(private val replies: Map<String, IntArray>, private val junk: IntArray = intArrayOf(0x00, 0x00)) : FakeTransport() {
+    override fun respond(data: ByteArray) {
+        val t = BmwFastProtocol.parseTelegram(data) ?: return
+        val reply = replies[Hex.of(t.data)] ?: intArrayOf(0x7F, t.data[0], 0x12)
+        push(junk.map { it.toByte() }.toByteArray())
+        push(BmwFastProtocol.buildTelegram(0xF1, t.target, reply))
+    }
+}
+
+class DcanJunkTest {
+    @Test
+    fun readsResponseAfterJunkWithoutEcho() {
+        val dcan = FakeJunkDcan(mapOf("01 0C" to intArrayOf(0x41, 0x0C, 0x0B, 0xB8)))
+        val p = BmwFastProtocol(dcan)
+        assertArrayEquals(intArrayOf(0x0B, 0xB8), p.readPid(0x0C))
+    }
+
+    @Test
+    fun skipsJunkThatLooksLikeHeader() {
+        // 0xF0 (上位ビット 11) や 0x83 (ヘッダーに見えるがチェックサムが合わない) の後ろにある本物を読む
+        val dcan = FakeJunkDcan(mapOf("1A 80" to intArrayOf(0x5A, 0x80, 0x01, 0x02)), junk = intArrayOf(0x00, 0x00, 0xF0, 0x83, 0x38))
+        val p = BmwFastProtocol(dcan)
+        assertArrayEquals(intArrayOf(0x01, 0x02), p.query(PidRequest(0x1A, intArrayOf(0x80))))
+    }
+
+    @Test
+    fun refusalIsReportedAsVehicleResponding() {
+        val dcan = FakeJunkDcan(emptyMap())
+        val p = BmwFastProtocol(dcan)
+        assertNull(p.readPid(0x00))
+        assertTrue(p.lastResponded) // 7F 01 12 = ECU は応答している
+    }
+
+    @Test
+    fun scansRealCableCapture() {
+        // 実車の接続テストの受信 (イグニッション ON): 00 00 86 F1 12 41 00 BF BE A8 93 82
+        val rx = intArrayOf(0x00, 0x00, 0x86, 0xF1, 0x12, 0x41, 0x00, 0xBF, 0xBE, 0xA8, 0x93, 0x82).map { it.toByte() }.toByteArray()
+        val t = BmwFastProtocol.scanTelegrams(rx).single()
+        assertEquals(0xF1, t.target)
+        assertEquals(0x12, t.source)
+        assertArrayEquals(intArrayOf(0x41, 0x00, 0xBF, 0xBE, 0xA8, 0x93), t.data)
+        // 長い応答 (1A 80): 00 00 F0 9F F1 12 5A 80 … 37
+        val long = ("00 00 F0 9F F1 12 5A 80 00 00 07 61 64 31 00 18 00 00 41 31 20 08 08 06 04 FF FF FF 00 00 00 00 00 00 FF FF FF 37")
+            .split(" ").map { it.toInt(16).toByte() }.toByteArray()
+        assertEquals(0x5A, BmwFastProtocol.scanTelegrams(long).single().data[0])
+    }
+
+    @Test
+    fun stillWorksWithEchoingCable() {
+        val p = BmwFastProtocol(FakeDcan(mapOf("01 0C" to intArrayOf(0x41, 0x0C, 0x1A, 0xF8))))
+        assertArrayEquals(intArrayOf(0x1A, 0xF8), p.readPid(0x0C))
+    }
+}

@@ -27,7 +27,7 @@ class ConnectionTest(private val context: Context, private val log: CommLogger) 
         fun line(s: String) { out(s); log.log(CommLogger.Direction.INFO, "[テスト] $s") }
 
         line("== 接続テスト ==")
-        line("設定: ${settings.connectionType.name} / ${settings.usbAdapter.name} / ELM ${settings.elmBaudRate}bps ATSP${settings.elmProtocol} / DCAN 0x%02X エコー=${settings.dcanEcho}".format(settings.dcanTargetAddress))
+        line("設定: ${settings.connectionType.name} / ${settings.usbAdapter.name} / ELM ${settings.elmBaudRate}bps ATSP${settings.elmProtocol} / DCAN 0x%02X".format(settings.dcanTargetAddress))
         if (settings.connectionType == ConnectionType.SIMULATOR) {
             line("接続方式がシミュレーターです。設定で「USB 接続」にしてから実行してください。")
             return@withContext
@@ -154,16 +154,18 @@ class ConnectionTest(private val context: Context, private val log: CommLogger) 
                 t.purge()
                 t.write(probe)
                 val rx = readFor(t, 800)
-                val echo = rx.size >= probe.size && rx.copyOfRange(0, probe.size).contentEquals(probe)
-                val rest = if (echo) rx.copyOfRange(probe.size, rx.size) else rx
+                // 受信からテレグラムを探す (エコーや前に付く余計なバイトは読み飛ばす)
+                val tels = BmwFastProtocol.scanTelegrams(rx)
+                val echo = tels.any { it.target == target && it.source == 0xF1 }
+                val ecu = tels.any { it.target == 0xF1 && it.source == target }
                 val score = when {
-                    echo && rest.isNotEmpty() -> 2
-                    echo || rx.isNotEmpty() -> 1
+                    ecu -> 2
+                    rx.isNotEmpty() -> 1
                     else -> 0
                 }
                 val verdict = when (score) {
-                    2 -> "○ エコー + ECU 応答あり"
-                    1 -> if (echo) "△ エコーのみ (ECU 応答なし)" else "△ 何か受信 (エコーではない)"
+                    2 -> "○ ECU 応答あり" + if (echo) " (エコーあり)" else " (エコーなし)"
+                    1 -> if (echo) "△ エコーのみ (ECU 応答なし)" else "△ 何か受信 (テレグラムとして読めない)"
                     else -> "✗ 受信なし"
                 }
                 line("DTR=${on(dtr)} RTS=${on(rts)}: $verdict  受信${rx.size}バイト ${Hex.of(rx.take(48).toByteArray())}")
@@ -186,14 +188,22 @@ class ConnectionTest(private val context: Context, private val log: CommLogger) 
                 t.purge()
                 t.write(tel)
                 val rx = readFor(t, 1500)
-                val body = if (rx.size >= tel.size && rx.copyOfRange(0, tel.size).contentEquals(tel)) rx.copyOfRange(tel.size, rx.size) else rx
                 line("$name → 送信 ${Hex.of(tel)}")
-                line("    受信 ${Hex.of(body.take(64).toByteArray()).ifEmpty { "(なし)" }}")
+                line("    受信 ${Hex.of(rx.take(64).toByteArray()).ifEmpty { "(なし)" }}")
+                val reply = BmwFastProtocol.scanTelegrams(rx).firstOrNull { it.target == 0xF1 && it.source == target }
+                if (reply != null) {
+                    val d = reply.data
+                    val meaning = if (d.isNotEmpty() && d[0] == 0x7F) "否定応答 (NRC=%02X)".format(d.getOrElse(2) { 0 }) else "肯定応答"
+                    line("    → ECU の応答: ${Hex.of(d)} ($meaning)")
+                }
             }
 
             line("--- 判定 ---")
             when (bestScore) {
-                2 -> line("ケーブルと車両 (ECU 0x%02X) は通信できています。上の応答を共有してください。".format(target))
+                2 -> {
+                    line("ケーブルと車両 (ECU 0x%02X) は通信できています。".format(target))
+                    line("・否定応答 7F xx 22 はイグニッション OFF などで条件がそろっていないときの応答です (通信自体はできています)")
+                }
                 1 -> {
                     line("ケーブルは反応していますが、車両の ECU が応答していません。")
                     line("・イグニッション ON (エンジン始動) で再実行してください")
@@ -202,7 +212,7 @@ class ConnectionTest(private val context: Context, private val log: CommLogger) 
                 else -> {
                     line("ケーブルから何も返ってきません。")
                     line("・ケーブルが OBD ポートに刺さっているか (ケーブルは車両の電源で動きます)")
-                    line("・INPA 用に改造された K+DCAN ケーブルか (エコーの無いケーブルは設定でエコー除去を OFF に)")
+                    line("・INPA 用に改造された K+DCAN ケーブルか")
                 }
             }
         } finally {

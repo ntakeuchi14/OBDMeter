@@ -158,9 +158,7 @@ fun SettingsScreen(vm: MainViewModel, onBack: () -> Unit, onOpenCustomPids: () -
                     keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Characters),
                     modifier = Modifier.fillMaxWidth(),
                 )
-                SwitchRow("ケーブルのエコーを除去", "通常の K+DCAN ケーブルは ON", s.dcanEcho) { v ->
-                    vm.updateSettings { it.copy(dcanEcho = v) }
-                }
+                Text("ケーブルのエコーや、応答の前に付く余計なバイトは自動で読み飛ばします", color = GaugeColors.SubText, fontSize = 12.sp)
             }
 
             Section("フロート表示")
