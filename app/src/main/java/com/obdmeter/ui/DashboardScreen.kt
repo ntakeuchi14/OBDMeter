@@ -107,8 +107,13 @@ fun DashboardScreen(vm: MainViewModel, onNavigate: (Screen) -> Unit, onCreateCus
     /** メーター追加の項目選択ダイアログ (null = 閉じる) */
     var pickerFor by remember { mutableStateOf<Long?>(null) }
     var arrangeMenu by remember { mutableStateOf(false) }
+    /** グループにするメーターを選んでいる (編集中) */
+    var selecting by remember { mutableStateOf(false) }
+    var selected by remember { mutableStateOf(emptySet<Long>()) }
 
     val current = dashboards.getOrNull(pager.currentPage)
+    // ページを変えた・編集をやめたら選択をやめる
+    LaunchedEffect(current?.id, editing) { selecting = false; selected = emptySet() }
 
     // 表示中のページの項目だけを読み出す
     // iDrive・方向キーでのページ切替 (最後のページの次は先頭に戻る)
@@ -146,8 +151,12 @@ fun DashboardScreen(vm: MainViewModel, onNavigate: (Screen) -> Unit, onCreateCus
             modifier.fillMaxWidth().padding(start = 8.dp, end = 20.dp, top = 4.dp, bottom = 4.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            if (editing) {
-                Text("レイアウト編集中: ドラッグで移動、右下の ◢ でサイズ変更、タップで設定、長押しでコピー",
+            if (editing && selecting) {
+                Text("グループにするメーターをタップして選んでください (グループのメーターはまとめて選ばれます)",
+                    color = GaugeColors.Peak, fontSize = 13.sp, modifier = Modifier.weight(1f),
+                    maxLines = 2, overflow = TextOverflow.Ellipsis)
+            } else if (editing) {
+                Text("レイアウト編集中: ドラッグで移動、右下の ◢ でサイズ変更、タップで設定、長押しでコピー (グループはまとめて)",
                     color = GaugeColors.Accent, fontSize = 13.sp, modifier = Modifier.weight(1f),
                     maxLines = 2, overflow = TextOverflow.Ellipsis)
                 FilledTonalButton(onClick = { editing = false }) {
@@ -186,10 +195,24 @@ fun DashboardScreen(vm: MainViewModel, onNavigate: (Screen) -> Unit, onCreateCus
                     },
                     onTap = { g -> if (editing) settingsFor = g.id },
                     onCopy = { g ->
-                        vm.copyGauge(g)
-                        Toast.makeText(context, "コピーしました。下の「貼り付け」で、このページや別のページに貼り付けられます", Toast.LENGTH_LONG).show()
+                        val group = Layout.groups(d.gauges)[g.layoutGroup]
+                        if (group != null) vm.copyGauges(group) else vm.copyGauge(g)
+                        Toast.makeText(
+                            context,
+                            (if (group != null) "グループ (${group.size} 個) を" else "") +
+                                "コピーしました。下の「貼り付け」で、このページや別のページに貼り付けられます",
+                            Toast.LENGTH_LONG,
+                        ).show()
                     },
                     onCellAspect = vm::reportCellAspect,
+                    onCommitMany = { placements -> vm.placeGauges(d.id, placements) },
+                    selecting = selecting && d.id == current?.id,
+                    selected = selected,
+                    onToggleSelect = { g ->
+                        // グループのメーターはグループごと選ぶ
+                        val ids = Layout.groups(d.gauges)[g.layoutGroup]?.map { it.id }?.toSet() ?: setOf(g.id)
+                        selected = if (g.id in selected) selected - ids else selected + ids
+                    },
                 )
             }
         }
@@ -218,6 +241,19 @@ fun DashboardScreen(vm: MainViewModel, onNavigate: (Screen) -> Unit, onCreateCus
                     ) { Text("▶") }
                 }
                 Spacer(Modifier.weight(1f))
+                if (selecting) {
+                    val groupedSelected = current?.gauges?.any { it.id in selected && it.layoutGroup != null } == true
+                    FilledTonalButton(
+                        onClick = { current?.let { vm.groupGauges(it.id, selected) }; selecting = false; selected = emptySet() },
+                        enabled = selected.size >= 2,
+                    ) { Text("グループにする (${selected.size})") }
+                    OutlinedButton(
+                        onClick = { current?.let { vm.ungroupGauges(it.id, selected) }; selecting = false; selected = emptySet() },
+                        enabled = groupedSelected,
+                    ) { Text("グループ解除") }
+                    OutlinedButton(onClick = { selecting = false; selected = emptySet() }) { Text("やめる") }
+                } else {
+                OutlinedButton(onClick = { selecting = true; selected = emptySet() }, enabled = current != null) { Text("グループ") }
                 if (clipboard != null) {
                     FilledTonalButton(onClick = { current?.let { vm.pasteGauge(it.id) } }, enabled = current != null) {
                         Text("貼り付け")
@@ -238,6 +274,7 @@ fun DashboardScreen(vm: MainViewModel, onNavigate: (Screen) -> Unit, onCreateCus
                     }
                 }
                 OutlinedButton(onClick = { onNavigate(Screen.EDIT) }) { Text("ページ管理") }
+                }
             }
         } else if (dashboards.size > 1) {
             Row(
@@ -419,9 +456,22 @@ private fun DashboardCanvas(
     onTap: (GaugeConfig) -> Unit,
     onCopy: (GaugeConfig) -> Unit = {},
     onCellAspect: (Float) -> Unit = {},
+    /** グループの移動・大きさ変更の確定 (メーター id → x, y, w, h) */
+    onCommitMany: (Map<Long, IntArray>) -> Unit = {},
+    /** グループにするメーターを選んでいる */
+    selecting: Boolean = false,
+    selected: Set<Long> = emptySet(),
+    onToggleSelect: (GaugeConfig) -> Unit = {},
 ) {
     // メーターごとのピーク値リセット回数 (長押しで増やす)
     val peakResets = remember { mutableStateMapOf<Long, Int>() }
+    // 配置のグループと、グループをドラッグ中の移動量・大きさ変更量 (px)
+    val groups = remember(dashboard.gauges) { Layout.groups(dashboard.gauges) }
+    var groupMove by remember { mutableStateOf<Pair<Long, Offset>?>(null) }
+    var groupResize by remember { mutableStateOf<Pair<Long, Offset>?>(null) }
+    // 指を離してから保存が反映されるまでの間、元の位置に戻って見えないよう保持する
+    var groupPending by remember { mutableStateOf<Map<Long, IntArray>?>(null) }
+    LaunchedEffect(dashboard.gauges) { groupPending = null }
     // ページからはみ出した部分は切り取る (隣のページに映らないように)
     BoxWithConstraints(Modifier.fillMaxSize().clipToBounds().padding(4.dp)) {
         val cellW = maxWidth / Layout.COLS
@@ -450,9 +500,34 @@ private fun DashboardCanvas(
             }
         }
 
+        /** グループをドラッグ中 (または確定待ち) の各メーターの配置 */
+        fun groupPreview(): Map<Long, IntArray> {
+            groupPending?.let { return it }
+            groupMove?.let { (gid, o) ->
+                val members = groups[gid] ?: return emptyMap()
+                return Layout.moveGroup(members, (o.x / cellWPx).roundToInt(), (o.y / cellHPx).roundToInt())
+            }
+            groupResize?.let { (gid, o) ->
+                val members = groups[gid] ?: return emptyMap()
+                val b = Layout.bounds(members)
+                return Layout.resizeGroup(members, b[2] + (o.x / cellWPx).roundToInt(), b[3] + (o.y / cellHPx).roundToInt())
+            }
+            return emptyMap()
+        }
+        val preview = groupPreview()
+        fun commitGroup() {
+            val p = groupPreview()
+            groupMove = null; groupResize = null
+            val changed = p.filter { (id, r) ->
+                dashboard.gauges.firstOrNull { it.id == id }?.let { g -> g.x != r[0] || g.y != r[1] || g.w != r[2] || g.h != r[3] } == true
+            }
+            if (changed.isNotEmpty()) { groupPending = p; onCommitMany(changed) }
+        }
+
         dashboard.gauges.forEach { g ->
             key(g.id) {
                 val def = g.resolvedDef(catalog)
+                val gid = g.layoutGroup?.takeIf { it in groups }
                 GaugeOnGrid(
                     gauge = g,
                     cellWPx = cellWPx,
@@ -462,9 +537,74 @@ private fun DashboardCanvas(
                     onTap = onTap,
                     onLongPress = { peakResets[g.id] = (peakResets[g.id] ?: 0) + 1 },
                     onCopy = onCopy,
+                    grouped = gid != null,
+                    override = preview[g.id],
+                    onGroupDrag = { d -> if (gid != null) groupMove = gid to ((groupMove?.second ?: Offset.Zero) + d) },
+                    onGroupDragEnd = { commitGroup() },
+                    onGroupDragCancel = { groupMove = null },
+                    selecting = selecting,
+                    selected = g.id in selected,
+                    onToggleSelect = onToggleSelect,
                 ) {
                     GaugeView(g, def, values, supported, peakResets[g.id] ?: 0, catalog = catalog, interactive = !editing,
                         historySlot = HistorySlot.of(dashboard.id, g.id))
+                }
+            }
+        }
+
+        // グループの囲み (点線) と、グループの大きさ変更のつまみ
+        if (editing && !selecting) {
+            groups.forEach { (gid, members) ->
+                key("group", gid) {
+                    val b = members.map { m -> preview[m.id] ?: intArrayOf(m.x, m.y, m.w, m.h) }.let { rs ->
+                        val x0 = rs.minOf { it[0] }; val y0 = rs.minOf { it[1] }
+                        intArrayOf(x0, y0, rs.maxOf { it[0] + it[2] } - x0, rs.maxOf { it[1] + it[3] } - y0)
+                    }
+                    val active = groupMove?.first == gid || groupResize?.first == gid
+                    val commitNow by rememberUpdatedState({ commitGroup() })
+                    Box(
+                        Modifier
+                            .offset(with(density) { (b[0] * cellWPx).toDp() }, with(density) { (b[1] * cellHPx).toDp() })
+                            .size(with(density) { (b[2] * cellWPx).toDp() }, with(density) { (b[3] * cellHPx).toDp() })
+                    ) {
+                        Canvas(Modifier.fillMaxSize()) {
+                            drawRoundRect(
+                                if (active) GaugeColors.Warn else GaugeColors.Peak,
+                                cornerRadius = androidx.compose.ui.geometry.CornerRadius(6.dp.toPx()),
+                                style = androidx.compose.ui.graphics.drawscope.Stroke(
+                                    2.dp.toPx(),
+                                    pathEffect = androidx.compose.ui.graphics.PathEffect.dashPathEffect(floatArrayOf(10f, 8f)),
+                                ),
+                            )
+                        }
+                        // 右上: グループの印
+                        Box(
+                            Modifier.align(Alignment.TopEnd).padding(4.dp).clip(RoundedCornerShape(11.dp))
+                                .background(GaugeColors.Peak).padding(horizontal = 6.dp, vertical = 2.dp),
+                        ) { Text("グループ", color = GaugeColors.Background, fontSize = 11.sp, fontWeight = FontWeight.Bold) }
+                        Box(
+                            Modifier
+                                .align(Alignment.BottomEnd)
+                                .size(40.dp)
+                                .pointerInput(gid) {
+                                    detectDragGestures(
+                                        onDragEnd = { commitNow() },
+                                        onDragCancel = { groupResize = null },
+                                    ) { change, amount ->
+                                        change.consume()
+                                        groupResize = gid to ((groupResize?.second ?: Offset.Zero) + amount)
+                                    }
+                                },
+                            contentAlignment = Alignment.BottomEnd,
+                        ) {
+                            Canvas(Modifier.size(28.dp).padding(3.dp)) {
+                                val path = androidx.compose.ui.graphics.Path().apply {
+                                    moveTo(size.width, 0f); lineTo(size.width, size.height); lineTo(0f, size.height); close()
+                                }
+                                drawPath(path, GaugeColors.Peak)
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -521,8 +661,23 @@ private fun GaugeOnGrid(
     onTap: (GaugeConfig) -> Unit,
     onLongPress: () -> Unit,
     onCopy: (GaugeConfig) -> Unit = {},
+    /** 配置のグループに入っている (ドラッグでグループごと動かす。個別の大きさ変更はしない) */
+    grouped: Boolean = false,
+    /** グループのドラッグ中などに外から決まる配置 */
+    override: IntArray? = null,
+    onGroupDrag: (Offset) -> Unit = {},
+    onGroupDragEnd: () -> Unit = {},
+    onGroupDragCancel: () -> Unit = {},
+    selecting: Boolean = false,
+    selected: Boolean = false,
+    onToggleSelect: (GaugeConfig) -> Unit = {},
     content: @Composable () -> Unit,
 ) {
+    val isGrouped by rememberUpdatedState(grouped)
+    val groupDrag by rememberUpdatedState(onGroupDrag)
+    val groupDragEnd by rememberUpdatedState(onGroupDragEnd)
+    val groupDragCancel by rememberUpdatedState(onGroupDragCancel)
+    val toggleSelect by rememberUpdatedState(onToggleSelect)
     val g by rememberUpdatedState(gauge)
     // ドラッグ中の累積移動量 (px)
     var move by remember { mutableStateOf(Offset.Zero) }
@@ -532,6 +687,7 @@ private fun GaugeOnGrid(
     LaunchedEffect(gauge.x, gauge.y, gauge.w, gauge.h) { pending = null }
 
     fun preview(): IntArray {
+        override?.let { return it }
         pending?.let { return it }
         val dx = (move.x / cellWPx).roundToInt()
         val dy = (move.y / cellHPx).roundToInt()
@@ -544,7 +700,7 @@ private fun GaugeOnGrid(
 
     val r = preview()
     val density = LocalDensity.current
-    val dragging = move != Offset.Zero || resize != Offset.Zero
+    val dragging = move != Offset.Zero || resize != Offset.Zero || override != null
 
     Box(
         Modifier
@@ -552,7 +708,11 @@ private fun GaugeOnGrid(
             .size(with(density) { (r[2] * cellWPx).toDp() }, with(density) { (r[3] * cellHPx).toDp() })
             .padding(3.dp)
             .then(
-                if (editing) Modifier
+                if (editing && selecting) Modifier
+                    // グループにするメーターを選ぶ
+                    .border(if (selected) 4.dp else 2.dp, if (selected) GaugeColors.Peak else GaugeColors.CardBorder, RoundedCornerShape(14.dp))
+                    .pointerInput(gauge.id) { detectTapGestures(onTap = { toggleSelect(g) }) }
+                else if (editing) Modifier
                     .border(2.dp, if (dragging) GaugeColors.Warn else GaugeColors.Accent, RoundedCornerShape(14.dp))
                     .pointerInput(gauge.id) {
                         detectTapGestures(onTap = { onTap(g) }, onLongPress = { onCopy(g) })
@@ -560,15 +720,16 @@ private fun GaugeOnGrid(
                     .pointerInput(gauge.id) {
                         detectDragGestures(
                             onDragEnd = {
+                                if (isGrouped) { groupDragEnd(); return@detectDragGestures }
                                 val p = preview()
                                 pending = p
                                 move = Offset.Zero
                                 if (p[0] != g.x || p[1] != g.y) onCommit(g, p[0], p[1], p[2], p[3]) else pending = null
                             },
-                            onDragCancel = { move = Offset.Zero },
+                            onDragCancel = { if (isGrouped) groupDragCancel() else move = Offset.Zero },
                         ) { change, amount ->
                             change.consume()
-                            move += amount
+                            if (isGrouped) groupDrag(amount) else move += amount
                         }
                     }
                 else Modifier.pointerInput(gauge.id) {
@@ -593,7 +754,13 @@ private fun GaugeOnGrid(
                 contentAlignment = Alignment.Center,
             ) { Text(GaugeConfig.groupLabel(gauge.floatGroup), color = GaugeColors.Background, fontSize = 12.sp, fontWeight = FontWeight.Bold) }
         }
-        if (editing) {
+        if (editing && selecting && selected) {
+            Box(
+                Modifier.align(Alignment.Center).size(36.dp).clip(CircleShape).background(GaugeColors.Peak),
+                contentAlignment = Alignment.Center,
+            ) { Icon(Icons.Default.Check, null, tint = GaugeColors.Background) }
+        }
+        if (editing && !selecting && !grouped) {
             // サイズ変更のつまみ (右下)
             Box(
                 Modifier

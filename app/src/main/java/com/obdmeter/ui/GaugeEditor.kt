@@ -426,8 +426,12 @@ private fun BasicTab(
     SliderLine("縦の位置", g.y.toFloat(), Layout.yRange(g.h).f(), "%.0f") { v -> place(g.x, v.roundToInt(), g.w, g.h) }
     SliderLine("幅", g.w.toFloat(), Layout.widthRange.f(), "%.0f マス") { v -> place(g.x, g.y, v.roundToInt(), g.h) }
     SliderLine("高さ", g.h.toFloat(), Layout.heightRange.f(), "%.0f マス") { v -> place(g.x, g.y, g.w, v.roundToInt()) }
+    if (g.layoutGroup != null) {
+        Hint("このメーターはグループに入っています。ダッシュボードではグループごと移動・大きさ変更・コピーされます (ここでの位置・大きさの変更とコピーは、このメーターだけ)。")
+        OutlinedButton(onClick = { replace(g.copy(layoutGroup = null)) }) { Text("グループから外す") }
+    }
     Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(top = 4.dp)) {
-        OutlinedButton(onClick = onCopy) { Text("コピー") }
+        OutlinedButton(onClick = onCopy) { Text(if (g.layoutGroup != null) "このメーターだけコピー" else "コピー") }
         OutlinedButton(onClick = onBringToFront) { Text("最前面へ") }
         OutlinedButton(onClick = onDelete) { Text("削除", color = GaugeColors.Warn) }
     }

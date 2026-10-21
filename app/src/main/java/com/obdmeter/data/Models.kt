@@ -343,6 +343,11 @@ data class GaugeConfig(
      * フロート表示で 1 つのウィンドウにまとめて、ダッシュボードと同じ並びで表示する。null = 単独
      */
     val floatGroup: Int? = null,
+    /**
+     * 配置のグループ (同じ値のメーターをまとめて移動・大きさ変更・コピーする)。null = グループなし。
+     * 2 つ以上のメーターが同じ値のときだけグループとして扱う
+     */
+    val layoutGroup: Long? = null,
     /** フロート表示に出すか (false = ダッシュボードだけに表示) */
     val floatShow: Boolean = true,
     /** 折れ線グラフで、[pidKey] に加えて表示する項目のキー */
@@ -429,6 +434,67 @@ object Layout {
             val y1 = (r + 1) * ROWS / rows
             g.copy(x = x0, y = y0, w = maxOf(1, x1 - x0), h = maxOf(1, y1 - y0))
         }
+    }
+
+    /** 配置のグループ (2 つ以上のメーターがあるものだけ)。グループ id → メーター */
+    fun groups(gauges: List<GaugeConfig>): Map<Long, List<GaugeConfig>> =
+        gauges.filter { it.layoutGroup != null }.groupBy { it.layoutGroup!! }.filterValues { it.size >= 2 }
+
+    /** メーターをまとめて囲む範囲 (x, y, w, h) */
+    fun bounds(gauges: List<GaugeConfig>): IntArray {
+        val x0 = gauges.minOf { it.x }
+        val y0 = gauges.minOf { it.y }
+        val x1 = gauges.maxOf { it.x + it.w }
+        val y1 = gauges.maxOf { it.y + it.h }
+        return intArrayOf(x0, y0, x1 - x0, y1 - y0)
+    }
+
+    /** グループを (dx, dy) マス動かした配置。グループ全体がページの外へ出きらないように動きを抑える */
+    fun moveGroup(gauges: List<GaugeConfig>, dx: Int, dy: Int): Map<Long, IntArray> {
+        val b = bounds(gauges)
+        val nx = (b[0] + dx).coerceIn(1 - b[2], COLS - 1)
+        val ny = (b[1] + dy).coerceIn(1 - b[3], ROWS - 1)
+        return gauges.associate { it.id to intArrayOf(it.x + nx - b[0], it.y + ny - b[1], it.w, it.h) }
+    }
+
+    /**
+     * グループの囲む範囲を幅 [w]・高さ [h] にしたときの各メーターの配置 (左上は動かさず、相対位置を保って拡大縮小)。
+     * どのメーターも [MIN_SIZE] より小さくならない大きさまでしか縮めない
+     */
+    fun resizeGroup(gauges: List<GaugeConfig>, w: Int, h: Int): Map<Long, IntArray> {
+        val b = bounds(gauges)
+        val minW = kotlin.math.ceil(b[2] * MIN_SIZE.toDouble() / gauges.minOf { it.w }).toInt()
+        val minH = kotlin.math.ceil(b[3] * MIN_SIZE.toDouble() / gauges.minOf { it.h }).toInt()
+        val nw = w.coerceIn(minOf(minW, b[2]), maxOf(COLS * 2, b[2]))
+        val nh = h.coerceIn(minOf(minH, b[3]), maxOf(ROWS * 2, b[3]))
+        val sx = nw.toDouble() / b[2]
+        val sy = nh.toDouble() / b[3]
+        fun sc(v: Int, s: Double) = kotlin.math.round(v * s).toInt()
+        return gauges.associate { g ->
+            val l = sc(g.x - b[0], sx)
+            val t = sc(g.y - b[1], sy)
+            val r = sc(g.x + g.w - b[0], sx)
+            val bt = sc(g.y + g.h - b[1], sy)
+            g.id to intArrayOf(b[0] + l, b[1] + t, maxOf(MIN_SIZE, r - l), maxOf(MIN_SIZE, bt - t))
+        }
+    }
+
+    /**
+     * コピーしたメーター [src] (1 つ以上) を [existing] のページに貼り付ける位置のずらし量 (dx, dy)。
+     * 元と同じ位置が空いていればそこ、空いていなければ空いている場所、どこも空いていなければ 1 マスずらす
+     */
+    fun pasteOffset(existing: List<GaugeConfig>, src: List<GaugeConfig>): Pair<Int, Int> {
+        val b = bounds(src)
+        fun free(x: Int, y: Int) = existing.none { g ->
+            x < g.x + g.w && g.x < x + b[2] && y < g.y + g.h && g.y < y + b[3]
+        }
+        fun fits(x: Int, y: Int) = x >= 0 && y >= 0 && x + b[2] <= COLS && y + b[3] <= ROWS
+        if (free(b[0], b[1])) return 0 to 0
+        val spot = findFreeSpot(existing, b[2], b[3])
+        if (free(spot.first, spot.second) && fits(spot.first, spot.second)) return spot.first - b[0] to spot.second - b[1]
+        val x = (b[0] + 1).coerceAtMost(COLS - b[2]).coerceAtLeast(0)
+        val y = (b[1] + 1).coerceAtMost(ROWS - b[3]).coerceAtLeast(0)
+        return x - b[0] to y - b[1]
     }
 
     /** 新しいメーターを置く空き場所を探す。見つからなければ左上に重ねる */

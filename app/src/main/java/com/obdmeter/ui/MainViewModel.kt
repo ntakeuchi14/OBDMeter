@@ -479,35 +479,50 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     // ---- コピー・貼り付け (ページをまたいで使えるよう、画面ではなくここで持つ) ----
 
-    private val _clipboard = MutableStateFlow<GaugeConfig?>(null)
-    /** コピーしたメーター (null = なし) */
-    val clipboard: StateFlow<GaugeConfig?> = _clipboard
+    private val _clipboard = MutableStateFlow<List<GaugeConfig>?>(null)
+    /** コピーしたメーター (グループならまとめて。null = なし) */
+    val clipboard: StateFlow<List<GaugeConfig>?> = _clipboard
 
-    fun copyGauge(g: GaugeConfig) { _clipboard.value = g }
+    /** メーター 1 つだけをコピーする (グループからは外したものとして) */
+    fun copyGauge(g: GaugeConfig) { _clipboard.value = listOf(g.copy(layoutGroup = null)) }
+
+    /** グループのメーターをまとめてコピーする */
+    fun copyGauges(gs: List<GaugeConfig>) { _clipboard.value = gs.takeIf { it.isNotEmpty() } }
 
     /**
-     * コピーしたメーターをページに貼り付ける。元と同じ位置が空いていればそこ、
-     * 空いていなければ空いている場所、どこも空いていなければ 1 マスずらして置く
+     * コピーしたメーターをページに貼り付ける (グループは並びを保ったまま、新しいグループとして)。
+     * 元と同じ位置が空いていればそこ、空いていなければ空いている場所、どこも空いていなければ 1 マスずらして置く
      */
     fun pasteGauge(dashboardId: Long) {
         val src = _clipboard.value ?: return
-        val newId = System.currentTimeMillis()
+        val base = System.currentTimeMillis()
+        val group = if (src.size >= 2) base else null
         editDashboard(dashboardId) { d ->
-            fun free(x: Int, y: Int) = d.gauges.none { g ->
-                x < g.x + g.w && g.x < x + src.w && y < g.y + g.h && g.y < y + src.h
-            }
-            fun fits(x: Int, y: Int) = x + src.w <= Layout.COLS && y + src.h <= Layout.ROWS
-            val (x, y) = when {
-                free(src.x, src.y) -> src.x to src.y
-                else -> {
-                    val spot = Layout.findFreeSpot(d.gauges, src.w, src.h)
-                    if (free(spot.first, spot.second) && fits(spot.first, spot.second)) spot
-                    else (src.x + 1).coerceAtMost(Layout.COLS - src.w).coerceAtLeast(0) to
-                        (src.y + 1).coerceAtMost(Layout.ROWS - src.h).coerceAtLeast(0)
-                }
-            }
-            d.copy(gauges = d.gauges + src.copy(id = newId, x = x, y = y))
+            val (dx, dy) = Layout.pasteOffset(d.gauges, src)
+            d.copy(gauges = d.gauges + src.mapIndexed { i, g ->
+                g.copy(id = base + i, x = g.x + dx, y = g.y + dy, layoutGroup = group)
+            })
         }
+    }
+
+    /** 複数のメーターの位置・大きさをまとめて変える (グループの移動・大きさ変更) */
+    fun placeGauges(dashboardId: Long, placements: Map<Long, IntArray>) = editDashboard(dashboardId) { d ->
+        d.copy(gauges = d.gauges.map { g ->
+            placements[g.id]?.let { p -> g.copy(x = p[0], y = p[1], w = p[2], h = p[3]) } ?: g
+        })
+    }
+
+    /** メーターをまとめて 1 つのグループにする */
+    fun groupGauges(dashboardId: Long, ids: Set<Long>) {
+        if (ids.size < 2) return
+        val group = System.currentTimeMillis()
+        editDashboard(dashboardId) { d -> d.copy(gauges = d.gauges.map { if (it.id in ids) it.copy(layoutGroup = group) else it }) }
+    }
+
+    /** メーターのグループを解く ([ids] が入っているグループ全体) */
+    fun ungroupGauges(dashboardId: Long, ids: Set<Long>) = editDashboard(dashboardId) { d ->
+        val groups = d.gauges.filter { it.id in ids }.mapNotNullTo(HashSet()) { it.layoutGroup }
+        d.copy(gauges = d.gauges.map { if (it.layoutGroup in groups) it.copy(layoutGroup = null) else it })
     }
 
     fun bringToFront(dashboardId: Long, gaugeId: Long) = editDashboard(dashboardId) { d ->
