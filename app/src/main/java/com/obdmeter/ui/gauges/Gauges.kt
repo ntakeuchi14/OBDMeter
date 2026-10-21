@@ -165,6 +165,7 @@ data class GaugeLook(
     val legendPosition: com.obdmeter.data.LegendPosition = com.obdmeter.data.LegendPosition.TOP,
     val legendAlign: com.obdmeter.data.LegendAlign = com.obdmeter.data.LegendAlign.START,
     val legendScale: Float = 1f,
+    val monitorWindow: Int = 1,
     val legendBgAlpha: Float = 0.5f,
     /** 折れ線グラフの線の色 (項目の順。足りない分は自動) */
     val chartColors: List<Color?> = emptyList(),
@@ -244,6 +245,9 @@ fun GaugeCard(
             GaugeStyle.LAMP -> LampGauge(def, if (unsupported) null else value, unsupported, look, image, Modifier.fillMaxSize(), fonts)
             GaugeStyle.TABLE -> TableGauge(
                 series.ifEmpty { listOf(ChartSeries(def, value)) }, look, fonts, Modifier.fillMaxSize(),
+            )
+            GaugeStyle.MONITOR -> MonitorGauge(
+                series.ifEmpty { listOf(ChartSeries(def, value)) }, look, fonts, interactive, Modifier.fillMaxSize(), historySlot,
             )
             GaugeStyle.CHART -> ChartGauge(
                 series.ifEmpty { listOf(ChartSeries(def, value)) }, look, fonts, interactive, Modifier.fillMaxSize(), historySlot,

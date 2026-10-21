@@ -122,6 +122,48 @@ class HistoryStore(context: Context, private val scope: CoroutineScope) {
         }.getOrNull()
     }
 
+    /** 変動監視の行を書く (時刻は丸めない: 1 秒に何度変わっても回数を数えられるように) */
+    suspend fun storeEvents(rows: List<HistoryRow>) = withContext(Dispatchers.IO) {
+        if (rows.isEmpty()) return@withContext
+        runCatching {
+            db.beginTransaction()
+            try {
+                val cv = ContentValues()
+                for (r in rows) {
+                    cv.clear()
+                    cv.put("g", r.slot); cv.put("k", r.key); cv.put("t", r.t); cv.put("v", r.v); cv.put("c", 0)
+                    db.insertWithOnConflict("samples", null, cv, SQLiteDatabase.CONFLICT_REPLACE)
+                }
+                db.setTransactionSuccessful()
+            } finally {
+                db.endTransaction()
+            }
+        }
+        _revision.value++
+    }
+
+    /** 変動監視の集計 ([Monitor.Stat])。[keys] の順に返す */
+    suspend fun monitorStats(slot: String, keys: List<String>, now: Long): List<Monitor.Stat> = withContext(Dispatchers.IO) {
+        keys.map { k ->
+            runCatching {
+                fun one(order: String): Pair<Long, Double>? =
+                    db.rawQuery("SELECT t, v FROM samples WHERE g = ? AND k = ? ORDER BY t $order LIMIT 1", arrayOf(slot, k))
+                        .use { c -> if (c.moveToFirst()) c.getLong(0) to c.getDouble(1) else null }
+                val first = one("ASC")
+                val last = one("DESC")
+                val counts = if (first == null) Monitor.WINDOWS.map { 0 } else {
+                    // 初回の計測 (最初の行) は変化に数えない
+                    val sums = Monitor.WINDOWS.joinToString(", ") { "SUM(t >= ?)" }
+                    db.rawQuery(
+                        "SELECT $sums FROM samples WHERE g = ? AND k = ? AND t > ?",
+                        (Monitor.WINDOWS.map { (now - it.first).toString() } + listOf(slot, k, first.first.toString())).toTypedArray(),
+                    ).use { c -> if (c.moveToFirst()) Monitor.WINDOWS.indices.map { c.getInt(it) } else Monitor.WINDOWS.map { 0 } }
+                }
+                Monitor.Stat(k, first?.second, last?.second, last?.first?.takeIf { first != null && it != first.first }, counts)
+            }.getOrElse { Monitor.Stat(k, null, null, null, Monitor.WINDOWS.map { 0 }) }
+        }
+    }
+
     /** 値を記録する ([rows] はグラフ → 項目キー → 値)。時刻は秒単位に丸める */
     suspend fun store(rows: Map<String, Map<String, Double>>, time: Long) = withContext(Dispatchers.IO) {
         if (rows.isEmpty()) return@withContext
@@ -320,6 +362,7 @@ class HistoryStore(context: Context, private val scope: CoroutineScope) {
     private fun cleanup(now: Long) {
         val slots = retentions ?: return
         for ((g, ms) in slots) {
+            if (ms <= 0) continue // 変動監視: メーターを削除するまで残す
             val keep = ms.coerceIn(3_600_000L, MAX_MONTHS * MONTH_MS)
             db.delete("samples", "g = ? AND t < ?", arrayOf(g, (now - keep).toString()))
         }

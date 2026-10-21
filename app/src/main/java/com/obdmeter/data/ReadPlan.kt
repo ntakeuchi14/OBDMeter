@@ -9,7 +9,7 @@ import com.obdmeter.core.PidDef
 object ReadPlan {
     /** メーターが使う項目のキー (グラフ・値テーブルは追加した項目も) */
     fun gaugeKeys(g: GaugeConfig): List<String> =
-        if (g.style == GaugeStyle.CHART || g.style == GaugeStyle.TABLE) g.chartAllKeys else listOf(g.pidKey)
+        if (g.style == GaugeStyle.CHART || g.style == GaugeStyle.TABLE || g.style == GaugeStyle.MONITOR) g.chartAllKeys else listOf(g.pidKey)
 
     /**
      * 表示中のページ。アプリの画面が前にあればアプリのページ、無ければフロート表示のページ。
@@ -36,7 +36,12 @@ object ReadPlan {
     /**
      * 記録のしかた。[intervalMs] ごとに値を見て、[onChangeOnly] なら前回記録した値から変わったときだけ記録する
      */
-    data class RecordRule(val intervalMs: Long, val onChangeOnly: Boolean)
+    data class RecordRule(
+        val intervalMs: Long,
+        val onChangeOnly: Boolean,
+        /** 変動監視: 値が変わった時刻と値だけを記録する ([Monitor]) */
+        val events: Boolean = false,
+    )
 
     /** 記録の単位: グラフ [slot] ([HistorySlot]) の項目 [key] */
     data class RecordTarget(val slot: String, val key: String)
@@ -61,12 +66,21 @@ object ReadPlan {
                 out[RecordTarget(slot, k)] = RecordRule(ms, g.design.recordOnChange)
             }
         }
+        // 変動監視は、表示中かどうかに関係なく、項目の取得周期ごとに値を見て変わったときだけ記録する
+        for (p in pages) for (g in p.gauges) {
+            if (g.style != GaugeStyle.MONITOR) continue
+            val slot = HistorySlot.of(p.id, g.id)
+            for (k in g.chartAllKeys) {
+                out[RecordTarget(slot, k)] = RecordRule(maxOf(pollIntervals[k] ?: 0L, CHANGE_MIN_MS), onChangeOnly = false, events = true)
+            }
+        }
         return out
     }
 
-    /** グラフごとの記録の保存期間 (ミリ秒) */
+    /** 記録の保存期間 (ミリ秒、グラフ・変動監視ごと)。0 = 消さない (変動監視) */
     fun retentions(pages: List<Dashboard>): Map<String, Long> =
-        charts(pages).associate { (p, g) -> HistorySlot.of(p.id, g.id) to g.design.historyRetentionMs }
+        charts(pages).associate { (p, g) -> HistorySlot.of(p.id, g.id) to g.design.historyRetentionMs } +
+            pages.flatMap { p -> p.gauges.filter { it.style == GaugeStyle.MONITOR }.map { HistorySlot.of(p.id, it.id) to 0L } }
 
     /** グラフごとの使っている項目 (以前の共有の記録を振り分けるため) */
     fun chartKeys(pages: List<Dashboard>): Map<String, List<String>> =

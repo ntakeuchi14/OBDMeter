@@ -123,6 +123,7 @@ fun GaugeDesign.toLook(def: PidDef, style: GaugeStyle): GaugeLook {
         legendPosition = legendPosition,
         legendAlign = legendAlign,
         legendScale = legendScale.coerceIn(0.4f, 3f),
+        monitorWindow = monitorWindow.coerceIn(0, com.obdmeter.data.Monitor.WINDOWS.lastIndex),
         legendBgAlpha = legendBgAlpha.coerceIn(0f, 1f),
         tableMaxRows = tableMaxRows.coerceIn(1, 30),
         tableValueBg = tableValueBg?.let { Color(it) },

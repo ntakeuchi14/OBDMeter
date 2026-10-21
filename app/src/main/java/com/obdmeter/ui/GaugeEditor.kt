@@ -161,7 +161,7 @@ fun GaugeSettingsDialog(
                                     unsupported = false,
                                     look = draft.look(def),
                                     modifier = Modifier.aspectRatio(ratio),
-                                    series = if (draft.style == GaugeStyle.CHART || draft.style == GaugeStyle.TABLE) {
+                                    series = if (draft.style == GaugeStyle.CHART || draft.style == GaugeStyle.TABLE || draft.style == GaugeStyle.MONITOR) {
                                         chartSeries(draft, def, mapOf(def.key to (previewValue ?: 0.0)), catalog)
                                     } else emptyList(),
                                     historySlot = historySlot,
@@ -357,6 +357,7 @@ private fun BasicTab(
         GaugeStyle.LAMP -> LampSettings(g, update)
         GaugeStyle.CHART -> ChartSettings(g, catalog, update, replace, onAddChartItem)
         GaugeStyle.TABLE -> TableSettings(g, catalog, update, replace, onAddChartItem)
+        GaugeStyle.MONITOR -> MonitorSettings(g, catalog, update, replace, onAddChartItem)
         else -> {}
     }
 
@@ -896,50 +897,7 @@ private fun TableSettings(
 
     Head("表に並べる項目")
     Hint("上から順に並べ、1 段の最大行数を超えたら右に段を増やします。先頭は上の「表示する項目」です。")
-    val keys = g.chartAllKeys
-    fun reorder(from: Int, to: Int) {
-        val list = keys.toMutableList()
-        val k = list.removeAt(from); list.add(to, k)
-        val newMain = list[0]
-        // 先頭 (表示する項目) が変わったら、その項目用の範囲の上書きは外す。表示名は項目について移す
-        if (newMain == g.pidKey) { replace(g.copy(chartKeys = list.drop(1))); return }
-        var labels = g.itemLabels - newMain
-        d.label?.takeIf { it.isNotBlank() }?.let { labels = labels + (g.pidKey to it) }
-        val design = d.copy(label = g.itemLabels[newMain], min = null, max = null, decimals = null)
-        replace(g.copy(pidKey = newMain, chartKeys = list.drop(1), design = design, itemLabels = labels))
-    }
-    Hint("名前の欄に入力すると、表に出す項目名を変えられます (空欄で標準の名前)。")
-    keys.forEachIndexed { i, key ->
-        val def = catalog.get(key)
-        Text("${i + 1}. " + (def?.name ?: "(見つかりません: $key)"), fontSize = 13.sp, color = GaugeColors.SubText,
-            modifier = Modifier.padding(top = 6.dp))
-        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            // 表示名 (先頭は design.label、2 番目以降は itemLabels)
-            val current = if (i == 0) d.label.orEmpty() else g.itemLabels[key].orEmpty()
-            var text by remember(g.id, key, i) { mutableStateOf(current) }
-            OutlinedTextField(
-                value = text,
-                onValueChange = { v ->
-                    text = v
-                    val t = v.takeIf { it.isNotBlank() }
-                    if (i == 0) update { it.copy(label = t) }
-                    else replace(g.copy(itemLabels = if (t == null) g.itemLabels - key else g.itemLabels + (key to t)))
-                },
-                placeholder = { Text(def?.shortName ?: "") },
-                label = { Text("名前") },
-                singleLine = true,
-                modifier = Modifier.weight(1f),
-            )
-            TextButton(onClick = { reorder(i, i - 1) }, enabled = i > 0) { Text("▲") }
-            TextButton(onClick = { reorder(i, i + 1) }, enabled = i < keys.lastIndex) { Text("▼") }
-            if (i > 0) TextButton(onClick = {
-                replace(g.copy(chartKeys = g.chartKeys.toMutableList().also { it.removeAt(i - 1) }))
-            }) { Text("外す") }
-        }
-    }
-    if (g.chartKeys.size < GaugeConfig.MAX_TABLE_EXTRA) {
-        OutlinedButton(onClick = onAddItem) { Text("項目を追加") }
-    }
+    ItemRows(g, catalog, update, replace, onAddItem)
 
     Head("並べ方")
     SliderLine("1 段の最大行数", d.tableMaxRows.toFloat(), 1f..15f, "%.0f 行") { v ->
@@ -992,6 +950,92 @@ private fun TableSettings(
         }
     }
     Hint("背景画像は値の部分いっぱいに伸ばして表示します (背景色の上に重ねます)。")
+}
+
+/** 並べる項目の一覧 (名前の書き換え・並べ替え・外す・追加)。値テーブルと変動監視で使う */
+@Composable
+private fun ItemRows(
+    g: GaugeConfig,
+    catalog: PidCatalog,
+    update: ((GaugeDesign) -> GaugeDesign) -> Unit,
+    replace: (GaugeConfig) -> Unit,
+    onAddItem: () -> Unit,
+) {
+    val d = g.design
+    val keys = g.chartAllKeys
+    fun reorder(from: Int, to: Int) {
+        val list = keys.toMutableList()
+        val k = list.removeAt(from); list.add(to, k)
+        val newMain = list[0]
+        // 先頭 (表示する項目) が変わったら、その項目用の範囲の上書きは外す。表示名は項目について移す
+        if (newMain == g.pidKey) { replace(g.copy(chartKeys = list.drop(1))); return }
+        var labels = g.itemLabels - newMain
+        d.label?.takeIf { it.isNotBlank() }?.let { labels = labels + (g.pidKey to it) }
+        val design = d.copy(label = g.itemLabels[newMain], min = null, max = null, decimals = null)
+        replace(g.copy(pidKey = newMain, chartKeys = list.drop(1), design = design, itemLabels = labels))
+    }
+    Hint("名前の欄に入力すると、表に出す項目名を変えられます (空欄で標準の名前)。")
+    keys.forEachIndexed { i, key ->
+        val def = catalog.get(key)
+        Text("${i + 1}. " + (def?.name ?: "(見つかりません: $key)"), fontSize = 13.sp, color = GaugeColors.SubText,
+            modifier = Modifier.padding(top = 6.dp))
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            // 表示名 (先頭は design.label、2 番目以降は itemLabels)
+            val current = if (i == 0) d.label.orEmpty() else g.itemLabels[key].orEmpty()
+            var text by remember(g.id, key, i) { mutableStateOf(current) }
+            OutlinedTextField(
+                value = text,
+                onValueChange = { v ->
+                    text = v
+                    val t = v.takeIf { it.isNotBlank() }
+                    if (i == 0) update { it.copy(label = t) }
+                    else replace(g.copy(itemLabels = if (t == null) g.itemLabels - key else g.itemLabels + (key to t)))
+                },
+                placeholder = { Text(def?.shortName ?: "") },
+                label = { Text("名前") },
+                singleLine = true,
+                modifier = Modifier.weight(1f),
+            )
+            TextButton(onClick = { reorder(i, i - 1) }, enabled = i > 0) { Text("▲") }
+            TextButton(onClick = { reorder(i, i + 1) }, enabled = i < keys.lastIndex) { Text("▼") }
+            if (i > 0) TextButton(onClick = {
+                replace(g.copy(chartKeys = g.chartKeys.toMutableList().also { it.removeAt(i - 1) }))
+            }) { Text("外す") }
+        }
+    }
+    if (g.chartKeys.size < GaugeConfig.MAX_TABLE_EXTRA) {
+        OutlinedButton(onClick = onAddItem) { Text("項目を追加") }
+    }
+}
+
+/** 変動監視の設定 (監視する項目・最初に表示する期間) */
+@Composable
+private fun MonitorSettings(
+    g: GaugeConfig,
+    catalog: PidCatalog,
+    update: ((GaugeDesign) -> GaugeDesign) -> Unit,
+    replace: (GaugeConfig) -> Unit,
+    onAddItem: () -> Unit,
+) {
+    Head("監視する項目")
+    Hint(
+        "各項目の値が変わった回数と時刻・値を記録し、直近の期間ごとに変動回数の多い順 (同じ回数なら登録順) に並べます。" +
+            "先頭は上の「表示する項目」です。"
+    )
+    ItemRows(g, catalog, update, replace, onAddItem)
+
+    Head("最初に表示する期間")
+    Row(Modifier.horizontalScroll(rememberScrollState())) {
+        com.obdmeter.data.Monitor.WINDOWS.forEachIndexed { i, (_, label) ->
+            FilterChip(g.design.monitorWindow == i, { update { it.copy(monitorWindow = i) } }, { Text("直近$label") },
+                Modifier.padding(end = 6.dp))
+        }
+    }
+    Hint(
+        "ダッシュボードでは、上の期間の欄をタップして切り替えられます。現在の値は「最新の計測値 − 初回の計測値」です。" +
+            "値は項目の取得周期 (設定画面) ごとに見て、このページを表示していないときも記録します。" +
+            "記録はこのメーターを削除するまで残ります (表示形式を変えた場合も消えます)。"
+    )
 }
 
 /** 折れ線グラフの設定 (表示する項目・時間の幅・保存日数・線の色) */

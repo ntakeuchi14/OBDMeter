@@ -157,6 +157,8 @@ class AppCore private constructor(context: Context) {
         scope.launch {
             val nextDue = HashMap<ReadPlan.RecordTarget, Long>()
             val changes = com.obdmeter.data.ChangeRecorder()
+            // 変動監視: 最後に記録した値 (記録の最後の行から始める)
+            val eventLast = HashMap<ReadPlan.RecordTarget, Double?>()
             var wasConnected = false
             while (true) {
                 delay(ReadPlan.CHANGE_MIN_MS)
@@ -181,12 +183,19 @@ class AppCore private constructor(context: Context) {
                 val time = System.currentTimeMillis()
                 val rows = HashMap<String, HashMap<String, Double>>()
                 val changeRows = ArrayList<com.obdmeter.data.HistoryRow>()
+                val eventRows = ArrayList<com.obdmeter.data.HistoryRow>()
                 for ((t, rule) in due) {
                     // 表示していない項目を記録のために読むときは、変化だけの記録でも 1 秒に 1 回まで
                     val ms = if (t.key in need && !t.key.startsWith("DEV_")) maxOf(rule.intervalMs, ReadPlan.CHANGE_SAMPLE_MIN_MS) else rule.intervalMs
                     nextDue[t] = now + ms
                     val v = read[t.key] ?: continue
-                    if (rule.onChangeOnly) {
+                    if (rule.events) {
+                        if (t !in eventLast) eventLast[t] = history.lastRow(t.slot, t.key)?.first?.v
+                        if (com.obdmeter.data.Monitor.shouldRecord(v, eventLast[t])) {
+                            eventRows += com.obdmeter.data.HistoryRow(t.slot, t.key, time, v, cont = false)
+                            eventLast[t] = v
+                        }
+                    } else if (rule.onChangeOnly) {
                         // アプリを起動し直した後は、記録の最後の行から続ける
                         if (!changes.has(t)) history.lastRow(t.slot, t.key).let { changes.seed(t, it?.first, it?.second == true) }
                         changeRows += changes.observe(t, v, time, ms)
@@ -195,6 +204,7 @@ class AppCore private constructor(context: Context) {
                 }
                 history.store(rows, time)
                 history.storeRows(changeRows)
+                history.storeEvents(eventRows)
             }
         }
     }
