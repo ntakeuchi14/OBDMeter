@@ -122,6 +122,24 @@ class HistoryStore(context: Context, private val scope: CoroutineScope) {
         }.getOrNull()
     }
 
+    /** 記録を消したメーター (記録している側が覚えている前回の値も捨てるため。[takeCleared] で受け取る) */
+    private val cleared = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
+
+    /** メーター [slot] の記録をすべて消す (リセット) */
+    suspend fun clear(slot: String) = withContext(Dispatchers.IO) {
+        runCatching { db.delete("samples", "g = ?", arrayOf(slot)) }
+        cleared += slot
+        _revision.value++
+    }
+
+    /** [clear] で記録を消したメーター (受け取ったら空になる) */
+    fun takeCleared(): Set<String> {
+        if (cleared.isEmpty()) return emptySet()
+        val out = HashSet(cleared)
+        cleared.removeAll(out)
+        return out
+    }
+
     /** 変動監視の行を書く (時刻は丸めない: 1 秒に何度変わっても回数を数えられるように) */
     suspend fun storeEvents(rows: List<HistoryRow>) = withContext(Dispatchers.IO) {
         if (rows.isEmpty()) return@withContext

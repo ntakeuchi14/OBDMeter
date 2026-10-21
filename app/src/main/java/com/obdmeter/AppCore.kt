@@ -167,6 +167,11 @@ class AppCore private constructor(context: Context) {
                 wasConnected = connected
                 val now = System.currentTimeMillis()
                 val rules = recordRules
+                // 記録をリセットしたメーターは、覚えている前回の値も捨てて初回の計測からやり直す
+                for (slot in history.takeCleared()) {
+                    eventLast.keys.removeAll { it.slot == slot }
+                    changes.forget(slot)
+                }
                 // 記録しなくなった項目 (表示中だけのグラフのページを離れた など) は、最後に見た時刻まで書いて終える
                 history.storeRows(changes.retain(rules.keys))
                 val due = rules.filter { (t, _) -> (nextDue[t] ?: 0L) <= now && (connected || t.key.startsWith("DEV_")) }

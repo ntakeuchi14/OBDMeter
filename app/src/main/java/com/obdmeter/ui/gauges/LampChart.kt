@@ -693,7 +693,7 @@ private suspend fun exportToDownloads(
 }
 
 @Composable
-private fun CsvButton(text: String, onClick: () -> Unit) {
+internal fun CsvButton(text: String, onClick: () -> Unit) {
     Box(
         Modifier
             .clip(RoundedCornerShape(6.dp))

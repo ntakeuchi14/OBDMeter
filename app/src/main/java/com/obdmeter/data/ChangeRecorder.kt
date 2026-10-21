@@ -45,6 +45,9 @@ class ChangeRecorder {
 
     private val states = HashMap<ReadPlan.RecordTarget, State>()
 
+    /** メーター [slot] の状態を捨てる (記録をリセットしたとき) */
+    fun forget(slot: String) { states.keys.removeAll { it.slot == slot } }
+
     /** [target] の状態を持っているか (無ければ [seed] で記録の最後の行から始められる) */
     fun has(target: ReadPlan.RecordTarget): Boolean = target in states
 

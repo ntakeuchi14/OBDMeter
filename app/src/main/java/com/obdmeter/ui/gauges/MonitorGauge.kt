@@ -30,6 +30,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.obdmeter.data.Monitor
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -49,6 +50,27 @@ internal fun MonitorGauge(
     slot: String?,
 ) {
     val history = LocalHistory.current?.takeIf { slot != null }
+    var confirmReset by remember { androidx.compose.runtime.mutableStateOf(false) }
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
+    if (confirmReset && history != null && slot != null) {
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { confirmReset = false },
+            title = { Text("記録をリセット") },
+            text = {
+                Text(
+                    "このメーターの変動の記録 (全項目の回数・変化時刻・初回の計測値) をすべて消して、次の計測からやり直します。" +
+                        "元に戻せません。必要なら先に「書出」で CSV に保存してください。"
+                )
+            },
+            confirmButton = {
+                androidx.compose.material3.TextButton(onClick = {
+                    confirmReset = false
+                    scope.launch { history.clear(slot) }
+                }) { Text("リセットする", color = GaugeColors.Warn) }
+            },
+            dismissButton = { androidx.compose.material3.TextButton(onClick = { confirmReset = false }) { Text("キャンセル") } },
+        )
+    }
     var window by remember(look.monitorWindow) { mutableIntStateOf(look.monitorWindow) }
     val keys = remember(series.map { it.def.key }) { series.map { it.def.key } }
     // 記録が増えたら読み直す (読み直しは 2 秒に 1 回まで)。期間の境目が動くので一定の間隔でも読み直す
@@ -87,7 +109,11 @@ internal fun MonitorGauge(
                     )
                 }
             }
-            if (interactive && history != null && slot != null) ChartCsvButtons(history, slot, keys)
+            if (interactive && history != null && slot != null) {
+                ChartCsvButtons(history, slot, keys)
+                androidx.compose.foundation.layout.Spacer(Modifier.width(4.dp))
+                CsvButton("リセット") { confirmReset = true }
+            }
             }
             // 見出し
             Row(Modifier.fillMaxWidth().padding(top = 4.dp), verticalAlignment = Alignment.CenterVertically) {
