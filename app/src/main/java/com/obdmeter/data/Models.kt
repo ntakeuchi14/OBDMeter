@@ -283,8 +283,8 @@ data class GaugeDesign(
     val recordOnChange: Boolean = false,
     /** 折れ線グラフで、どの項目にも記録が無い時間を詰めて表示する */
     val chartSkipGaps: Boolean = true,
-    /** 変動監視: 最初に表示する期間 ([com.obdmeter.data.Monitor.WINDOWS] の番号) */
-    val monitorWindow: Int = 1,
+    /** 変動監視: 最初に表示する期間 (ミリ秒。[com.obdmeter.data.Monitor.WINDOWS] のどれか) */
+    val monitorWindowMs: Long = 86_400_000L,
     /** 折れ線グラフの凡例の位置 */
     val legendPosition: LegendPosition = LegendPosition.TOP,
     /** 折れ線グラフの凡例の寄せ方 (上・下に置くとき) */

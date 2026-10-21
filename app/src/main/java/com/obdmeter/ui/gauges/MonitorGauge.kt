@@ -51,11 +51,13 @@ internal fun MonitorGauge(
     val history = LocalHistory.current?.takeIf { slot != null }
     var window by remember(look.monitorWindow) { mutableIntStateOf(look.monitorWindow) }
     val keys = remember(series.map { it.def.key }) { series.map { it.def.key } }
-    // 記録が増えたら読み直す (読み直しは 2 秒に 1 回まで)。期間の境目が動くので 30 秒ごとにも読み直す
+    // 記録が増えたら読み直す (読み直しは 2 秒に 1 回まで)。期間の境目が動くので一定の間隔でも読み直す
     var revision by remember { mutableLongStateOf(0L) }
     LaunchedEffect(history) { history?.revision?.collect { r -> revision = r; delay(2_000) } }
     var tick by remember { mutableLongStateOf(0L) }
-    LaunchedEffect(Unit) { while (true) { delay(30_000); tick++ } }
+    // 短い期間 (10 分以下) を見ているときは、すぐに回数が減っていくので 2 秒ごとに読み直す
+    val tickMs = if (Monitor.WINDOWS[window].first <= 600_000L) 2_000L else 30_000L
+    LaunchedEffect(tickMs) { while (true) { delay(tickMs); tick++ } }
     val stats by produceState(emptyList<Monitor.Stat>(), keys, revision, tick, slot) {
         if (history != null && slot != null) value = history.monitorStats(slot, keys, System.currentTimeMillis())
     }
@@ -69,8 +71,9 @@ internal fun MonitorGauge(
         val nameSize = (base * look.labelSize).sp
         val valueSize = (base * 1.1f * look.valueSize).sp
         Column(Modifier.fillMaxWidth()) {
-            // 期間の切り替え
-            Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+            // 期間の切り替え (アプリの画面では右に記録の書き出し・読み込み)
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Row(Modifier.weight(1f).horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                 Monitor.WINDOWS.forEachIndexed { i, (_, label) ->
                     val sel = i == window
                     Text(
@@ -83,6 +86,8 @@ internal fun MonitorGauge(
                             .padding(horizontal = 6.dp, vertical = 2.dp),
                     )
                 }
+            }
+            if (interactive && history != null && slot != null) ChartCsvButtons(history, slot, keys)
             }
             // 見出し
             Row(Modifier.fillMaxWidth().padding(top = 4.dp), verticalAlignment = Alignment.CenterVertically) {

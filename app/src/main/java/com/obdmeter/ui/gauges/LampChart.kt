@@ -617,7 +617,7 @@ internal fun ChartGauge(
 
 /** グラフの記録の CSV 書き出し・読み込みボタン (アプリの画面でだけ出す) */
 @Composable
-private fun ChartCsvButtons(history: HistoryStore, slot: String, keys: List<String>) {
+internal fun ChartCsvButtons(history: HistoryStore, slot: String, keys: List<String>) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val exporter = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("text/csv")) { uri ->

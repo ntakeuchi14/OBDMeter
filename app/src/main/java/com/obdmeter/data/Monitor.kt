@@ -9,6 +9,9 @@ package com.obdmeter.data
 object Monitor {
     /** 変動回数を数える期間 (直近 ○○) */
     val WINDOWS: List<Pair<Long, String>> = listOf(
+        10_000L to "10秒",
+        60_000L to "1分",
+        600_000L to "10分",
         3_600_000L to "1時間",
         86_400_000L to "1日",
         7 * 86_400_000L to "1週間",
@@ -31,6 +34,10 @@ object Monitor {
     ) {
         fun count(window: Int): Int = counts.getOrElse(window) { 0 }
     }
+
+    /** 期間 (ミリ秒) [ms] の [WINDOWS] での番号 (無ければ 1 日) */
+    fun windowIndex(ms: Long): Int = WINDOWS.indexOfFirst { it.first == ms }.takeIf { it >= 0 }
+        ?: WINDOWS.indexOfFirst { it.first == 86_400_000L }
 
     /** 期間 [window] の変動回数が多い順。同じ回数なら登録順 ([stats] の並び) */
     fun rank(stats: List<Stat>, window: Int): List<Stat> =

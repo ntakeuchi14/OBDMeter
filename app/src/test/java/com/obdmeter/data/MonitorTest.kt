@@ -29,4 +29,10 @@ class MonitorTest {
         assertEquals(false, Monitor.shouldRecord(1.0, 1.0))
         assertEquals(true, Monitor.shouldRecord(2.0, 1.0))
     }
+
+    @Test
+    fun windowIndexFindsPeriodOrFallsBackToOneDay() {
+        assertEquals("10秒", Monitor.WINDOWS[Monitor.windowIndex(10_000L)].second)
+        assertEquals("1日", Monitor.WINDOWS[Monitor.windowIndex(12_345L)].second)
+    }
 }

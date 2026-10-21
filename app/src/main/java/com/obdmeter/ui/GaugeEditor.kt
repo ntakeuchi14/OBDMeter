@@ -347,7 +347,7 @@ private fun BasicTab(
     }
 
     Head("表示形式")
-    Row {
+    Row(Modifier.horizontalScroll(rememberScrollState())) {
         GaugeStyle.entries.forEach { s ->
             FilterChip(g.style == s, { replace(g.copy(style = s)) }, { Text(s.label) }, Modifier.padding(end = 6.dp))
         }
@@ -1026,15 +1026,17 @@ private fun MonitorSettings(
 
     Head("最初に表示する期間")
     Row(Modifier.horizontalScroll(rememberScrollState())) {
-        com.obdmeter.data.Monitor.WINDOWS.forEachIndexed { i, (_, label) ->
-            FilterChip(g.design.monitorWindow == i, { update { it.copy(monitorWindow = i) } }, { Text("直近$label") },
+        com.obdmeter.data.Monitor.WINDOWS.forEach { (ms, label) ->
+            FilterChip(com.obdmeter.data.Monitor.windowIndex(g.design.monitorWindowMs) == com.obdmeter.data.Monitor.windowIndex(ms),
+                { update { it.copy(monitorWindowMs = ms) } }, { Text("直近$label") },
                 Modifier.padding(end = 6.dp))
         }
     }
     Hint(
         "ダッシュボードでは、上の期間の欄をタップして切り替えられます。現在の値は「最新の計測値 − 初回の計測値」です。" +
             "値は項目の取得周期 (設定画面) ごとに見て、このページを表示していないときも記録します。" +
-            "記録はこのメーターを削除するまで残ります (表示形式を変えた場合も消えます)。"
+            "記録はこのメーターを削除するまで残ります (表示形式を変えた場合も消えます)。" +
+            "メーター右上の「書出」「読込」で記録を CSV で書き出し・読み込みできます。"
     )
 }
 
