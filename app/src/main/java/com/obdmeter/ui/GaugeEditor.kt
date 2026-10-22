@@ -125,7 +125,7 @@ fun GaugeSettingsDialog(
         onDismiss()
     }
 
-    var tab by remember { mutableIntStateOf(0) }
+    var tab by remember { mutableStateOf(EditorTab.ITEM) }
     var showPicker by remember { mutableStateOf(false) }
     var showFallbackPicker by remember { mutableStateOf(false) }
     var showChartPicker by remember { mutableStateOf(false) }
@@ -181,23 +181,34 @@ fun GaugeSettingsDialog(
                         }
                     }
                 }
+                // 表示形式ごとのタブ (その形式で使わない設定は出さない)
+                val tabs = EditorTabs.forStyle(draft.style)
+                val currentTab = EditorTabs.keepOrFirst(draft.style, tab)
+                val onPickFont: (String) -> Unit = { target -> fontPickerFor = target }
                 val settings: @Composable (Modifier) -> Unit = { m ->
                     Column(m) {
-                        ScrollableTabRow(selectedTabIndex = tab, edgePadding = 8.dp) {
-                            listOf("基本", "角度・目盛り", "色・針・数値", "背景画像").forEachIndexed { i, t ->
-                                Tab(selected = tab == i, onClick = { tab = i }, text = { Text(t) })
+                        ScrollableTabRow(selectedTabIndex = tabs.indexOf(currentTab), edgePadding = 8.dp) {
+                            tabs.forEach { t ->
+                                Tab(selected = currentTab == t, onClick = { tab = t }, text = { Text(t.label) })
                             }
                         }
                         Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = 16.dp)) {
-                            when (tab) {
-                                0 -> BasicTab(draft, catalog, ::update, { draft = it }, { showPicker = true },
-                                    { showFallbackPicker = true }, { showChartPicker = true }, {
-                                        vm.copyGauge(draft)
-                                        Toast.makeText(context, "コピーしました。下の「貼り付け」で、このページや別のページに貼り付けられます", Toast.LENGTH_LONG).show()
-                                    }, onBringToFront) { confirmDelete = true }
-                                1 -> AngleTab(draft, def, ::update)
-                                2 -> ColorTab(draft, ::update) { target -> fontPickerFor = target }
-                                3 -> ImageTab(draft, ::update)
+                            when (currentTab) {
+                                EditorTab.ITEM, EditorTab.ITEM_AXIS -> ItemTab(draft, catalog, ::update, { draft = it }, { showPicker = true },
+                                    { showFallbackPicker = true }, { showChartPicker = true })
+                                EditorTab.SCALE -> ScaleTab(draft, ::update)
+                                EditorTab.BAR -> BarTab(draft, def, ::update)
+                                EditorTab.LAMP -> LampTab(draft, ::update, onPickFont)
+                                EditorTab.TABLE -> TableTab(draft, ::update, onPickFont)
+                                EditorTab.VIEW -> if (draft.style == GaugeStyle.CHART) ChartViewTab(draft, ::update, onPickFont)
+                                    else MonitorViewTab(draft, ::update, onPickFont)
+                                EditorTab.RECORD -> ChartRecordTab(draft, catalog, ::update)
+                                EditorTab.LOOK -> LookTab(draft, ::update, onPickFont)
+                                EditorTab.IMAGE -> ImageTab(draft, ::update)
+                                EditorTab.PLACE -> PlaceTab(draft, { draft = it }, {
+                                    vm.copyGauge(draft)
+                                    Toast.makeText(context, "コピーしました。下の「貼り付け」で、このページや別のページに貼り付けられます", Toast.LENGTH_LONG).show()
+                                }, onBringToFront) { confirmDelete = true }
                             }
                             Spacer(Modifier.height(24.dp))
                         }
@@ -293,11 +304,11 @@ fun GaugeSettingsDialog(
 }
 
 // ---------------------------------------------------------------------------
-// タブ: 基本
+// タブ: 項目 (表示する項目・表示形式・範囲など。値テーブル・グラフ・変動監視は並べる項目も)
 // ---------------------------------------------------------------------------
 
 @Composable
-private fun BasicTab(
+private fun ItemTab(
     g: GaugeConfig,
     catalog: PidCatalog,
     update: ((GaugeDesign) -> GaugeDesign) -> Unit,
@@ -305,12 +316,17 @@ private fun BasicTab(
     onChangeItem: () -> Unit,
     onPickFallback: () -> Unit,
     onAddChartItem: () -> Unit,
-    onCopy: () -> Unit,
-    onBringToFront: () -> Unit,
-    onDelete: () -> Unit,
 ) {
     val base = catalog.get(g.pidKey)
     val d = g.design
+    Head("表示形式")
+    Row(Modifier.horizontalScroll(rememberScrollState())) {
+        GaugeStyle.entries.forEach { s ->
+            FilterChip(g.style == s, { replace(g.copy(style = s)) }, { Text(s.label) }, Modifier.padding(end = 6.dp))
+        }
+    }
+    Hint("表示形式を変えると、その形式で使う設定のタブに切り替わります (ほかの形式の設定は残っています)。")
+
     Head("表示する項目")
     Row(verticalAlignment = Alignment.CenterVertically) {
         Column(Modifier.weight(1f)) {
@@ -320,78 +336,69 @@ private fun BasicTab(
         OutlinedButton(onClick = onChangeItem) { Text("変更") }
     }
 
-    Head("代替項目 (イグニッション OFF 時など)")
-    Hint(
-        "上の項目が読めないときに、代わりに表示する項目です。BMW ではイグニッション OFF の間、" +
-            "標準の項目 (水温・電圧など) はエンジン ECU が応答を拒否します。" +
-            "同じ値を読むカスタム PID を指定しておくと、OFF の間はそちらの値を表示します。" +
-            "単位と範囲は上の項目に合わせてください。"
-    )
-    val fb = g.fallbackKey?.let { catalog.get(it) }
-    Row(verticalAlignment = Alignment.CenterVertically) {
-        Column(Modifier.weight(1f)) {
-            when {
-                g.fallbackKey == null -> Text("なし", color = GaugeColors.SubText)
-                fb == null -> Text("(見つかりません: ${g.fallbackKey})", color = GaugeColors.Warn)
-                else -> {
-                    Text(fb.name, fontWeight = FontWeight.Medium)
-                    Text("${fb.sourceLabel()}  ${fb.unit}", color = GaugeColors.SubText, fontSize = 12.sp)
-                }
-            }
-        }
-        OutlinedButton(onClick = onPickFallback) { Text(if (g.fallbackKey == null) "設定" else "変更") }
-        if (g.fallbackKey != null) {
-            Spacer(Modifier.width(6.dp))
-            OutlinedButton(onClick = { replace(g.copy(fallbackKey = null)) }) { Text("外す") }
-        }
-    }
-
-    Head("表示形式")
-    Row(Modifier.horizontalScroll(rememberScrollState())) {
-        GaugeStyle.entries.forEach { s ->
-            FilterChip(g.style == s, { replace(g.copy(style = s)) }, { Text(s.label) }, Modifier.padding(end = 6.dp))
-        }
-    }
-
     when (g.style) {
-        GaugeStyle.LAMP -> LampSettings(g, update)
-        GaugeStyle.CHART -> ChartSettings(g, catalog, update, replace, onAddChartItem)
-        GaugeStyle.TABLE -> TableSettings(g, catalog, update, replace, onAddChartItem)
-        GaugeStyle.MONITOR -> MonitorSettings(g, catalog, update, replace, onAddChartItem)
+        GaugeStyle.TABLE -> {
+            Head("表に並べる項目")
+            Hint("上から順に並べ、1 段の最大行数を超えたら右に段を増やします。先頭は上の「表示する項目」です。")
+            ItemRows(g, catalog, update, replace, onAddChartItem)
+        }
+        GaugeStyle.MONITOR -> {
+            Head("監視する項目")
+            Hint(
+                "各項目の値が変わった回数と時刻・値を記録し、直近の期間ごとに変動回数の多い順 (同じ回数なら登録順) に並べます。" +
+                    "先頭は上の「表示する項目」です。"
+            )
+            ItemRows(g, catalog, update, replace, onAddChartItem)
+        }
+        GaugeStyle.CHART -> ChartItems(g, catalog, update, replace, onAddChartItem)
         else -> {}
     }
 
-    Head("フロート表示")
-    SwitchLine("フロート表示する", "OFF にすると、このメーターはダッシュボードだけに表示し、フロート表示には出しません",
-        g.floatShow) { replace(g.copy(floatShow = it)) }
-    if (g.floatShow) {
-    Head("フロート表示のグループ")
-    Hint(
-        "同じページで同じグループにしたメーターは、フロート表示のとき 1 つのウィンドウにまとめて、" +
-            "ダッシュボードと同じ並びで表示します。「なし」のメーターは 1 つずつ表示します。"
-    )
-    Row(Modifier.horizontalScroll(rememberScrollState())) {
-        FilterChip(g.floatGroup == null, { replace(g.copy(floatGroup = null)) }, { Text("なし") }, Modifier.padding(end = 6.dp))
-        (1..GaugeConfig.FLOAT_GROUPS).forEach { n ->
-            FilterChip(g.floatGroup == n, { replace(g.copy(floatGroup = n)) }, { Text(GaugeConfig.groupLabel(n)) },
-                Modifier.padding(end = 6.dp))
+    if (g.style != GaugeStyle.MONITOR) {
+        Head("代替項目 (イグニッション OFF 時など)")
+        Hint(
+            "上の項目が読めないときに、代わりに表示する項目です。BMW ではイグニッション OFF の間、" +
+                "標準の項目 (水温・電圧など) はエンジン ECU が応答を拒否します。" +
+                "同じ値を読むカスタム PID を指定しておくと、OFF の間はそちらの値を表示します。" +
+                "単位と範囲は上の項目に合わせてください。"
+        )
+        val fb = g.fallbackKey?.let { catalog.get(it) }
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                when {
+                    g.fallbackKey == null -> Text("なし", color = GaugeColors.SubText)
+                    fb == null -> Text("(見つかりません: ${g.fallbackKey})", color = GaugeColors.Warn)
+                    else -> {
+                        Text(fb.name, fontWeight = FontWeight.Medium)
+                        Text("${fb.sourceLabel()}  ${fb.unit}", color = GaugeColors.SubText, fontSize = 12.sp)
+                    }
+                }
+            }
+            OutlinedButton(onClick = onPickFallback) { Text(if (g.fallbackKey == null) "設定" else "変更") }
+            if (g.fallbackKey != null) {
+                Spacer(Modifier.width(6.dp))
+                OutlinedButton(onClick = { replace(g.copy(fallbackKey = null)) }) { Text("外す") }
+            }
         }
     }
+
+    if (EditorTabs.usesLabelField(g.style)) {
+        Head("表示名 (空欄で「${base?.shortName ?: ""}」)")
+        var labelText by remember(g.id, g.pidKey) { mutableStateOf(d.label.orEmpty()) }
+        OutlinedTextField(
+            value = labelText,
+            onValueChange = { labelText = it; update { x -> x.copy(label = it.ifBlank { null }) } },
+            singleLine = true,
+            modifier = Modifier.fillMaxWidth(),
+        )
     }
 
-    Head("表示名 (空欄で「${base?.shortName ?: ""}」)")
-    var labelText by remember(g.id, g.pidKey) { mutableStateOf(d.label.orEmpty()) }
-    OutlinedTextField(
-        value = labelText,
-        onValueChange = { labelText = it; update { x -> x.copy(label = it.ifBlank { null }) } },
-        singleLine = true,
-        modifier = Modifier.fillMaxWidth(),
-    )
-
-    Head("目盛りの範囲 (空欄で既定値)")
-    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        NumberField("最小", d.min, base?.min, g.id to g.pidKey, Modifier.weight(1f)) { v -> update { it.copy(min = v) } }
-        NumberField("最大", d.max, base?.max, g.id to g.pidKey, Modifier.weight(1f)) { v -> update { it.copy(max = v) } }
+    if (EditorTabs.usesRange(g.style)) {
+        Head(if (g.style == GaugeStyle.CHART) "先頭の項目の範囲 (空欄で既定値)" else "目盛りの範囲 (空欄で既定値)")
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            NumberField("最小", d.min, base?.min, g.id to g.pidKey, Modifier.weight(1f)) { v -> update { it.copy(min = v) } }
+            NumberField("最大", d.max, base?.max, g.id to g.pidKey, Modifier.weight(1f)) { v -> update { it.copy(max = v) } }
+        }
     }
 
     Head("小数点以下の桁数")
@@ -402,19 +409,35 @@ private fun BasicTab(
         }
     }
 
-    SwitchLine("既定の警告値を使う",
-        listOfNotNull(base?.warnAbove?.let { "上限 ${fmt(it)}" }, base?.warnBelow?.let { "下限 ${fmt(it)}" })
-            .joinToString(" / ").ifEmpty { "警告なし" },
-        d.useDefaultWarn) { v -> update { it.copy(useDefaultWarn = v) } }
-    if (!d.useDefaultWarn) {
-        Hint("値がこの範囲を超えると針・数値が赤くなります (空欄 = 警告なし)")
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            NumberField("下限", d.warnBelow, null, g.id to g.pidKey, Modifier.weight(1f)) { v -> update { it.copy(warnBelow = v) } }
-            NumberField("上限", d.warnAbove, null, g.id to g.pidKey, Modifier.weight(1f)) { v -> update { it.copy(warnAbove = v) } }
+    if (EditorTabs.usesWarn(g.style)) {
+        SwitchLine("既定の警告値を使う",
+            listOfNotNull(base?.warnAbove?.let { "上限 ${fmt(it)}" }, base?.warnBelow?.let { "下限 ${fmt(it)}" })
+                .joinToString(" / ").ifEmpty { "警告なし" },
+            d.useDefaultWarn) { v -> update { it.copy(useDefaultWarn = v) } }
+        if (!d.useDefaultWarn) {
+            Hint(if (g.style == GaugeStyle.LAMP) "条件が空欄のランプは、値がこの範囲を超えると点灯します (空欄 = 警告なし)"
+                else "値がこの範囲を超えると針・数値が赤くなります (空欄 = 警告なし)")
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                NumberField("下限", d.warnBelow, null, g.id to g.pidKey, Modifier.weight(1f)) { v -> update { it.copy(warnBelow = v) } }
+                NumberField("上限", d.warnAbove, null, g.id to g.pidKey, Modifier.weight(1f)) { v -> update { it.copy(warnAbove = v) } }
+            }
         }
     }
+}
 
-    Head("配置")
+// ---------------------------------------------------------------------------
+// タブ: 配置 (全形式共通)
+// ---------------------------------------------------------------------------
+
+@Composable
+private fun PlaceTab(
+    g: GaugeConfig,
+    replace: (GaugeConfig) -> Unit,
+    onCopy: () -> Unit,
+    onBringToFront: () -> Unit,
+    onDelete: () -> Unit,
+) {
+    Head("位置と大きさ")
     Text("位置 (${g.x}, ${g.y})  大きさ ${g.w} × ${g.h} マス (ページ全体 ${Layout.COLS} × ${Layout.ROWS})",
         color = GaugeColors.SubText, fontSize = 12.sp)
     Hint("ページの外にはみ出して置けます (はみ出した部分は表示されません)。右や下にはみ出して大きさ変更のつまみが見えないときは、ここで調整してください。")
@@ -427,10 +450,33 @@ private fun BasicTab(
     SliderLine("縦の位置", g.y.toFloat(), Layout.yRange(g.h).f(), "%.0f") { v -> place(g.x, v.roundToInt(), g.w, g.h) }
     SliderLine("幅", g.w.toFloat(), Layout.widthRange.f(), "%.0f マス") { v -> place(g.x, g.y, v.roundToInt(), g.h) }
     SliderLine("高さ", g.h.toFloat(), Layout.heightRange.f(), "%.0f マス") { v -> place(g.x, g.y, g.w, v.roundToInt()) }
+
+    Head("グループ")
     if (g.layoutGroup != null) {
         Hint("このメーターはグループに入っています。ダッシュボードではグループごと移動・大きさ変更・コピーされます (ここでの位置・大きさの変更とコピーは、このメーターだけ)。")
         OutlinedButton(onClick = { replace(g.copy(layoutGroup = null)) }) { Text("グループから外す") }
+    } else {
+        Hint("グループには入っていません。ダッシュボードの編集中に下の「グループ」から、複数のメーターをまとめられます。")
     }
+
+    Head("フロート表示")
+    SwitchLine("フロート表示する", "OFF にすると、このメーターはダッシュボードだけに表示し、フロート表示には出しません",
+        g.floatShow) { replace(g.copy(floatShow = it)) }
+    if (g.floatShow) {
+        Hint(
+            "同じページで同じフロート表示のグループにしたメーターは、1 つのウィンドウにまとめて、" +
+                "ダッシュボードと同じ並びで表示します。「なし」のメーターは 1 つずつ表示します。"
+        )
+        Row(Modifier.horizontalScroll(rememberScrollState())) {
+            FilterChip(g.floatGroup == null, { replace(g.copy(floatGroup = null)) }, { Text("なし") }, Modifier.padding(end = 6.dp))
+            (1..GaugeConfig.FLOAT_GROUPS).forEach { n ->
+                FilterChip(g.floatGroup == n, { replace(g.copy(floatGroup = n)) }, { Text(GaugeConfig.groupLabel(n)) },
+                    Modifier.padding(end = 6.dp))
+            }
+        }
+    }
+
+    Head("操作")
     Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(top = 4.dp)) {
         OutlinedButton(onClick = onCopy) { Text(if (g.layoutGroup != null) "このメーターだけコピー" else "コピー") }
         OutlinedButton(onClick = onBringToFront) { Text("最前面へ") }
@@ -439,140 +485,31 @@ private fun BasicTab(
 }
 
 // ---------------------------------------------------------------------------
-// タブ: 角度・目盛り・レッドゾーン
+// タブ: 目盛り・針 (アナログ)
 // ---------------------------------------------------------------------------
 
 @Composable
-private fun AngleTab(g: GaugeConfig, def: com.obdmeter.core.PidDef?, update: ((GaugeDesign) -> GaugeDesign) -> Unit) {
+private fun ScaleTab(g: GaugeConfig, update: ((GaugeDesign) -> GaugeDesign) -> Unit) {
     val d = g.design
-    if (g.style == GaugeStyle.BAR) {
-        Head("デジパネ風")
-        Hint("昔のソアラや 86 のデジタルメーターのような、弧を描いて伸びる蛍光管風のバーにします (あとから個別に調整できます)。")
-        OutlinedButton(onClick = {
-            update {
-                it.copy(
-                    barArc = true, startAngle = -100f, endAngle = 70f, barSegments = 32, barSegmentGap = 0.35f,
-                    barTaper = 0.65f, arcWidth = 1.2f, showTrack = true, showValueArc = true,
-                    barZoneColors = true, color = 0xFF39FF7AL, barMidColor = 0xFFFFC21AL,
-                    barMidFrom = def?.let { d0 -> d0.min + (d0.max - d0.min) * 0.7 },
-                    redZoneColor = 0xFFFF3B30L, barOffColor = null,
-                    glow = 0.6f, ghostDigits = true, ghostAlpha = 0.12f,
-                    valueColor = 0xFF5CFFB0L, faceColor = it.faceColor ?: 0xFF050805L,
-                )
-            }
-        }) { Text("デジパネ風にする") }
+    Head("シンプルな扇形")
+    Hint("針・目盛りを消して、端の丸い太い弧と中央の大きな数値だけのシンプルなメーターにします (あとから個別に調整できます)。")
+    OutlinedButton(onClick = {
+        update {
+            it.copy(
+                startAngle = -135f, endAngle = 135f, showNeedle = false, showTicks = false, showLabels = false,
+                ring = RingStyle.NONE, showTrack = true, showValueArc = true, arcWidth = 2.2f, tickRadius = 1f,
+                arcRoundCap = true, arcTipDot = true, trackColor = 0xFF2A2F37L, color = it.color ?: 0xFF2F9BFFL,
+                valuePosition = 0.05f, valueOffsetX = 0f, valueSize = 2.2f,
+                nameOffsetX = 0f, nameOffsetY = 0.51f, unitOffsetX = 0f, unitOffsetY = 0f,
+                showName = true, showUnit = true,
+            )
+        }
+    }) { Text("シンプルな扇形にする") }
 
-        Head("バーの形")
-        Row {
-            FilterChip(!d.barArc, { update { it.copy(barArc = false) } }, { Text("直線") }, Modifier.padding(end = 6.dp))
-            FilterChip(d.barArc, { update { it.copy(barArc = true) } }, { Text("弧") })
-        }
-        if (d.barArc) Hint("弧の範囲は下の「開始・終了角度」で決めます。枠いっぱいに収まる大きさで描きます。")
-        SliderLine("先細り", d.barTaper * 100, 0f..100f, "%.0f%%") { v -> update { it.copy(barTaper = snap(v, 5f) / 100f) } }
-        Hint("始まりを細く、終わりに向かって太くします (デジパネのタコメーター風)。")
-    }
-    if (g.style == GaugeStyle.BAR && !d.barArc) {
-        Head("バーの角度 (時計回り)")
-        Row(Modifier.horizontalScroll(rememberScrollState())) {
-            listOf(
-                "横 (左→右)" to 0f, "縦 (下→上)" to -90f, "縦 (上→下)" to 90f,
-                "斜め ↗" to -45f, "斜め ↘" to 45f, "横 (右→左)" to 180f,
-            ).forEach { (name, a) ->
-                FilterChip(d.barAngle == a, { update { it.copy(barAngle = a) } }, { Text(name) }, Modifier.padding(end = 6.dp))
-            }
-        }
-        SliderLine("角度", d.barAngle, -180f..180f, "%.0f°") { v -> update { it.copy(barAngle = snap(v, 5f)) } }
-        Hint("0° 以外はメーターの中央を軸に回し、枠に収まる長さで描きます。")
-
-        Head("バーの線")
-        Row {
-            FilterChip(d.barSegments == 0, { update { it.copy(barSegments = 0) } }, { Text("実線") }, Modifier.padding(end = 6.dp))
-            FilterChip(d.barSegments > 0, { update { it.copy(barSegments = if (it.barSegments > 0) it.barSegments else 20) } },
-                { Text("破線") })
-        }
-    }
-    if (g.style == GaugeStyle.BAR && d.barArc) {
-        Head("バーの線")
-        Row {
-            FilterChip(d.barSegments == 0, { update { it.copy(barSegments = 0) } }, { Text("実線") }, Modifier.padding(end = 6.dp))
-            FilterChip(d.barSegments > 0, { update { it.copy(barSegments = if (it.barSegments > 0) it.barSegments else 20) } },
-                { Text("破線") })
-        }
-    }
-    if (g.style == GaugeStyle.BAR) {
-        if (d.barSegments > 0) {
-            SliderLine("マスの数", d.barSegments.toFloat(), 3f..60f, "%.0f") { v -> update { it.copy(barSegments = v.roundToInt()) } }
-            SliderLine("マスの間のすき間", d.barSegmentGap * 100, 5f..80f, "%.0f%%") { v -> update { it.copy(barSegmentGap = snap(v, 1f) / 100f) } }
-        }
-        SliderLine("バーの太さ", d.arcWidth * 100, 0f..300f, "%.0f%%") { v -> update { it.copy(arcWidth = snap(v, 5f) / 100f) } }
-
-        Head("マスの色")
-        SwitchLine("範囲で色分けする", "通常の色 → 中間の色 → レッドゾーンの色 の順に、位置ごとに塗り分けます", d.barZoneColors) { v ->
-            update { it.copy(barZoneColors = v) }
-        }
-        if (d.barZoneColors) {
-            // 通常の色はメーターの色と同じもの (「色・針・数値」タブでも変えられる)
-            ColorLine("通常の色 (= メーターの色)", d.color, GaugeColors.Accent) { c -> update { it.copy(color = c) } }
-            ColorLine("中間の色", d.barMidColor, Color(0xFFFFC107)) { c -> update { it.copy(barMidColor = c) } }
-            if (def != null && def.max > def.min) {
-                val from = (d.barMidFrom ?: (def.min + (def.max - def.min) * 0.7)).toFloat()
-                SliderLine("中間の色にする値", from, def.min.toFloat()..def.max.toFloat(), "%.0f") { v ->
-                    update { it.copy(barMidFrom = v.toDouble()) }
-                }
-            }
-            Hint("レッドゾーンの範囲と色は下の「レッドゾーン」の設定を使います。")
-        }
-        ColorLine("消えているマス・背景の色 (既定 = 自動)", d.barOffColor, GaugeColors.Track) { c -> update { it.copy(barOffColor = c) } }
-        Hint("自動のときは、色分けか発光を使うと各マスの色をうっすら、それ以外は灰色で描きます。")
-    }
-    if (g.style != GaugeStyle.ANALOG) Hint("以下の角度・目盛りはアナログ表示のときに使われます。レッドゾーンはバー表示でも使われます。")
-    if (g.style == GaugeStyle.ANALOG) {
-        Head("シンプルな扇形")
-        Hint("針・目盛りを消して、端の丸い太い弧と中央の大きな数値だけのシンプルなメーターにします (あとから個別に調整できます)。")
-        OutlinedButton(onClick = {
-            update {
-                it.copy(
-                    startAngle = -135f, endAngle = 135f, showNeedle = false, showTicks = false, showLabels = false,
-                    ring = RingStyle.NONE, showTrack = true, showValueArc = true, arcWidth = 2.2f, tickRadius = 1f,
-                    arcRoundCap = true, arcTipDot = true, trackColor = 0xFF2A2F37L, color = it.color ?: 0xFF2F9BFFL,
-                    valuePosition = 0.05f, valueOffsetX = 0f, valueSize = 2.2f,
-                    nameOffsetX = 0f, nameOffsetY = 0.51f, unitOffsetX = 0f, unitOffsetY = 0f,
-                    showName = true, showUnit = true,
-                )
-            }
-        }) { Text("シンプルな扇形にする") }
-
-        Head("弧")
-        SwitchLine("弧の端を丸くする", null, d.arcRoundCap) { v -> update { it.copy(arcRoundCap = v) } }
-        SwitchLine("弧の先に丸い点を付ける", "ピーク値を表示しているときは、点がピーク値の印になります (三角の印の代わり)", d.arcTipDot) { v ->
-            update { it.copy(arcTipDot = v) }
-        }
-        if (d.arcTipDot) {
-            if (d.showPeak) Hint("ピーク値を表示しているので、点の色は「ピーク値の印の色」になります")
-            else ColorLine("点の色", d.arcTipColor, Color.White) { c -> update { it.copy(arcTipColor = c) } }
-        }
-        ColorLine("背景の弧の色 (既定 = 灰色)", d.trackColor, GaugeColors.Track) { c -> update { it.copy(trackColor = c) } }
-        SwitchLine("目盛りの線を表示", "OFF にすると目盛りの線を描きません (数字は下の設定)", d.showTicks) { v -> update { it.copy(showTicks = v) } }
-    }
-
-    Head("開始・終了角度 (12 時 = 0°、時計回り)")
-    Row(Modifier.horizontalScroll(rememberScrollState())) {
-        listOf(
-            "標準 240°" to (-120f to 120f),
-            "270°" to (-135f to 135f),
-            "300°" to (-150f to 150f),
-            "半円 180°" to (-90f to 90f),
-            "右上 90°" to (0f to 90f),
-            "全周 360°" to (-180f to 180f),
-        ).forEach { (name, a) ->
-            FilterChip(d.startAngle == a.first && d.endAngle == a.second,
-                { update { it.copy(startAngle = a.first, endAngle = a.second) } }, { Text(name) }, Modifier.padding(end = 6.dp))
-        }
-    }
-    SliderLine("開始角度", d.startAngle, -180f..180f, "%.0f°") { v -> update { it.copy(startAngle = snap(v, 5f)) } }
-    SliderLine("終了角度", d.endAngle, -180f..360f, "%.0f°") { v -> update { it.copy(endAngle = snap(v, 5f)) } }
+    AngleSection(d, update)
 
     Head("目盛り")
+    SwitchLine("目盛りの線を表示", null, d.showTicks) { v -> update { it.copy(showTicks = v) } }
     SwitchLine("主目盛りの数を自動で決める", null, d.majorDivisions == null) { auto ->
         update { it.copy(majorDivisions = if (auto) null else 8) }
     }
@@ -589,12 +526,65 @@ private fun AngleTab(g: GaugeConfig, def: com.obdmeter.core.PidDef?, update: ((G
     if (d.showLabels) {
         SliderLine("数字の大きさ", d.labelSize * 100, 40f..250f, "%.0f%%") { v -> update { it.copy(labelSize = snap(v, 5f) / 100f) } }
     }
+    ColorLine("目盛りの色", d.tickColor, GaugeColors.Tick) { c -> update { it.copy(tickColor = c) } }
 
     Head("弧")
     SwitchLine("下地の弧", null, d.showTrack) { v -> update { it.copy(showTrack = v) } }
-    SwitchLine("現在値の弧 / バー", null, d.showValueArc) { v -> update { it.copy(showValueArc = v) } }
-    SliderLine("弧・バーの太さ (0 = なし)", d.arcWidth * 100, 0f..300f, "%.0f%%") { v -> update { it.copy(arcWidth = snap(v, 5f) / 100f) } }
+    if (d.showTrack) ColorLine("下地の弧の色 (既定 = 灰色)", d.trackColor, GaugeColors.Track) { c -> update { it.copy(trackColor = c) } }
+    SwitchLine("現在値の弧", null, d.showValueArc) { v -> update { it.copy(showValueArc = v) } }
+    SliderLine("弧の太さ (0 = なし)", d.arcWidth * 100, 0f..300f, "%.0f%%") { v -> update { it.copy(arcWidth = snap(v, 5f) / 100f) } }
+    SwitchLine("弧の端を丸くする", null, d.arcRoundCap) { v -> update { it.copy(arcRoundCap = v) } }
+    SwitchLine("弧の先に丸い点を付ける", "ピーク値を表示しているときは、点がピーク値の印になります (三角の印の代わり)", d.arcTipDot) { v ->
+        update { it.copy(arcTipDot = v) }
+    }
+    if (d.arcTipDot) {
+        if (d.showPeak) Hint("ピーク値を表示しているので、点の色は「ピーク値の印の色」になります (「色・数値」タブ)")
+        else ColorLine("点の色", d.arcTipColor, Color.White) { c -> update { it.copy(arcTipColor = c) } }
+    }
 
+    RedZoneSection(g, update)
+
+    Head("針 (ポインター)")
+    SwitchLine("針を表示", null, d.showNeedle) { v -> update { it.copy(showNeedle = v) } }
+    if (d.showNeedle) {
+        ColorLine("針の色", d.needleColor, GaugeColors.Text) { c -> update { it.copy(needleColor = c) } }
+        SliderLine("針の長さ", d.needleLength * 100, 30f..130f, "%.0f%%") { v -> update { it.copy(needleLength = snap(v, 5f) / 100f) } }
+        SliderLine("針の太さ", d.needleWidth * 100, 20f..400f, "%.0f%%") { v -> update { it.copy(needleWidth = snap(v, 5f) / 100f) } }
+        SliderLine("反対側の尾の長さ", d.needleTail * 100, 0f..60f, "%.0f%%") { v -> update { it.copy(needleTail = snap(v, 1f) / 100f) } }
+
+        Head("中心のノブ")
+        ColorLine("ノブの色 (既定 = 針と同じ)", d.knobColor, d.needleColor?.let { Color(it) } ?: GaugeColors.Text) { c ->
+            update { it.copy(knobColor = c) }
+        }
+        SliderLine("ノブの大きさ (0 = なし)", d.knobSize * 100, 0f..400f, "%.0f%%") { v -> update { it.copy(knobSize = snap(v, 5f) / 100f) } }
+    }
+}
+
+/** 開始・終了角度 (アナログ・弧のバー) */
+@Composable
+private fun AngleSection(d: GaugeDesign, update: ((GaugeDesign) -> GaugeDesign) -> Unit) {
+    Head("開始・終了角度 (12 時 = 0°、時計回り)")
+    Row(Modifier.horizontalScroll(rememberScrollState())) {
+        listOf(
+            "標準 240°" to (-120f to 120f),
+            "270°" to (-135f to 135f),
+            "300°" to (-150f to 150f),
+            "半円 180°" to (-90f to 90f),
+            "右上 90°" to (0f to 90f),
+            "全周 360°" to (-180f to 180f),
+        ).forEach { (name, a) ->
+            FilterChip(d.startAngle == a.first && d.endAngle == a.second,
+                { update { it.copy(startAngle = a.first, endAngle = a.second) } }, { Text(name) }, Modifier.padding(end = 6.dp))
+        }
+    }
+    SliderLine("開始角度", d.startAngle, -180f..180f, "%.0f°") { v -> update { it.copy(startAngle = snap(v, 5f)) } }
+    SliderLine("終了角度", d.endAngle, -180f..360f, "%.0f°") { v -> update { it.copy(endAngle = snap(v, 5f)) } }
+}
+
+/** レッドゾーン (アナログ・バー) */
+@Composable
+private fun RedZoneSection(g: GaugeConfig, update: ((GaugeDesign) -> GaugeDesign) -> Unit) {
+    val d = g.design
     Head("レッドゾーン")
     SwitchLine("レッドゾーンを表示", null, d.showRedZone) { v -> update { it.copy(showRedZone = v) } }
     if (d.showRedZone) {
@@ -610,25 +600,128 @@ private fun AngleTab(g: GaugeConfig, def: com.obdmeter.core.PidDef?, update: ((G
 }
 
 // ---------------------------------------------------------------------------
-// タブ: 色・リング・針・数値
+// タブ: バーの形 (バー)
 // ---------------------------------------------------------------------------
 
 @Composable
-private fun ColorTab(g: GaugeConfig, update: ((GaugeDesign) -> GaugeDesign) -> Unit, onPickFont: (String) -> Unit) {
+private fun BarTab(g: GaugeConfig, def: com.obdmeter.core.PidDef?, update: ((GaugeDesign) -> GaugeDesign) -> Unit) {
     val d = g.design
-    val lib = LocalFontLibrary.current
+    Head("デジパネ風")
+    Hint("昔のソアラや 86 のデジタルメーターのような、弧を描いて伸びる蛍光管風のバーにします (あとから個別に調整できます)。")
+    OutlinedButton(onClick = {
+        update {
+            it.copy(
+                barArc = true, startAngle = -100f, endAngle = 70f, barSegments = 32, barSegmentGap = 0.35f,
+                barTaper = 0.65f, arcWidth = 1.2f, showTrack = true, showValueArc = true,
+                barZoneColors = true, color = 0xFF39FF7AL, barMidColor = 0xFFFFC21AL,
+                barMidFrom = def?.let { d0 -> d0.min + (d0.max - d0.min) * 0.7 },
+                redZoneColor = 0xFFFF3B30L, barOffColor = null,
+                glow = 0.6f, ghostDigits = true, ghostAlpha = 0.12f,
+                valueColor = 0xFF5CFFB0L, faceColor = it.faceColor ?: 0xFF050805L,
+            )
+        }
+    }) { Text("デジパネ風にする") }
 
+    Head("バーの形")
+    Row {
+        FilterChip(!d.barArc, { update { it.copy(barArc = false) } }, { Text("直線") }, Modifier.padding(end = 6.dp))
+        FilterChip(d.barArc, { update { it.copy(barArc = true) } }, { Text("弧") })
+    }
+    if (d.barArc) {
+        Hint("枠いっぱいに収まる大きさで描きます。")
+        AngleSection(d, update)
+    } else {
+        Head("バーの角度 (時計回り)")
+        Row(Modifier.horizontalScroll(rememberScrollState())) {
+            listOf(
+                "横 (左→右)" to 0f, "縦 (下→上)" to -90f, "縦 (上→下)" to 90f,
+                "斜め ↗" to -45f, "斜め ↘" to 45f, "横 (右→左)" to 180f,
+            ).forEach { (name, a) ->
+                FilterChip(d.barAngle == a, { update { it.copy(barAngle = a) } }, { Text(name) }, Modifier.padding(end = 6.dp))
+            }
+        }
+        SliderLine("角度", d.barAngle, -180f..180f, "%.0f°") { v -> update { it.copy(barAngle = snap(v, 5f)) } }
+        Hint("0° 以外はメーターの中央を軸に回し、枠に収まる長さで描きます。")
+    }
+
+    Head("バーの線")
+    Row {
+        FilterChip(d.barSegments == 0, { update { it.copy(barSegments = 0) } }, { Text("実線") }, Modifier.padding(end = 6.dp))
+        FilterChip(d.barSegments > 0, { update { it.copy(barSegments = if (it.barSegments > 0) it.barSegments else 20) } },
+            { Text("破線") })
+    }
+    if (d.barSegments > 0) {
+        SliderLine("マスの数", d.barSegments.toFloat(), 3f..60f, "%.0f") { v -> update { it.copy(barSegments = v.roundToInt()) } }
+        SliderLine("マスの間のすき間", d.barSegmentGap * 100, 5f..80f, "%.0f%%") { v -> update { it.copy(barSegmentGap = snap(v, 1f) / 100f) } }
+    }
+    SliderLine("バーの太さ", d.arcWidth * 100, 0f..300f, "%.0f%%") { v -> update { it.copy(arcWidth = snap(v, 5f) / 100f) } }
+    SliderLine("先細り", d.barTaper * 100, 0f..100f, "%.0f%%") { v -> update { it.copy(barTaper = snap(v, 5f) / 100f) } }
+    Hint("始まりを細く、終わりに向かって太くします (デジパネのタコメーター風)。")
+    SwitchLine("下地 (値の無い部分) を表示", null, d.showTrack) { v -> update { it.copy(showTrack = v) } }
+    SwitchLine("現在値のバーを表示", null, d.showValueArc) { v -> update { it.copy(showValueArc = v) } }
+
+    Head("マスの色")
+    ColorLine("通常の色 (= メーターの色)", d.color, GaugeColors.Accent) { c -> update { it.copy(color = c) } }
+    SwitchLine("範囲で色分けする", "通常の色 → 中間の色 → レッドゾーンの色 の順に、位置ごとに塗り分けます", d.barZoneColors) { v ->
+        update { it.copy(barZoneColors = v) }
+    }
+    if (d.barZoneColors) {
+        ColorLine("中間の色", d.barMidColor, Color(0xFFFFC107)) { c -> update { it.copy(barMidColor = c) } }
+        if (def != null && def.max > def.min) {
+            val from = (d.barMidFrom ?: (def.min + (def.max - def.min) * 0.7)).toFloat()
+            SliderLine("中間の色にする値", from, def.min.toFloat()..def.max.toFloat(), "%.0f") { v ->
+                update { it.copy(barMidFrom = v.toDouble()) }
+            }
+        }
+        Hint("レッドゾーンの範囲と色は下の「レッドゾーン」の設定を使います。")
+    }
+    ColorLine("消えているマス・背景の色 (既定 = 自動)", d.barOffColor, GaugeColors.Track) { c -> update { it.copy(barOffColor = c) } }
+    Hint("自動のときは、色分けか発光を使うと各マスの色をうっすら、それ以外は灰色で描きます。")
+    ColorLine("目盛りの色", d.tickColor, GaugeColors.Tick) { c -> update { it.copy(tickColor = c) } }
+
+    RedZoneSection(g, update)
+}
+
+// ---------------------------------------------------------------------------
+// タブ: 色・数値 (アナログ・バー・デジタル)
+// ---------------------------------------------------------------------------
+
+@Composable
+private fun LookTab(g: GaugeConfig, update: ((GaugeDesign) -> GaugeDesign) -> Unit, onPickFont: (String) -> Unit) {
+    val d = g.design
+    FontSection(d, onPickFont)
+    if (g.style == GaugeStyle.ANALOG) {
+        ColorLine("メーターの色 (現在値の弧)", d.color, GaugeColors.Accent) { c -> update { it.copy(color = c) } }
+    }
+    GlowSection(g, update)
+    FaceSection(d, update)
+    if (EditorTabs.usesRing(g.style)) RingSection(d, update)
+
+    Head("値の動き")
+    SliderLine("なめらかさ", d.smoothing * 100, 0f..100f, "%.0f%%") { v -> update { it.copy(smoothing = snap(v, 5f) / 100f) } }
+    Hint("小さくするほど値の変化にすぐ追従し (反応が速い)、大きくするほど針や数値がなめらかに動きます (少し遅れます)。50% が従来の動きです。")
+
+    PeakSection(g, update)
+    ValueNameUnitSection(g, update)
+    CardSwitch(d, update)
+}
+
+@Composable
+private fun FontSection(d: GaugeDesign, onPickFont: (String) -> Unit) {
+    val lib = LocalFontLibrary.current
     Head("フォント")
     Hint("取り込んだフォントは、ほかのメーターでもそのまま選べます")
-    FontLine("数値 (現在値・最大値)", d.valueFont?.let { lib[it]?.name ?: "(削除されたフォント)" } ?: "既定 (等幅)") { onPickFont("value") }
-    FontLine("文字 (目盛りの数字・名前・単位)", d.labelFont?.let { lib[it]?.name ?: "(削除されたフォント)" } ?: "既定") { onPickFont("label") }
+    FontLine("数値", d.valueFont?.let { lib[it]?.name ?: "(削除されたフォント)" } ?: "既定 (等幅)") { onPickFont("value") }
+    FontLine("文字 (名前・単位・目盛りの数字)", d.labelFont?.let { lib[it]?.name ?: "(削除されたフォント)" } ?: "既定") { onPickFont("label") }
+}
 
-    ColorLine("メーターの色 (現在値の弧・バー)", d.color, GaugeColors.Accent) { c -> update { it.copy(color = c) } }
-    if (g.style in setOf(GaugeStyle.ANALOG, GaugeStyle.BAR, GaugeStyle.DIGITAL, GaugeStyle.TABLE, GaugeStyle.CHART)) {
-        Head("蛍光管風")
-        SliderLine("発光 (にじみ)", d.glow * 100, 0f..100f, "%.0f%%") { v -> update { it.copy(glow = snap(v, 5f) / 100f) } }
-    }
-    if (g.style in setOf(GaugeStyle.ANALOG, GaugeStyle.BAR, GaugeStyle.DIGITAL, GaugeStyle.TABLE)) {
+/** 蛍光管風 (発光・消えている 7 セグ) */
+@Composable
+private fun GlowSection(g: GaugeConfig, update: ((GaugeDesign) -> GaugeDesign) -> Unit) {
+    val d = g.design
+    Head("蛍光管風")
+    SliderLine("発光 (にじみ)", d.glow * 100, 0f..100f, "%.0f%%") { v -> update { it.copy(glow = snap(v, 5f) / 100f) } }
+    if (EditorTabs.usesGhost(g.style)) {
         SwitchLine("消えている 7 セグを薄く表示", "数値の後ろに「888」をうっすら出します (7 セグ風のフォントと合わせて使います)", d.ghostDigits) { v ->
             update { it.copy(ghostDigits = v) }
         }
@@ -636,6 +729,11 @@ private fun ColorTab(g: GaugeConfig, update: ((GaugeDesign) -> GaugeDesign) -> U
             SliderLine("薄さ", d.ghostAlpha * 100, 3f..60f, "%.0f%%") { v -> update { it.copy(ghostAlpha = snap(v, 1f) / 100f) } }
         }
     }
+}
+
+/** メーターの背景色 */
+@Composable
+private fun FaceSection(d: GaugeDesign, update: ((GaugeDesign) -> GaugeDesign) -> Unit) {
     ColorLine("メーターの背景色 (既定 = なし)", d.faceColor, Color.Transparent) { c -> update { it.copy(faceColor = c) } }
     if (d.faceColor != null) {
         SliderLine("背景色の大きさ", d.faceScale * 100, 20f..150f, "%.0f%%") { v -> update { it.copy(faceScale = snap(v, 1f) / 100f) } }
@@ -643,7 +741,10 @@ private fun ColorTab(g: GaugeConfig, update: ((GaugeDesign) -> GaugeDesign) -> U
             Hint("背景色は背景画像の下に塗ります。画像の透過した部分から見えるので、大きさを画像の内側に合わせてください。")
         }
     }
+}
 
+@Composable
+private fun RingSection(d: GaugeDesign, update: ((GaugeDesign) -> GaugeDesign) -> Unit) {
     Head("外周リング")
     Row {
         RingStyle.entries.forEach { r ->
@@ -666,37 +767,24 @@ private fun ColorTab(g: GaugeConfig, update: ((GaugeDesign) -> GaugeDesign) -> U
             }
         }
     }
+}
 
-    ColorLine("目盛りの色", d.tickColor, GaugeColors.Tick) { c -> update { it.copy(tickColor = c) } }
-    ColorLine("文字の色 (目盛りの数字・名前・単位)", d.labelColor, GaugeColors.SubText) { c -> update { it.copy(labelColor = c) } }
-
-    Head("針 (ポインター)")
-    Head("値の動き")
-    SliderLine("なめらかさ", d.smoothing * 100, 0f..100f, "%.0f%%") { v -> update { it.copy(smoothing = snap(v, 5f) / 100f) } }
-    Hint("小さくするほど値の変化にすぐ追従し (反応が速い)、大きくするほど針や数値がなめらかに動きます (少し遅れます)。50% が従来の動きです。")
-    SwitchLine("針を表示", null, d.showNeedle) { v -> update { it.copy(showNeedle = v) } }
-    if (d.showNeedle) {
-        ColorLine("針の色", d.needleColor, GaugeColors.Text) { c -> update { it.copy(needleColor = c) } }
-        SliderLine("針の長さ", d.needleLength * 100, 30f..130f, "%.0f%%") { v -> update { it.copy(needleLength = snap(v, 5f) / 100f) } }
-        SliderLine("針の太さ", d.needleWidth * 100, 20f..400f, "%.0f%%") { v -> update { it.copy(needleWidth = snap(v, 5f) / 100f) } }
-        SliderLine("反対側の尾の長さ", d.needleTail * 100, 0f..60f, "%.0f%%") { v -> update { it.copy(needleTail = snap(v, 1f) / 100f) } }
-
-        Head("中心のノブ")
-        ColorLine("ノブの色 (既定 = 針と同じ)", d.knobColor, d.needleColor?.let { Color(it) } ?: GaugeColors.Text) { c ->
-            update { it.copy(knobColor = c) }
-        }
-        SliderLine("ノブの大きさ (0 = なし)", d.knobSize * 100, 0f..400f, "%.0f%%") { v -> update { it.copy(knobSize = snap(v, 5f) / 100f) } }
-    }
-
-    Head("ピーク値")
-    SwitchLine("最大値の位置に印を付ける", "ダッシュボードでメーターを長押しするとリセットします", d.showPeak) { v ->
+@Composable
+private fun PeakSection(g: GaugeConfig, update: ((GaugeDesign) -> GaugeDesign) -> Unit) {
+    val d = g.design
+    Head("ピーク値 (最大値)")
+    SwitchLine(if (g.style == GaugeStyle.DIGITAL) "最大値を表示する" else "最大値の位置に印を付ける",
+        "ダッシュボードでメーターを長押しするとリセットします", d.showPeak) { v ->
         update { it.copy(showPeak = v) }
     }
     if (d.showPeak) {
-        SwitchLine("最大値を数字でも表示", null, d.showPeakValue) { v -> update { it.copy(showPeakValue = v) } }
-        ColorLine("印の色", d.peakColor, GaugeColors.Peak) { c -> update { it.copy(peakColor = c) } }
+        if (g.style != GaugeStyle.DIGITAL) {
+            SwitchLine("最大値を数字でも表示", null, d.showPeakValue) { v -> update { it.copy(showPeakValue = v) } }
+            ColorLine("印の色", d.peakColor, GaugeColors.Peak) { c -> update { it.copy(peakColor = c) } }
+        }
         if (d.showPeakValue || g.style == GaugeStyle.DIGITAL) {
-            ColorLine("最大値の文字の色 (既定 = 印の色)", d.peakTextColor, d.peakColor?.let { Color(it) } ?: GaugeColors.Peak) { c ->
+            val default = d.peakColor?.let { Color(it) } ?: GaugeColors.Peak
+            ColorLine(if (g.style == GaugeStyle.DIGITAL) "最大値の文字の色" else "最大値の文字の色 (既定 = 印の色)", d.peakTextColor, default) { c ->
                 update { it.copy(peakTextColor = c) }
             }
             SliderLine("最大値の文字の大きさ", d.peakTextSize * 100, 30f..400f, "%.0f%%") { v -> update { it.copy(peakTextSize = snap(v, 5f) / 100f) } }
@@ -704,19 +792,29 @@ private fun ColorTab(g: GaugeConfig, update: ((GaugeDesign) -> GaugeDesign) -> U
             SliderLine("最大値の文字の縦位置 (下が +)", d.peakTextY * 100, -100f..100f, "%.0f") { v -> update { it.copy(peakTextY = snap(v, 1f) / 100f) } }
         }
     }
+}
 
-    Head("数値・名前")
+/** 数値・名前・単位 (アナログ・バー・デジタル・ランプ) */
+@Composable
+private fun ValueNameUnitSection(g: GaugeConfig, update: ((GaugeDesign) -> GaugeDesign) -> Unit) {
+    val d = g.design
+    val positions = g.style != GaugeStyle.LAMP
+    Head("数値")
     SwitchLine("数値を表示", null, d.showValue) { v -> update { it.copy(showValue = v) } }
     if (d.showValue) {
         ColorLine("数値の色", d.valueColor, GaugeColors.Text) { c -> update { it.copy(valueColor = c) } }
-        SliderLine("数値の縦位置 (中心 = 0、下が +)", d.valuePosition * 100, -90f..90f, "%.0f") { v ->
-            update { it.copy(valuePosition = snap(v, 1f) / 100f) }
-        }
-        SliderLine("数値の横位置 (中心 = 0、右が +)", d.valueOffsetX * 100, -90f..90f, "%.0f") { v ->
-            update { it.copy(valueOffsetX = snap(v, 1f) / 100f) }
-        }
         SliderLine("数値の大きさ", d.valueSize * 100, 30f..300f, "%.0f%%") { v -> update { it.copy(valueSize = snap(v, 5f) / 100f) } }
+        if (positions) {
+            SliderLine("数値の縦位置 (中心 = 0、下が +)", d.valuePosition * 100, -90f..90f, "%.0f") { v ->
+                update { it.copy(valuePosition = snap(v, 1f) / 100f) }
+            }
+            SliderLine("数値の横位置 (中心 = 0、右が +)", d.valueOffsetX * 100, -90f..90f, "%.0f") { v ->
+                update { it.copy(valueOffsetX = snap(v, 1f) / 100f) }
+            }
+        }
     }
+    Head("名前・単位")
+    ColorLine("文字の色 (名前・単位・目盛りの数字の既定)", d.labelColor, GaugeColors.SubText) { c -> update { it.copy(labelColor = c) } }
     val labelDefault = d.labelColor?.let { Color(it) } ?: GaugeColors.SubText
     SwitchLine("名前を表示", null, d.showName) { v -> update { it.copy(showName = v) } }
     if (d.showName) {
@@ -730,7 +828,7 @@ private fun ColorTab(g: GaugeConfig, update: ((GaugeDesign) -> GaugeDesign) -> U
         }
     }
     SwitchLine("単位を表示", null, d.showUnit) { v -> update { it.copy(showUnit = v) } }
-    if (d.showUnit) {
+    if (d.showUnit && positions) {
         ColorLine("単位の色 (既定 = 文字の色)", d.unitColor, labelDefault) { c -> update { it.copy(unitColor = c) } }
         SliderLine("単位の大きさ", d.tableUnitSize * 100, 30f..300f, "%.0f%%") { v -> update { it.copy(tableUnitSize = snap(v, 5f) / 100f) } }
         SliderLine("単位の横位置 (右が +)", d.unitOffsetX * 100, -60f..60f, "%.0f") { v ->
@@ -741,13 +839,134 @@ private fun ColorTab(g: GaugeConfig, update: ((GaugeDesign) -> GaugeDesign) -> U
         }
         Hint("単位の位置は数値の位置からのずれです (数値を動かすと一緒に動きます)")
     }
-    SwitchLine("四角いカードの背景を表示", "丸い背景画像を使うときは OFF にするときれいです", d.showCard) { v ->
+}
+
+@Composable
+private fun CardSwitch(d: GaugeDesign, update: ((GaugeDesign) -> GaugeDesign) -> Unit) {
+    Head("カード")
+    SwitchLine("四角いカードの背景を表示", "丸い背景画像を使うときや、背景を透かしたいときは OFF にします", d.showCard) { v ->
         update { it.copy(showCard = v) }
     }
 }
 
 // ---------------------------------------------------------------------------
-// タブ: 背景画像
+// タブ: 点灯条件・色 (ランプ)
+// ---------------------------------------------------------------------------
+
+@Composable
+private fun LampTab(g: GaugeConfig, update: ((GaugeDesign) -> GaugeDesign) -> Unit, onPickFont: (String) -> Unit) {
+    val d = g.design
+    LampSettings(g, update)
+    FontSection(d, onPickFont)
+    FaceSection(d, update)
+    RingSection(d, update)
+    ValueNameUnitSection(g, update)
+    CardSwitch(d, update)
+    Head("背景画像")
+    ImageTab(g, update)
+}
+
+// ---------------------------------------------------------------------------
+// タブ: 並べ方・文字 (値テーブル)
+// ---------------------------------------------------------------------------
+
+@Composable
+private fun TableTab(g: GaugeConfig, update: ((GaugeDesign) -> GaugeDesign) -> Unit, onPickFont: (String) -> Unit) {
+    val d = g.design
+    TableLayoutSettings(g, update)
+    FontSection(d, onPickFont)
+    Head("文字の色")
+    ColorLine("値の色", d.valueColor, GaugeColors.Text) { c -> update { it.copy(valueColor = c) } }
+    ColorLine("文字の色 (項目名・単位の既定)", d.labelColor, GaugeColors.SubText) { c -> update { it.copy(labelColor = c) } }
+    val labelDefault = d.labelColor?.let { Color(it) } ?: GaugeColors.SubText
+    if (d.showName) ColorLine("項目名の色 (既定 = 文字の色)", d.nameColor, labelDefault) { c -> update { it.copy(nameColor = c) } }
+    if (d.showUnit) ColorLine("単位の色 (既定 = 文字の色)", d.unitColor, labelDefault) { c -> update { it.copy(unitColor = c) } }
+    GlowSection(g, update)
+    CardSwitch(d, update)
+}
+
+// ---------------------------------------------------------------------------
+// タブ: 表示 (折れ線グラフ・変動監視)
+// ---------------------------------------------------------------------------
+
+@Composable
+private fun ChartViewTab(g: GaugeConfig, update: ((GaugeDesign) -> GaugeDesign) -> Unit, onPickFont: (String) -> Unit) {
+    val d = g.design
+    Head("1 画面に表示する期間")
+    Row(Modifier.horizontalScroll(rememberScrollState())) {
+        listOf(
+            600 to "10分", 1800 to "30分", 3600 to "1時間", 10800 to "3時間", 21600 to "6時間", 43200 to "12時間",
+            86400 to "1日", 259200 to "3日", 604800 to "1週間", 2592000 to "1か月",
+        ).forEach { (sec, label) ->
+            FilterChip(d.chartSpanSec == sec, { update { it.copy(chartSpanSec = sec) } }, { Text(label) },
+                Modifier.padding(end = 6.dp))
+        }
+    }
+    Hint("記録の全期間を表示できます。左右にドラッグでスクロール、2 本指で期間を拡大縮小、ダブルタップで現在の表示に戻ります。")
+    SwitchLine("記録の無い時間を詰めて表示", "どの項目にも記録が無い時間 (エンジン停止中など) を飛ばして、切れ目に点線を出します",
+        d.chartSkipGaps) { v -> update { it.copy(chartSkipGaps = v) } }
+
+    Head("凡例 (項目名と現在値)")
+    Row(Modifier.horizontalScroll(rememberScrollState())) {
+        com.obdmeter.data.LegendPosition.entries.forEach { p ->
+            FilterChip(d.legendPosition == p, { update { it.copy(legendPosition = p) } }, { Text(p.label) },
+                Modifier.padding(end = 6.dp))
+        }
+    }
+    if (d.legendPosition != com.obdmeter.data.LegendPosition.HIDDEN) {
+        if (!d.legendPosition.inside) {
+            Row(Modifier.horizontalScroll(rememberScrollState())) {
+                com.obdmeter.data.LegendAlign.entries.forEach { a ->
+                    FilterChip(d.legendAlign == a, { update { it.copy(legendAlign = a) } }, { Text(a.label) },
+                        Modifier.padding(end = 6.dp))
+                }
+            }
+        }
+        SliderLine("大きさ", d.legendScale, 0.4f..3f, "×%.2f") { v -> update { it.copy(legendScale = snap(v, 0.05f)) } }
+        if (d.legendPosition.inside) {
+            SliderLine("背景の濃さ", d.legendBgAlpha, 0f..1f, "%.2f") { v -> update { it.copy(legendBgAlpha = snap(v, 0.05f)) } }
+        }
+        SwitchLine("単位を表示", null, d.showUnit) { v -> update { it.copy(showUnit = v) } }
+        ColorLine("項目名の色", d.labelColor, GaugeColors.SubText) { c -> update { it.copy(labelColor = c) } }
+        Hint("タップした時刻の日時と値もここに出ます。値は線の色で表示します。")
+    }
+    FontSection(d, onPickFont)
+    GlowSection(g, update)
+    CardSwitch(d, update)
+}
+
+@Composable
+private fun MonitorViewTab(g: GaugeConfig, update: ((GaugeDesign) -> GaugeDesign) -> Unit, onPickFont: (String) -> Unit) {
+    val d = g.design
+    Head("最初に表示する期間")
+    Row(Modifier.horizontalScroll(rememberScrollState())) {
+        com.obdmeter.data.Monitor.WINDOWS.forEach { (ms, label) ->
+            FilterChip(com.obdmeter.data.Monitor.windowIndex(d.monitorWindowMs) == com.obdmeter.data.Monitor.windowIndex(ms),
+                { update { it.copy(monitorWindowMs = ms) } }, { Text("直近$label") },
+                Modifier.padding(end = 6.dp))
+        }
+    }
+    Hint(
+        "ダッシュボードでは、上の期間の欄をタップして切り替えられます。現在の値は「最新の計測値 − 初回の計測値」です。" +
+            "値は項目の取得周期 (設定画面) ごとに見て、このページを表示していないときも記録します。" +
+            "記録はこのメーターを削除するまで残ります (表示形式を変えた場合も消えます)。" +
+            "メーター右上の「書出」「読込」で記録を CSV で書き出し・読み込み、「リセット」で記録を消せます。"
+    )
+
+    Head("文字")
+    ColorLine("回数・選んだ期間の色 (= メーターの色)", d.color, GaugeColors.Accent) { c -> update { it.copy(color = c) } }
+    ColorLine("現在の値の色", d.valueColor, GaugeColors.Text) { c -> update { it.copy(valueColor = c) } }
+    ColorLine("項目名の色", d.labelColor, GaugeColors.SubText) { c -> update { it.copy(labelColor = c) } }
+    SliderLine("回数・値の大きさ", d.valueSize * 100, 30f..300f, "%.0f%%") { v -> update { it.copy(valueSize = snap(v, 5f) / 100f) } }
+    SliderLine("項目名の大きさ", d.labelSize * 100, 40f..250f, "%.0f%%") { v -> update { it.copy(labelSize = snap(v, 5f) / 100f) } }
+    SwitchLine("単位を表示", null, d.showUnit) { v -> update { it.copy(showUnit = v) } }
+    FontSection(d, onPickFont)
+    GlowSection(g, update)
+    CardSwitch(d, update)
+}
+
+// ---------------------------------------------------------------------------
+// タブ: 画像 (アナログ・バー・デジタル。ランプは「点灯条件・色」タブの中)
 // ---------------------------------------------------------------------------
 
 @Composable
@@ -758,6 +977,7 @@ private fun ImageTab(g: GaugeConfig, update: ((GaugeDesign) -> GaugeDesign) -> U
     var error by remember { mutableStateOf<String?>(null) }
     var loading by remember { mutableStateOf(false) }
     val latestUpdate by rememberUpdatedState(update)
+    val analog = g.style == GaugeStyle.ANALOG
 
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
         if (uri == null) return@rememberLauncherForActivityResult
@@ -767,7 +987,7 @@ private fun ImageTab(g: GaugeConfig, update: ((GaugeDesign) -> GaugeDesign) -> U
                 .onSuccess { name ->
                     error = null
                     latestUpdate {
-                        if (it.backgroundImage == null) {
+                        if (it.backgroundImage == null && analog) {
                             // 初めて画像を付けたときは、画像が映えるように枠や下地の弧を消し、目盛りを少し内側へ
                             it.copy(backgroundImage = name, showCard = false, ring = RingStyle.NONE,
                                 showTrack = false, tickRadius = minOf(it.tickRadius, 0.85f))
@@ -782,8 +1002,9 @@ private fun ImageTab(g: GaugeConfig, update: ((GaugeDesign) -> GaugeDesign) -> U
     }
 
     Hint(
-        "メーターの文字盤 (目盛りや数字のない画像) を背景に使えます。目盛り・数字・針は画像の上に描かれます。\n" +
+        if (analog) "メーターの文字盤 (目盛りや数字のない画像) を背景に使えます。目盛り・数字・針は画像の上に描かれます。\n" +
             "透過 PNG も使えます。正方形に近い画像がおすすめです。"
+        else "メーターの背景に画像を使えます。数値などは画像の上に描かれます。透過 PNG も使えます。"
     )
     Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(vertical = 8.dp)) {
         FilledTonalButton(
@@ -807,19 +1028,23 @@ private fun ImageTab(g: GaugeConfig, update: ((GaugeDesign) -> GaugeDesign) -> U
         SliderLine("画像の縦位置 (下が +)", d.imageOffsetY * 100, -50f..50f, "%.0f%%") { v ->
             update { it.copy(imageOffsetY = snap(v, 1f) / 100f) }
         }
-        Head("画像に合わせる")
-        Hint("目盛りが画像の枠と重なる場合は「目盛りの位置」を、数値を画像の表示窓に入れたい場合は「数値の縦位置・横位置」を調整してください。")
-        SliderLine("目盛りの位置 (外周 = 100%)", d.tickRadius * 100, 40f..110f, "%.0f%%") { v ->
-            update { it.copy(tickRadius = snap(v, 1f) / 100f) }
+        if (g.style != GaugeStyle.LAMP) {
+            Head("画像に合わせる")
+            if (analog) {
+                Hint("目盛りが画像の枠と重なる場合は「目盛りの位置」を、数値を画像の表示窓に入れたい場合は「数値の縦位置・横位置」を調整してください。")
+                SliderLine("目盛りの位置 (外周 = 100%)", d.tickRadius * 100, 40f..110f, "%.0f%%") { v ->
+                    update { it.copy(tickRadius = snap(v, 1f) / 100f) }
+                }
+            }
+            SliderLine("数値の縦位置 (中心 = 0、下が +)", d.valuePosition * 100, -90f..90f, "%.0f") { v ->
+                update { it.copy(valuePosition = snap(v, 1f) / 100f) }
+            }
+            SliderLine("数値の横位置 (中心 = 0、右が +)", d.valueOffsetX * 100, -90f..90f, "%.0f") { v ->
+                update { it.copy(valueOffsetX = snap(v, 1f) / 100f) }
+            }
+            SwitchLine("四角いカードの背景を表示", null, d.showCard) { v -> update { it.copy(showCard = v) } }
+            if (g.style != GaugeStyle.DIGITAL) SwitchLine("下地の弧・バー", null, d.showTrack) { v -> update { it.copy(showTrack = v) } }
         }
-        SliderLine("数値の縦位置 (中心 = 0、下が +)", d.valuePosition * 100, -90f..90f, "%.0f") { v ->
-            update { it.copy(valuePosition = snap(v, 1f) / 100f) }
-        }
-        SliderLine("数値の横位置 (中心 = 0、右が +)", d.valueOffsetX * 100, -90f..90f, "%.0f") { v ->
-            update { it.copy(valueOffsetX = snap(v, 1f) / 100f) }
-        }
-        SwitchLine("四角いカードの背景を表示", null, d.showCard) { v -> update { it.copy(showCard = v) } }
-        SwitchLine("下地の弧", null, d.showTrack) { v -> update { it.copy(showTrack = v) } }
     }
 }
 
@@ -890,24 +1115,17 @@ private fun LampSettings(g: GaugeConfig, update: ((GaugeDesign) -> GaugeDesign) 
     ColorLine("消灯時の色", d.lampOffColor, Color(0xFF2A2F36)) { c -> update { it.copy(lampOffColor = c) } }
 }
 
-/** 値テーブルの設定 (並べる項目・段組み・幅・値の背景) */
+/** 値テーブルの並べ方・幅・値の背景 */
 @Composable
-private fun TableSettings(
+private fun TableLayoutSettings(
     g: GaugeConfig,
-    catalog: PidCatalog,
     update: ((GaugeDesign) -> GaugeDesign) -> Unit,
-    replace: (GaugeConfig) -> Unit,
-    onAddItem: () -> Unit,
 ) {
     val d = g.design
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var loading by remember { mutableStateOf(false) }
     val latestUpdate by rememberUpdatedState(update)
-
-    Head("表に並べる項目")
-    Hint("上から順に並べ、1 段の最大行数を超えたら右に段を増やします。先頭は上の「表示する項目」です。")
-    ItemRows(g, catalog, update, replace, onAddItem)
 
     Head("並べ方")
     SliderLine("1 段の最大行数", d.tableMaxRows.toFloat(), 1f..15f, "%.0f 行") { v ->
@@ -936,7 +1154,7 @@ private fun TableSettings(
     SliderLine("値の文字の大きさ", d.valueSize * 100, 30f..300f, "%.0f%%") { v -> update { it.copy(valueSize = snap(v, 5f) / 100f) } }
     SliderLine("各行の下の余白", d.tableMarginBottom * 100, 0f..60f, "%.0f%%") { v -> update { it.copy(tableMarginBottom = snap(v, 1f) / 100f) } }
     SliderLine("各段の右の余白", d.tableMarginRight * 100, 0f..60f, "%.0f%%") { v -> update { it.copy(tableMarginRight = snap(v, 1f) / 100f) } }
-    Hint("項目名は右寄せ、単位は左寄せで表示します。残りの幅が値の部分です。文字の色・大きさ・フォントは「色・針・数値」タブで変えられます。")
+    Hint("項目名は右寄せ、単位は左寄せで表示します。残りの幅が値の部分です。")
 
     Head("値の部分の背景")
     ColorLine("背景色 (既定 = なし)", d.tableValueBg, Color.Transparent) { c -> update { it.copy(tableValueBg = c) } }
@@ -1018,41 +1236,9 @@ private fun ItemRows(
     }
 }
 
-/** 変動監視の設定 (監視する項目・最初に表示する期間) */
+/** 折れ線グラフの項目・縦軸・線の色 */
 @Composable
-private fun MonitorSettings(
-    g: GaugeConfig,
-    catalog: PidCatalog,
-    update: ((GaugeDesign) -> GaugeDesign) -> Unit,
-    replace: (GaugeConfig) -> Unit,
-    onAddItem: () -> Unit,
-) {
-    Head("監視する項目")
-    Hint(
-        "各項目の値が変わった回数と時刻・値を記録し、直近の期間ごとに変動回数の多い順 (同じ回数なら登録順) に並べます。" +
-            "先頭は上の「表示する項目」です。"
-    )
-    ItemRows(g, catalog, update, replace, onAddItem)
-
-    Head("最初に表示する期間")
-    Row(Modifier.horizontalScroll(rememberScrollState())) {
-        com.obdmeter.data.Monitor.WINDOWS.forEach { (ms, label) ->
-            FilterChip(com.obdmeter.data.Monitor.windowIndex(g.design.monitorWindowMs) == com.obdmeter.data.Monitor.windowIndex(ms),
-                { update { it.copy(monitorWindowMs = ms) } }, { Text("直近$label") },
-                Modifier.padding(end = 6.dp))
-        }
-    }
-    Hint(
-        "ダッシュボードでは、上の期間の欄をタップして切り替えられます。現在の値は「最新の計測値 − 初回の計測値」です。" +
-            "値は項目の取得周期 (設定画面) ごとに見て、このページを表示していないときも記録します。" +
-            "記録はこのメーターを削除するまで残ります (表示形式を変えた場合も消えます)。" +
-            "メーター右上の「書出」「読込」で記録を CSV で書き出し・読み込みできます。"
-    )
-}
-
-/** 折れ線グラフの設定 (表示する項目・時間の幅・保存日数・線の色) */
-@Composable
-private fun ChartSettings(
+private fun ChartItems(
     g: GaugeConfig,
     catalog: PidCatalog,
     update: ((GaugeDesign) -> GaugeDesign) -> Unit,
@@ -1061,8 +1247,8 @@ private fun ChartSettings(
 ) {
     val d = g.design
     val look = g.look(catalog.get(g.pidKey) ?: return)
-    Head("グラフに表示する項目")
-    Hint("先頭は上の「表示する項目」です。縦軸は左右 2 つあり、項目ごとにどちらの軸に属するか選べます (既定は奇数番目が右、偶数番目が左)。各軸の範囲は、属する項目の目盛りの範囲 (最小〜最大) をまとめたものです。")
+    Head("グラフに表示する項目と縦軸")
+    Hint("先頭は「表示する項目」です。縦軸は左右 2 つあり、項目ごとにどちらの軸に属するか選べます (既定は奇数番目が右、偶数番目が左)。各軸の範囲は、属する項目の目盛りの範囲 (最小〜最大) をまとめたものです。")
     g.chartAllKeys.forEachIndexed { i, key ->
         val def = catalog.get(key)
         Row(Modifier.fillMaxWidth().padding(vertical = 2.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -1090,43 +1276,28 @@ private fun ChartSettings(
         OutlinedButton(onClick = onAddItem) { Text("項目を追加") }
     }
 
-    Head("1 画面に表示する期間")
-    Row(Modifier.horizontalScroll(rememberScrollState())) {
-        listOf(
-            600 to "10分", 1800 to "30分", 3600 to "1時間", 10800 to "3時間", 21600 to "6時間", 43200 to "12時間",
-            86400 to "1日", 259200 to "3日", 604800 to "1週間", 2592000 to "1か月",
-        ).forEach { (sec, label) ->
-            FilterChip(d.chartSpanSec == sec, { update { it.copy(chartSpanSec = sec) } }, { Text(label) },
-                Modifier.padding(end = 6.dp))
-        }
-    }
-    Hint("記録の全期間を表示できます。左右にドラッグでスクロール、2 本指で期間を拡大縮小、ダブルタップで現在の表示に戻ります。")
-    SwitchLine("記録の無い時間を詰めて表示", "どの項目にも記録が無い時間 (エンジン停止中など) を飛ばして、切れ目に点線を出します",
-        d.chartSkipGaps) { v -> update { it.copy(chartSkipGaps = v) } }
-
-    Head("凡例 (項目名と現在値)")
-    Row(Modifier.horizontalScroll(rememberScrollState())) {
-        com.obdmeter.data.LegendPosition.entries.forEach { p ->
-            FilterChip(d.legendPosition == p, { update { it.copy(legendPosition = p) } }, { Text(p.label) },
-                Modifier.padding(end = 6.dp))
-        }
-    }
-    if (d.legendPosition != com.obdmeter.data.LegendPosition.HIDDEN) {
-        if (!d.legendPosition.inside) {
-            Row(Modifier.horizontalScroll(rememberScrollState())) {
-                com.obdmeter.data.LegendAlign.entries.forEach { a ->
-                    FilterChip(d.legendAlign == a, { update { it.copy(legendAlign = a) } }, { Text(a.label) },
-                        Modifier.padding(end = 6.dp))
-                }
+    Head("線の色")
+    g.chartAllKeys.forEachIndexed { i, key ->
+        val name = catalog.get(key)?.shortName ?: key
+        ColorLine(name, d.chartColors.getOrNull(i), chartColor(look.copy(chartColors = emptyList()), i)) { c ->
+            update {
+                val list = it.chartColors.toMutableList()
+                while (list.size <= i) list += null
+                list[i] = c
+                it.copy(chartColors = list)
             }
         }
-        SliderLine("大きさ", d.legendScale, 0.4f..3f, "×%.2f") { v -> update { it.copy(legendScale = snap(v, 0.05f)) } }
-        if (d.legendPosition.inside) {
-            SliderLine("背景の濃さ", d.legendBgAlpha, 0f..1f, "%.2f") { v -> update { it.copy(legendBgAlpha = snap(v, 0.05f)) } }
-        }
-        Hint("タップした時刻の日時と値もここに出ます。グラフ内に置くと、線の上に重ねて表示します。")
     }
+}
 
+/** 折れ線グラフの記録の設定 */
+@Composable
+private fun ChartRecordTab(
+    g: GaugeConfig,
+    catalog: PidCatalog,
+    update: ((GaugeDesign) -> GaugeDesign) -> Unit,
+) {
+    val d = g.design
     Head("記録するタイミング")
     SwitchLine("このページを表示している間だけ記録する",
         "ON にすると、ほかのページを表示している間はこのグラフの項目を記録しません (車との通信が減り、ほかのメーターの反応が良くなります)",
@@ -1182,19 +1353,6 @@ private fun ChartSettings(
         g.chartAllKeys.joinToString("  ") { k -> "${catalog.get(k)?.shortName ?: k} = $k" },
         color = GaugeColors.SubText, fontSize = 12.sp,
     )
-
-    Head("線の色")
-    g.chartAllKeys.forEachIndexed { i, key ->
-        val name = catalog.get(key)?.shortName ?: key
-        ColorLine(name, d.chartColors.getOrNull(i), chartColor(look.copy(chartColors = emptyList()), i)) { c ->
-            update {
-                val list = it.chartColors.toMutableList()
-                while (list.size <= i) list += null
-                list[i] = c
-                it.copy(chartColors = list)
-            }
-        }
-    }
 }
 
 /** 色の選択。null = 既定色 */
