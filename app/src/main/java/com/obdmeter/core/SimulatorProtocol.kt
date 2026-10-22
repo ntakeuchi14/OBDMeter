@@ -26,7 +26,7 @@ class SimulatorProtocol(
 
     override fun initAdapter(): String = "シミュレーター"
 
-    override fun connectVehicle(): String = "疑似 E90 325i"
+    override fun connectVehicle(): String = "疑似 E90 335i (標準 PID と BMW 固有の測定値)"
 
     private data class State(
         val rpm: Double, val speed: Double, val throttle: Double, val map: Double,
@@ -90,17 +90,78 @@ class SimulatorProtocol(
         }
     }
 
+    /** BMW の測定値 ID → 項目 (同じ ID の項目が複数あれば最初のもの) */
+    private val blockDefs: Map<Int, PidDef> by lazy {
+        Pids.ALL.filter { it.kind == PidDef.Kind.BMW_BLOCK }.groupBy { it.blockId }.mapValues { it.value.first() }
+    }
+
     /**
-     * カスタム PID の動作確認用。Mode 01 以外は PID の値から決まる疑似データ (4 バイト) を返す。
-     * 例: Mode 22 / DID 1234 → 12 34 xx yy (xx yy は時間で変化)
+     * BMW の測定値 [id] の生の値。走行パターンに合わせた値を返す (主な項目)。その他は項目の範囲の中でゆっくり変える
+     */
+    private fun blockRaw(id: Int, size: Int, s: State, t: Double): Long {
+        fun phys(v: Double, mul: Double, add: Double = 0.0) = Math.round((v - add) / mul)
+        return when (id) {
+            0x4807 -> phys(s.rpm, 1.0)                                  // 回転数
+            0x581F -> phys(coolant, 0.75, -48.0)                         // 水温
+            0x460A -> phys(14.1 + 0.1 * sin(t * 0.5), 0.015)             // 電圧
+            0x4200 -> phys(32.0 + 2 * sin(t * 0.05), 0.75, -48.0)        // 吸気温
+            0x58D5 -> phys(35.0 + s.throttle * 0.3, 1.0, -48.0)          // 吸気温 (過給側)
+            0x5A50, 0x5A51 -> phys(if (s.throttle > 60) 0.82 else 1.0 + 0.02 * sin(t * 3 + id), 1 / 1024.0) // λ
+            0x5A29 -> phys(s.throttle, 0.390625)                         // アクセル開度
+            0x5A25 -> phys((1.2 + s.rpm / 2500.0) * 1000, 1.0)           // 油圧 (bar × 1000)
+            0x5A2C -> phys(1013.0 + s.throttle * 10 + 20 * sin(t * 2), 0.0390625) // スロットル前圧力 (ブースト)
+            0x4201 -> phys(1013.0, 0.08291752636432648)                   // 大気圧
+            else -> {
+                // 項目の換算式 (1 次式) を逆算して、範囲の 35〜65% あたりで値を動かす
+                val d = blockDefs[id] ?: return (128 + 60 * sin(t * 0.3 + id)).toLong()
+                val zero = IntArray(size)
+                val one = IntArray(size).also { it[size - 1] = 1 }
+                val v0 = runCatching { d.decode(zero) }.getOrNull() ?: return 0
+                val a = (runCatching { d.decode(one) }.getOrNull() ?: return 0) - v0
+                if (a == 0.0) return 0
+                val target = d.min + (d.max - d.min) * (0.5 + 0.15 * sin(t * 0.25 + id % 17))
+                Math.round((target - v0) / a)
+            }
+        }
+    }
+
+    /** 生の値を [size] バイト (ビッグエンディアン、負の値は 2 の補数) にする */
+    private fun bytesOf(raw: Long, size: Int): List<Int> {
+        val bits = 8 * size
+        val v = if (bits >= 63) raw else raw and ((1L shl bits) - 1)
+        return (size - 1 downTo 0).map { ((v shr (8 * it)) and 0xFF).toInt() }
+    }
+
+    /**
+     * Mode 01 以外の問い合わせ。
+     * - BMW の測定値ブロック (2C で登録 → 21 で読む): 登録した測定値ごとに疑似の値を返す
+     * - ステータス (30 xx 01 / 22 xx xx): ゆっくり変わる疑似データ (48 バイト)
+     * - そのほかのカスタム PID: PID の値から決まる疑似データ (例: 22 1234 → 12 34 xx yy)
      */
     override fun query(request: PidRequest): IntArray? {
         if (request.mode == 0x01 && request.pid.size == 1) return readPid(request.pid[0])
         if (responseDelayMs > 0) Thread.sleep(responseDelayMs)
-        val t = ((clock() - start) / 100 % 256).toInt()
+        val t = (clock() - start) / 1000.0
+        if (request.mode == 0x21 && request.setup.isNotEmpty()) {
+            val def = request.setup.last()
+            if (def.size < 2 || def[0] != 0x2C) return null
+            val s = state()
+            val out = ArrayList<Int>()
+            for (i in 2 until def.size step 6) {
+                if (i + 4 >= def.size) break
+                val size = def[i + 2]
+                val id = (def[i + 3] shl 8) or def[i + 4]
+                out += bytesOf(blockRaw(id, size, s, t), size)
+            }
+            return out.toIntArray()
+        }
+        if ((request.mode == 0x30 || request.mode == 0x22) && request.header == "7E0") {
+            return IntArray(48) { i -> (128 + 60 * sin(t * 0.15 + i * 0.7)).toInt().coerceIn(0, 255) }
+        }
+        val tick = ((clock() - start) / 100 % 256).toInt()
         val p0 = request.pid.getOrElse(0) { 0 }
         val p1 = request.pid.getOrElse(1) { 0 }
-        return intArrayOf(p0, p1, t, (t * 7) and 0xFF)
+        return intArrayOf(p0, p1, tick, (tick * 7) and 0xFF)
     }
 
     override fun readAdapterVoltage(): Double = 14.2
