@@ -172,6 +172,10 @@ data class GaugeLook(
     val showPeak: Boolean = false,
     val peakColor: Color = GaugeColors.Peak,
     val showPeakValue: Boolean = false,
+    val peakTextColor: Color = GaugeColors.Peak,
+    val peakTextSize: Float = 1f,
+    val peakTextX: Float = 0f,
+    val peakTextY: Float = 0f,
     val showValue: Boolean = true,
     val valueColor: Color = GaugeColors.Text,
     val valuePosition: Float = 0.42f,
@@ -533,8 +537,8 @@ fun AnalogGauge(
         }
         if (peak != null && look.showPeakValue) {
             drawCenteredText(tm, "MAX " + def.format(peak),
-                Offset(valueX, valueY + d * 0.17f * max(look.valueSize, 0.6f)),
-                TextStyle(color = look.peakColor, fontSize = (d * 0.05f).toSp(), fontFamily = fonts.value))
+                Offset(valueX + size.width * look.peakTextX, valueY + d * 0.17f * max(look.valueSize, 0.6f) + size.height * look.peakTextY),
+                TextStyle(color = look.peakTextColor, fontSize = (d * 0.05f * look.peakTextSize).toSp(), fontFamily = fonts.value))
         }
     }
 }
@@ -830,8 +834,8 @@ private fun DrawScope.drawBar(
         drawLine(look.peakColor, a, b, max(2f, h * 0.25f))
         if (look.showPeakValue) {
             val t = tm.measure("MAX " + def.format(peak),
-                TextStyle(color = look.peakColor, fontSize = (unit * 0.12f).toSp(), fontFamily = fonts.value))
-            drawText(t, topLeft = Offset(4f, 0f))
+                TextStyle(color = look.peakTextColor, fontSize = (unit * 0.12f * look.peakTextSize).toSp(), fontFamily = fonts.value))
+            drawText(t, topLeft = Offset(4f + size.width * look.peakTextX, size.height * look.peakTextY))
         }
     }
 }
@@ -905,8 +909,8 @@ fun DigitalGauge(
         }
         if (peak != null) {
             val t = tm.measure("MAX " + def.format(peak),
-                TextStyle(color = look.peakColor, fontSize = (unit * 0.12f).toSp(), fontFamily = fonts.value))
-            drawText(t, topLeft = Offset(size.width - t.size.width - 4f, 0f))
+                TextStyle(color = look.peakTextColor, fontSize = (unit * 0.12f * look.peakTextSize).toSp(), fontFamily = fonts.value))
+            drawText(t, topLeft = Offset(size.width - t.size.width - 4f + size.width * look.peakTextX, size.height * look.peakTextY))
         }
     }
 }

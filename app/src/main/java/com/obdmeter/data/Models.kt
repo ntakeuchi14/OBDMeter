@@ -169,6 +169,13 @@ data class GaugeDesign(
     val peakColor: Long? = null,
     /** 最大値を数字でも表示する */
     val showPeakValue: Boolean = false,
+    /** 最大値の文字の色 (null = 印の色と同じ) */
+    val peakTextColor: Long? = null,
+    /** 最大値の文字の大きさ (1 = 標準) */
+    val peakTextSize: Float = 1f,
+    /** 最大値の文字の位置のずれ (メーターの幅・高さに対する割合。右・下が +) */
+    val peakTextX: Float = 0f,
+    val peakTextY: Float = 0f,
 
     // ---- 数値・名前 ----
     val showValue: Boolean = true,

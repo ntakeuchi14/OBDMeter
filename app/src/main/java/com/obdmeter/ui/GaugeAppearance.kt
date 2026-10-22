@@ -140,6 +140,10 @@ fun GaugeDesign.toLook(def: PidDef, style: GaugeStyle): GaugeLook {
         showPeak = showPeak,
         peakColor = peakColor.color(GaugeColors.Peak),
         showPeakValue = showPeakValue,
+        peakTextColor = peakTextColor.color(peakColor.color(GaugeColors.Peak)),
+        peakTextSize = peakTextSize.coerceIn(0.3f, 4f),
+        peakTextX = peakTextX.coerceIn(-1f, 1f),
+        peakTextY = peakTextY.coerceIn(-1f, 1f),
         showValue = showValue,
         // デジタル表示はメーター色を数値の色にする (以前からの動作)
         valueColor = valueColor.color(if (style == GaugeStyle.DIGITAL && color != null) accent else GaugeColors.Text),

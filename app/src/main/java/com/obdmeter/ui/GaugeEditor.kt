@@ -695,6 +695,14 @@ private fun ColorTab(g: GaugeConfig, update: ((GaugeDesign) -> GaugeDesign) -> U
     if (d.showPeak) {
         SwitchLine("最大値を数字でも表示", null, d.showPeakValue) { v -> update { it.copy(showPeakValue = v) } }
         ColorLine("印の色", d.peakColor, GaugeColors.Peak) { c -> update { it.copy(peakColor = c) } }
+        if (d.showPeakValue || g.style == GaugeStyle.DIGITAL) {
+            ColorLine("最大値の文字の色 (既定 = 印の色)", d.peakTextColor, d.peakColor?.let { Color(it) } ?: GaugeColors.Peak) { c ->
+                update { it.copy(peakTextColor = c) }
+            }
+            SliderLine("最大値の文字の大きさ", d.peakTextSize * 100, 30f..400f, "%.0f%%") { v -> update { it.copy(peakTextSize = snap(v, 5f) / 100f) } }
+            SliderLine("最大値の文字の横位置 (右が +)", d.peakTextX * 100, -100f..100f, "%.0f") { v -> update { it.copy(peakTextX = snap(v, 1f) / 100f) } }
+            SliderLine("最大値の文字の縦位置 (下が +)", d.peakTextY * 100, -100f..100f, "%.0f") { v -> update { it.copy(peakTextY = snap(v, 1f) / 100f) } }
+        }
     }
 
     Head("数値・名前")
