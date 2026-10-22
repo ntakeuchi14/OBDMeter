@@ -511,6 +511,8 @@ private fun AngleTab(g: GaugeConfig, def: com.obdmeter.core.PidDef?, update: ((G
             update { it.copy(barZoneColors = v) }
         }
         if (d.barZoneColors) {
+            // 通常の色はメーターの色と同じもの (「色・針・数値」タブでも変えられる)
+            ColorLine("通常の色 (= メーターの色)", d.color, GaugeColors.Accent) { c -> update { it.copy(color = c) } }
             ColorLine("中間の色", d.barMidColor, Color(0xFFFFC107)) { c -> update { it.copy(barMidColor = c) } }
             if (def != null && def.max > def.min) {
                 val from = (d.barMidFrom ?: (def.min + (def.max - def.min) * 0.7)).toFloat()
