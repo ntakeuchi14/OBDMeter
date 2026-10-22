@@ -1,5 +1,6 @@
 package com.obdmeter.ui
 
+import com.obdmeter.ui.gauges.PageBackgroundView
 import com.obdmeter.data.HistorySlot
 import androidx.compose.ui.platform.LocalContext
 import android.widget.Toast
@@ -473,7 +474,10 @@ private fun DashboardCanvas(
     var groupPending by remember { mutableStateOf<Map<Long, IntArray>?>(null) }
     LaunchedEffect(dashboard.gauges) { groupPending = null }
     // ページからはみ出した部分は切り取る (隣のページに映らないように)
-    BoxWithConstraints(Modifier.fillMaxSize().clipToBounds().padding(4.dp)) {
+    Box(Modifier.fillMaxSize().clipToBounds()) {
+    // ページの背景 (色・柄・画像)。メーターは必ずこの上に描く
+    PageBackgroundView(dashboard.background, Modifier.matchParentSize())
+    BoxWithConstraints(Modifier.fillMaxSize().padding(4.dp)) {
         val cellW = maxWidth / Layout.COLS
         val cellH = maxHeight / Layout.ROWS
         val density = LocalDensity.current
@@ -608,6 +612,7 @@ private fun DashboardCanvas(
                 }
             }
         }
+    }
     }
 }
 

@@ -395,6 +395,49 @@ val GaugeDesign.historyRetentionMs: Long
 
 fun GaugeDesign.imageNames(): List<String> = listOfNotNull(backgroundImage, tableValueImage)
 
+/** ページとメーターが使っている画像の名前 */
+fun Dashboard.imageNames(): List<String> = gauges.flatMap { it.design.imageNames() } + listOfNotNull(background.image)
+
+/** ページの背景の柄 */
+enum class BgPattern(val label: String) {
+    NONE("なし"),
+    GRID("格子"),
+    CHECK("チェック"),
+    STRIPE("ストライプ"),
+    DOT("ドット"),
+    WOOD("木目"),
+    CARBON("カーボン"),
+    HONEYCOMB("ハニカム"),
+}
+
+/**
+ * ページ (ダッシュボード) の背景。下から 色 → 柄 → 画像 の順に重ね、メーターは必ずその上に描く
+ */
+@Serializable
+data class PageBackground(
+    /** 背景色 (null = アプリの既定の色) */
+    val color: Long? = null,
+    val pattern: BgPattern = BgPattern.NONE,
+    /** 柄の色 (null = 背景色に合わせて自動) */
+    val patternColor: Long? = null,
+    /** 柄の大きさ (1 = 標準) */
+    val patternScale: Float = 1f,
+    /** 柄の濃さ (0〜1) */
+    val patternAlpha: Float = 0.35f,
+    /** 背景画像 (null = なし) */
+    val image: String? = null,
+    /** 画像の中心の位置 (ページの幅・高さに対する割合。0.5 = 中央) */
+    val imageX: Float = 0.5f,
+    val imageY: Float = 0.5f,
+    /** 画像の幅・高さ (ページの幅・高さに対する割合) */
+    val imageWidth: Float = 1f,
+    val imageHeight: Float = 1f,
+    /** 画像の縦横比を保つ (true なら高さは幅から決める) */
+    val keepAspect: Boolean = true,
+    /** 画像の不透明度 */
+    val imageAlpha: Float = 1f,
+)
+
 @Serializable
 data class Dashboard(
     val id: Long,
@@ -402,6 +445,8 @@ data class Dashboard(
     /** 旧形式 (列数で自動配置) からの移行用。新しい配置は各メーターの x/y/w/h で決まる */
     val columns: Int = 2,
     val gauges: List<GaugeConfig> = emptyList(),
+    /** ページの背景 (色・柄・画像) */
+    val background: PageBackground = PageBackground(),
 )
 
 object Layout {

@@ -92,7 +92,7 @@ object BackupLogic {
 
     /** ダッシュボードが参照している背景画像の名前 */
     fun referencedImages(dashboards: List<Dashboard>): Set<String> =
-        dashboards.flatMap { it.gauges }.flatMap { it.design.imageNames() }.toSet()
+        dashboards.flatMap { it.imageNames() }.toSet()
 
     /**
      * 読み込んだ内容を今の内容に適用した結果を作る。
@@ -110,7 +110,7 @@ object BackupLogic {
         currentIntervals: Map<String, Int> = emptyMap(),
     ): MergeResult {
         // 画像・フォントの参照を付け替える (取り込めなかったものは外して既定に戻す)
-        fun fixImages(d: Dashboard) = d.copy(gauges = d.gauges.map { g ->
+        fun fixImages(d: Dashboard) = d.copy(background = d.background.copy(image = d.background.image?.let { imageRename[it] }), gauges = d.gauges.map { g ->
             g.copy(design = g.design.copy(
                 backgroundImage = g.design.backgroundImage?.let { imageRename[it] },
                 tableValueImage = g.design.tableValueImage?.let { imageRename[it] },

@@ -77,7 +77,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         }
         // どのメーターからも使われなくなった背景画像を消す
         viewModelScope.launch {
-            val used = repo.dashboards.first().flatMap { it.gauges }.flatMap { it.design.imageNames() }.toSet()
+            val used = repo.dashboards.first().flatMap { it.imageNames() }.toSet()
             runCatching { GaugeImages.cleanup(app, used) }
         }
     }
@@ -429,6 +429,12 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun renameDashboard(id: Long, name: String) = editDashboard(id) { it.copy(name = name) }
+
+    /** ページの背景を変える */
+    fun setPageBackground(id: Long, bg: com.obdmeter.data.PageBackground) = editDashboard(id) { it.copy(background = bg) }
+
+    /** ほかのすべてのページにも同じ背景を使う */
+    fun applyBackgroundToAll(bg: com.obdmeter.data.PageBackground) = editDashboards { list -> list.map { it.copy(background = bg) } }
 
     fun deleteDashboard(id: Long) = editDashboards { list -> list.filterNot { it.id == id } }
 

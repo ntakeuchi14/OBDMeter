@@ -1598,3 +1598,144 @@ private fun FontRow(name: String, family: FontFamily?, selected: Boolean, sample
         }
     }
 }
+
+// ---------------------------------------------------------------------------
+// ページの背景 (色・柄・画像)
+// ---------------------------------------------------------------------------
+
+/**
+ * ページの背景の編集 (全画面)。上 (横画面では左) にプレビュー、下に設定。変更は少し遅れて保存する
+ */
+@Composable
+internal fun PageBackgroundDialog(
+    vm: MainViewModel,
+    dashboard: com.obdmeter.data.Dashboard,
+    onDismiss: () -> Unit,
+) {
+    var bg by remember(dashboard.id) { mutableStateOf(dashboard.background) }
+    val latest by rememberUpdatedState(bg)
+    LaunchedEffect(bg) {
+        if (bg != dashboard.background) {
+            delay(250)
+            vm.setPageBackground(dashboard.id, bg)
+        }
+    }
+    val close = {
+        if (latest != dashboard.background) vm.setPageBackground(dashboard.id, latest)
+        onDismiss()
+    }
+    val cellAspect by vm.cellAspect.collectAsState()
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    var loading by remember { mutableStateOf(false) }
+    var confirmAll by remember { mutableStateOf(false) }
+    val picker = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
+        if (uri == null) return@rememberLauncherForActivityResult
+        loading = true
+        scope.launch {
+            // ページ全体に使うので、メーターの画像より大きめ (長辺 2048) で取り込む
+            runCatching { GaugeImages.import(context, uri, maxSize = 2048) }
+                .onSuccess { name -> bg = bg.copy(image = name) }
+                .onFailure { Toast.makeText(context, it.message ?: "画像を読み込めませんでした", Toast.LENGTH_LONG).show() }
+            loading = false
+        }
+    }
+
+    Dialog(onDismissRequest = close, properties = DialogProperties(usePlatformDefaultWidth = false)) {
+        Box(Modifier.fillMaxSize().background(GaugeColors.Background).safeDrawingPadding()) {
+            BoxWithConstraints(Modifier.fillMaxSize()) {
+                val wide = maxWidth > maxHeight
+                // ページの縦横比 (マスの縦横比 × 24 / 12) でプレビューする
+                val pageRatio = (cellAspect * Layout.COLS / Layout.ROWS).coerceIn(0.3f, 4f)
+                val preview: @Composable (Modifier) -> Unit = { m ->
+                    Box(m.padding(12.dp), contentAlignment = Alignment.Center) {
+                        com.obdmeter.ui.gauges.PageBackgroundView(
+                            bg,
+                            Modifier.aspectRatio(pageRatio).border(1.dp, GaugeColors.CardBorder),
+                        )
+                    }
+                }
+                val settings: @Composable (Modifier) -> Unit = { m ->
+                    Column(m.verticalScroll(rememberScrollState()).padding(horizontal = 16.dp)) {
+                        Hint("ページのいちばん後ろに、下から 色 → 柄 → 画像 の順に重ねます。メーターは必ずこの上に表示されます。")
+
+                        Head("色")
+                        ColorLine("背景色 (RGB でも指定できます)", bg.color, GaugeColors.Background) { c -> bg = bg.copy(color = c) }
+
+                        Head("柄")
+                        Row(Modifier.horizontalScroll(rememberScrollState())) {
+                            com.obdmeter.data.BgPattern.entries.forEach { p ->
+                                FilterChip(bg.pattern == p, { bg = bg.copy(pattern = p) }, { Text(p.label) }, Modifier.padding(end = 6.dp))
+                            }
+                        }
+                        if (bg.pattern != com.obdmeter.data.BgPattern.NONE) {
+                            val base = bg.color?.let { Color(it) } ?: GaugeColors.Background
+                            ColorLine("柄の色 (既定 = 背景色に合わせて白か黒)", bg.patternColor,
+                                com.obdmeter.ui.gauges.autoPatternColor(base)) { c -> bg = bg.copy(patternColor = c) }
+                            SliderLine("柄の大きさ", bg.patternScale * 100, 20f..600f, "%.0f%%") { v -> bg = bg.copy(patternScale = snap(v, 5f) / 100f) }
+                            SliderLine("柄の濃さ", bg.patternAlpha * 100, 0f..100f, "%.0f%%") { v -> bg = bg.copy(patternAlpha = snap(v, 1f) / 100f) }
+                            if (bg.pattern == com.obdmeter.data.BgPattern.WOOD) Hint("木目は、背景色を茶色系にして柄の色を暗い茶色にすると木らしくなります。")
+                            if (bg.pattern == com.obdmeter.data.BgPattern.CARBON) Hint("カーボンは、黒に近い背景色に灰色の柄を 30〜60% くらいで重ねるとそれらしくなります。")
+                        }
+
+                        Head("画像")
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(vertical = 8.dp)) {
+                            FilledTonalButton(enabled = !loading, onClick = {
+                                val ok = runCatching { picker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) }.isSuccess
+                                if (!ok) Toast.makeText(context, "この端末では画像を選ぶ画面を開けません", Toast.LENGTH_LONG).show()
+                            }) { Text(if (loading) "読み込み中…" else if (bg.image == null) "画像を選ぶ" else "画像を変更") }
+                            if (bg.image != null) OutlinedButton(onClick = { bg = bg.copy(image = null) }) { Text("画像を外す") }
+                        }
+                        if (bg.image != null) {
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                OutlinedButton(onClick = {
+                                    bg = bg.copy(imageX = 0.5f, imageY = 0.5f, imageWidth = 1f, imageHeight = 1f, keepAspect = false)
+                                }) { Text("ページいっぱいに伸ばす") }
+                                OutlinedButton(onClick = { bg = bg.copy(imageX = 0.5f, imageY = 0.5f) }) { Text("中央に置く") }
+                            }
+                            SliderLine("幅 (ページの幅 = 100%)", bg.imageWidth * 100, 5f..300f, "%.0f%%") { v -> bg = bg.copy(imageWidth = snap(v, 1f) / 100f) }
+                            SwitchLine("縦横比を保つ", "OFF にすると高さを別に決められます (画像が伸び縮みします)", bg.keepAspect) { v -> bg = bg.copy(keepAspect = v) }
+                            if (!bg.keepAspect) {
+                                SliderLine("高さ (ページの高さ = 100%)", bg.imageHeight * 100, 5f..300f, "%.0f%%") { v -> bg = bg.copy(imageHeight = snap(v, 1f) / 100f) }
+                            }
+                            SliderLine("横の位置 (中心。左端 = 0%、右端 = 100%)", bg.imageX * 100, -50f..150f, "%.0f%%") { v -> bg = bg.copy(imageX = snap(v, 1f) / 100f) }
+                            SliderLine("縦の位置 (中心。上端 = 0%、下端 = 100%)", bg.imageY * 100, -50f..150f, "%.0f%%") { v -> bg = bg.copy(imageY = snap(v, 1f) / 100f) }
+                            SliderLine("不透明度", bg.imageAlpha * 100, 0f..100f, "%.0f%%") { v -> bg = bg.copy(imageAlpha = snap(v, 1f) / 100f) }
+                        }
+
+                        Head("ほかのページ")
+                        OutlinedButton(onClick = { confirmAll = true }) { Text("すべてのページにこの背景を使う") }
+                        Spacer(Modifier.height(24.dp))
+                    }
+                }
+                Column(Modifier.fillMaxSize()) {
+                    Row(Modifier.fillMaxWidth().padding(4.dp), verticalAlignment = Alignment.CenterVertically) {
+                        IconButton(onClick = close) { Icon(Icons.Default.Close, "閉じる") }
+                        Text("「${dashboard.name}」の背景", fontSize = 20.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+                        FilledTonalButton(onClick = close, modifier = Modifier.padding(end = 8.dp)) { Text("完了") }
+                    }
+                    if (wide) {
+                        Row(Modifier.fillMaxSize()) {
+                            preview(Modifier.weight(1f).fillMaxHeight())
+                            settings(Modifier.weight(1f).fillMaxHeight())
+                        }
+                    } else {
+                        preview(Modifier.fillMaxWidth().height(maxHeight * 0.32f))
+                        settings(Modifier.fillMaxWidth().weight(1f))
+                    }
+                }
+            }
+        }
+        if (confirmAll) {
+            AlertDialog(
+                onDismissRequest = { confirmAll = false },
+                title = { Text("すべてのページにこの背景を使いますか？") },
+                text = { Text("ほかのページの背景は、この背景に置き換わります。") },
+                confirmButton = {
+                    TextButton(onClick = { vm.applyBackgroundToAll(bg); confirmAll = false }) { Text("使う") }
+                },
+                dismissButton = { TextButton(onClick = { confirmAll = false }) { Text("キャンセル") } },
+            )
+        }
+    }
+}

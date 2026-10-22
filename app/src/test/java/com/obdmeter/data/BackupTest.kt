@@ -63,6 +63,16 @@ class BackupTest {
     }
 
     @Test
+    fun pageBackgroundRoundTripsAndImageIsRenamed() {
+        val bg = PageBackground(color = 0xFF101820, pattern = BgPattern.CARBON, patternAlpha = 0.5f, image = "bg_page.png", imageWidth = 0.6f)
+        val incoming = BackupManifest(dashboards = listOf(page(1, "メイン", designed).copy(background = bg)))
+        val r = BackupLogic.apply(emptyList(), emptyList(), incoming, mapOf("bg_page.png" to "bg_p2.png"), ImportMode.MERGE, newId = { 5 })
+        val got = r.dashboards.single().background
+        assertEquals(bg.copy(image = "bg_p2.png"), got)
+        assertEquals(setOf("bg_abc.png", "bg_page.png"), BackupLogic.referencedImages(incoming.dashboards))
+    }
+
+    @Test
     fun replaceDropsImagesThatWereNotInTheFile() {
         val incoming = BackupManifest(dashboards = listOf(page(1, "メイン", designed)))
         val r = BackupLogic.apply(emptyList(), emptyList(), incoming, emptyMap(), ImportMode.REPLACE, newId = { 0 })

@@ -24,20 +24,20 @@ object GaugeImages {
     private fun dir(context: Context) = File(context.filesDir, "gauge_images").apply { mkdirs() }
 
     /** 画像を取り込み、保存したファイル名を返す。読めない画像なら例外。 */
-    suspend fun import(context: Context, uri: Uri): String = withContext(Dispatchers.IO) {
+    suspend fun import(context: Context, uri: Uri, maxSize: Int = MAX_SIZE): String = withContext(Dispatchers.IO) {
         val resolver = context.contentResolver
         val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
         resolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it, null, bounds) }
         if (bounds.outWidth <= 0 || bounds.outHeight <= 0) throw IllegalArgumentException("画像を読み込めませんでした")
 
         var sample = 1
-        while (maxOf(bounds.outWidth, bounds.outHeight) / (sample * 2) >= MAX_SIZE) sample *= 2
+        while (maxOf(bounds.outWidth, bounds.outHeight) / (sample * 2) >= maxSize) sample *= 2
         val opts = BitmapFactory.Options().apply { inSampleSize = sample }
         var bmp = resolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it, null, opts) }
             ?: throw IllegalArgumentException("画像を読み込めませんでした")
         val longest = maxOf(bmp.width, bmp.height)
-        if (longest > MAX_SIZE) {
-            val scale = MAX_SIZE.toFloat() / longest
+        if (longest > maxSize) {
+            val scale = maxSize.toFloat() / longest
             bmp = Bitmap.createScaledBitmap(bmp, (bmp.width * scale).toInt(), (bmp.height * scale).toInt(), true)
         }
         val name = "bg_" + UUID.randomUUID().toString().take(12) + ".png"
