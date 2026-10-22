@@ -1094,7 +1094,7 @@ private fun LampSettings(g: GaugeConfig, update: ((GaugeDesign) -> GaugeDesign) 
     Head("点灯条件")
     Hint(
         "計測値を x として条件を書きます。例: x >= 100 / x > 90 && x < 110 / x < 11.5 || x > 14.8 / abs(x) > 5。" +
-            "空欄のときは警告値 (基本タブの下) を超えたら点灯します。"
+            "空欄のときは警告値 (「項目」タブ) を超えたら点灯します。"
     )
     var text by remember(g.id) { mutableStateOf(d.lampCondition) }
     val error = text.takeIf { it.isNotBlank() }?.let { Condition.check(it) }
