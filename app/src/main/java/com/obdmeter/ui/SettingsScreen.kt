@@ -114,12 +114,17 @@ fun SettingsScreen(vm: MainViewModel, onBack: () -> Unit, onOpenCustomPids: () -
             if (s.usbAdapter == UsbAdapter.OBDLINK) {
                 Section("OBDLink / ELM327 詳細")
                 Label("ボーレート (OBDLink SX/EX の初期値は 115200)")
-                Row {
+                Text(
+                    "115200 より上を選ぶと、接続のたびに 115200 でつないでからアダプターに速度の切り替えを指示します。" +
+                        "切り替えられなければ 115200 のまま使います (通信ログに結果が出ます)。",
+                    color = GaugeColors.SubText, fontSize = 12.sp,
+                )
+                Row(Modifier.horizontalScroll(rememberScrollState())) {
                     AppSettings.ELM_BAUD_RATES.forEach { b ->
                         FilterChip(
                             selected = s.elmBaudRate == b,
                             onClick = { vm.updateSettings { it.copy(elmBaudRate = b) } },
-                            label = { Text(if (b >= 1000) "${b / 1000}k" else "$b") },
+                            label = { Text(if (b >= 1_000_000) "${b / 1_000_000}M" else if (b >= 1000) "${b / 1000}k" else "$b") },
                             modifier = Modifier.padding(end = 4.dp),
                         )
                     }

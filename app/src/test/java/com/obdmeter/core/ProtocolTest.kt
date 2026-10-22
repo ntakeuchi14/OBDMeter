@@ -54,6 +54,27 @@ class FakeDcan(private val replies: Map<String, IntArray>, private val pending78
     }
 }
 
+/** OBDLink (STN) 風。STBR で速度を変える。端末とアダプターの速度が違う間は何も届かない */
+class FakeStn(var adapterBaud: Int = 115200) : FakeTransport() {
+    var hostBaud = 115200
+    override fun setBaudRate(baud: Int): Boolean { hostBaud = baud; rx.clear(); return true }
+    override fun respond(data: ByteArray) {
+        if (hostBaud != adapterBaud) return
+        val cmd = String(data, Charsets.US_ASCII).trim()
+        when {
+            cmd.startsWith("STBR ") -> {
+                push("OK\r".toByteArray())
+                adapterBaud = cmd.removePrefix("STBR ").trim().toInt()
+            }
+            cmd == "STI" -> push("STN1130 v4.6.1\r\r>".toByteArray())
+            cmd == "ATI" || cmd == "ATWS" -> push("ELM327 v1.4b\r\r>".toByteArray())
+            cmd.isEmpty() -> push("\r>".toByteArray())
+            cmd.startsWith("AT") || cmd.startsWith("ST") -> push("OK\r\r>".toByteArray())
+            else -> push("NO DATA\r\r>".toByteArray())
+        }
+    }
+}
+
 /** 何も返さないアダプター (ボーレート違い・未接続) */
 class SilentTransport : FakeTransport() {
     override fun respond(data: ByteArray) {}
@@ -224,6 +245,26 @@ class ProtocolTest {
         assertArrayEquals(intArrayOf(0x1A, 0xF8), Elm327Protocol.parseMode01(listOf("SEARCHING...", "41 0C 1A F8"), 0x0C))
         assertNull(Elm327Protocol.parseMode01(listOf("NO DATA"), 0x0C))
         assertNull(Elm327Protocol.parseMode01(listOf("410D32"), 0x0C))
+    }
+
+    @Test
+    fun switchesStnBaudRate() {
+        val fake = FakeStn()
+        val p = Elm327Protocol(fake, Elm327Protocol.Options(baudRate = 500_000))
+        p.initAdapter()
+        assertEquals(500_000, p.currentBaud)
+        assertEquals(500_000, fake.adapterBaud)
+        assertEquals(500_000, fake.hostBaud)
+    }
+
+    @Test
+    fun findsAdapterLeftAtHigherBaud() {
+        // 前回の接続で 500000 に上げたまま (ウォームスタートでは戻らない)
+        val fake = FakeStn(adapterBaud = 500_000)
+        val p = Elm327Protocol(fake, Elm327Protocol.Options(baudRate = 500_000))
+        p.initAdapter()
+        assertEquals(500_000, p.currentBaud)
+        assertTrue(fake.sent.none { String(it).startsWith("STBR") })
     }
 
     @Test

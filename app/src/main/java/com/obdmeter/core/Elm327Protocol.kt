@@ -21,14 +21,26 @@ class Elm327Protocol(
         val commandTimeoutMs: Int = 2000,
         /** 最初の 0100 はプロトコル自動判別で時間がかかる。 */
         val searchTimeoutMs: Int = 15000,
+        /**
+         * 使いたい通信速度。アダプターは電源投入時 115200 なので、接続後にアダプターへ切り替えを指示する
+         * (OBDLink は STBR、ほかの ELM327 は ATBRD)。失敗したら元の速度のまま使う
+         */
+        val baudRate: Int = 115200,
+        /** ポートを開いたときの通信速度 */
+        val initialBaud: Int = 115200,
     )
+
+    /** 今の通信速度 */
+    var currentBaud: Int = options.initialBaud
+        private set
 
     private var hintSupported = options.singleResponseHint
 
     override fun initAdapter(): String {
-        transport.purge()
-        // 途中状態をリセットするため CR を一度送ってプロンプトを待つ
-        sendRaw("", 1000)
+        // 前回の接続で速度を上げたまま (ウォームスタートでは戻らない) のこともあるので、応答する速度を探す
+        if (!probeBaud()) {
+            throw ProtocolException("アダプターが応答しません。ケーブルを確認してください")
+        }
         val ws = command("ATWS", 5000) // ウォームスタート (ボーレート設定は維持される)
         if (ws.isEmpty() && lastTimedOut) {
             throw ProtocolException("アダプターが応答しません。ボーレートの設定とケーブルを確認してください")
@@ -44,7 +56,87 @@ class Elm327Protocol(
         currentCea = ""
         currentFcHeader = ""
         setupDone.clear()
+        if (options.baudRate != currentBaud) switchBaud(options.baudRate)
         return command("ATI").lastOrNull { it.isNotBlank() } ?: "ELM327"
+    }
+
+    /**
+     * アダプターが応答する通信速度を探す (115200 → 設定の速度 → 38400 → 9600)。見つかればその速度のままにする
+     */
+    private fun probeBaud(): Boolean {
+        val rates = listOf(options.initialBaud, options.baudRate, 115200, 38400, 9600).distinct()
+        for ((i, rate) in rates.withIndex()) {
+            if (rate != currentBaud) {
+                if (!transport.setBaudRate(rate)) continue
+                currentBaud = rate
+            }
+            transport.purge()
+            // 途中状態をリセットするため CR を一度送ってプロンプトを待つ
+            sendRaw("", if (i == 0) 1000 else 400)
+            val r = command("ATI", if (i == 0) 1500 else 600)
+            if (r.any { it.any(Char::isLetter) } && !lastTimedOut) {
+                if (i > 0) logger.log(CommLogger.Direction.INFO, "アダプターは ${rate}bps で応答しました")
+                return true
+            }
+        }
+        return false
+    }
+
+    /**
+     * アダプターの通信速度を [target] に切り替える。OBDLink (STN チップ) は STBR、ほかの ELM327 は ATBRD。
+     * 手順: 切り替えの命令に OK が返る → こちらも速度を変える → CR を送る → 新しい速度でプロンプトが返れば成功。
+     * 返らなければ、アダプターは待ち時間の後に元の速度へ戻るので、こちらも戻す
+     */
+    private fun switchBaud(target: Int) {
+        val from = currentBaud
+        val stn = command("STI", 1000).any { it.contains("STN", ignoreCase = true) }
+        val cmd = if (stn) {
+            command("STBRT 500") // 新しい速度での CR を待つ時間 (ms)
+            "STBR $target"
+        } else {
+            command("ATBRT 64") // 待ち時間 100 × 5ms
+            val div = Math.round(4_000_000.0 / target).toInt().coerceIn(8, 0xFF)
+            "ATBRD %02X".format(div)
+        }
+        logger.log(CommLogger.Direction.TX, cmd)
+        transport.write((cmd + "\r").toByteArray(Charsets.US_ASCII))
+        // OK (切り替える) か ? (非対応) を待つ
+        val reply = StringBuilder()
+        val buf = ByteArray(64)
+        val deadline = System.currentTimeMillis() + 1000
+        while (System.currentTimeMillis() < deadline && !reply.contains("OK") && !reply.contains("?")) {
+            val n = transport.read(buf, 50)
+            for (i in 0 until n) reply.append((buf[i].toInt() and 0xFF).toChar())
+        }
+        logger.log(CommLogger.Direction.RX, reply.toString().replace('\r', '|').trim('|'))
+        if (!reply.contains("OK")) {
+            logger.log(CommLogger.Direction.INFO, "アダプターが速度の切り替えに対応していないため ${from}bps のまま使います")
+            needsResync = true
+            sendRaw("", 500)
+            return
+        }
+        if (!transport.setBaudRate(target)) {
+            logger.log(CommLogger.Direction.ERROR, "端末側の通信速度を ${target}bps にできませんでした")
+            Thread.sleep(700) // アダプターが元の速度に戻るのを待つ
+            transport.purge()
+            sendRaw("", 500)
+            return
+        }
+        currentBaud = target
+        Thread.sleep(20)
+        transport.purge()
+        // 新しい速度で CR を送り、プロンプトが返れば成功
+        val ok = sendRaw("", 600).let { !lastTimedOut } && command("ATI", 600).any { it.any(Char::isLetter) } && !lastTimedOut
+        if (ok) {
+            logger.log(CommLogger.Direction.INFO, "通信速度を ${target}bps に切り替えました")
+        } else {
+            logger.log(CommLogger.Direction.ERROR, "${target}bps では通信できなかったため ${from}bps に戻します")
+            transport.setBaudRate(from)
+            currentBaud = from
+            Thread.sleep(700)
+            transport.purge()
+            sendRaw("", 500)
+        }
     }
 
     override fun connectVehicle(): String? {

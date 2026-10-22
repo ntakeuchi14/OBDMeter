@@ -352,13 +352,15 @@ class ObdSession(
 
         return when (settings.usbAdapter) {
             UsbAdapter.OBDLINK -> {
-                val t = UsbSerialTransport(context, driver, settings.elmBaudRate, dtr = true, rts = true)
+                // アダプターは電源投入時 115200。設定の速度へは接続後に切り替える
+                val t = UsbSerialTransport(context, driver, 115200, dtr = true, rts = true)
                 t.open()
                 Elm327Protocol(
                     t,
                     Elm327Protocol.Options(
                         protocol = settings.elmProtocol,
                         singleResponseHint = settings.elmSingleResponseHint,
+                        baudRate = settings.elmBaudRate,
                     ),
                     log,
                 )

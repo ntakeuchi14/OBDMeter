@@ -72,10 +72,10 @@ class ConnectionTest(private val context: Context, private val log: CommLogger) 
         val driver = UsbSerialTransport.findDrivers(context).firstOrNull()
         if (driver == null) { line("✗ USB シリアル機器が見つかりません"); return@withContext }
         if (!UsbSerialTransport.requestPermission(context, driver.device)) { line("✗ USB の使用が許可されませんでした"); return@withContext }
-        val t = UsbSerialTransport(context, driver, settings.elmBaudRate, dtr = true, rts = true)
+        val t = UsbSerialTransport(context, driver, 115200, dtr = true, rts = true)
         try {
             t.open()
-            val elm = Elm327Protocol(t, Elm327Protocol.Options(protocol = settings.elmProtocol, commandTimeoutMs = 3000), log)
+            val elm = Elm327Protocol(t, Elm327Protocol.Options(protocol = settings.elmProtocol, commandTimeoutMs = 3000, baudRate = settings.elmBaudRate), log)
             line("○ ${elm.initAdapter()}")
             for (c in listOf("ATH1", "ATSP6", "ATSH6F1", "ATCEA12", "ATCRA612", "ATFCSH6F1", "ATFCSD12300000", "ATFCSM1", "ATST10")) {
                 elm.command(c, 3000)
@@ -229,7 +229,7 @@ class ConnectionTest(private val context: Context, private val log: CommLogger) 
         settings: AppSettings,
         line: (String) -> Unit,
     ) {
-        val t = UsbSerialTransport(context, driver, settings.elmBaudRate, dtr = true, rts = true)
+        val t = UsbSerialTransport(context, driver, 115200, dtr = true, rts = true)
         try {
             t.open()
         } catch (e: Exception) {
@@ -237,7 +237,7 @@ class ConnectionTest(private val context: Context, private val log: CommLogger) 
             return
         }
         try {
-            val elm = Elm327Protocol(t, Elm327Protocol.Options(protocol = settings.elmProtocol, commandTimeoutMs = 3000), log)
+            val elm = Elm327Protocol(t, Elm327Protocol.Options(protocol = settings.elmProtocol, commandTimeoutMs = 3000, baudRate = settings.elmBaudRate), log)
             fun cmd(c: String, timeout: Int = 3000): String {
                 val r = elm.command(c, timeout).joinToString(" | ").ifEmpty { "(応答なし)" }
                 line("$c → $r")

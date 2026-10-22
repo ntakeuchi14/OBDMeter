@@ -55,6 +55,14 @@ class UsbSerialTransport(
         port = p
     }
 
+    override fun setBaudRate(baud: Int): Boolean {
+        val p = port ?: return false
+        return runCatching {
+            p.setParameters(baud, 8, UsbSerialPort.STOPBITS_1, UsbSerialPort.PARITY_NONE)
+            pending.clear()
+        }.isSuccess
+    }
+
     /** DTR / RTS 信号線を切り替える (接続テスト用。ケーブルによってはモード切替や給電に使われる) */
     fun setLines(dtr: Boolean, rts: Boolean) {
         val p = port ?: return

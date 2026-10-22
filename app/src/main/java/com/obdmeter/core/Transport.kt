@@ -18,6 +18,9 @@ interface Transport {
      */
     fun read(buffer: ByteArray, timeoutMs: Int): Int
 
+    /** 通信速度を変える (USB シリアルのみ)。変えられなければ false */
+    fun setBaudRate(baud: Int): Boolean = false
+
     /** 受信バッファに溜まっている不要データを捨てる。 */
     fun purge() {
         val tmp = ByteArray(256)

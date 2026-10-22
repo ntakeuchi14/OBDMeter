@@ -65,7 +65,7 @@ data class AppSettings(
     val autoConnectEffective: Boolean get() = autoConnect || floatOnLeave
 
     companion object {
-        val ELM_BAUD_RATES = listOf(9600, 38400, 115200, 230400, 500000)
+        val ELM_BAUD_RATES = listOf(9600, 38400, 115200, 230400, 500000, 1000000, 2000000)
         val ELM_PROTOCOLS = listOf(
             "0" to "自動判別",
             "6" to "ISO 15765-4 CAN 11bit 500k (2007/03 以降の E90)",
