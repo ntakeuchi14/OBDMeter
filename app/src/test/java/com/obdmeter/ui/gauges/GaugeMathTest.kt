@@ -33,6 +33,10 @@ class GaugeMathTest {
         assertEquals("8888", ghostText(PidDef("r", "r", "r", "rpm", 0.0, 8000.0)))
         assertEquals("88.8", ghostText(PidDef("v", "v", "v", "V", 10.0, 16.0, decimals = 1)))
         assertEquals("888", ghostText(PidDef("t", "t", "t", "°C", -40.0, 150.0)))
+        assertEquals("マイナス記号の分は足さない", "88", ghostText(PidDef("t", "t", "t", "°C", -40.0, 60.0)))
+        assertEquals("8", ghostText(PidDef("g", "g", "g", "", 0.0, 9.0)))
+        assertEquals("-", PidDef("g", "g", "g", "", 0.0, 9.0).format(null))
+        assertEquals("--.-", PidDef("v", "v", "v", "V", 0.0, 14.7, decimals = 1).format(null))
     }
 
     @Test

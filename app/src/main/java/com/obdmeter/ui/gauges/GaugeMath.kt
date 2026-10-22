@@ -58,10 +58,5 @@ internal data class TickScale(val first: Double, val step: Double, val divisor: 
     }
 }
 
-/** 消えている 7 セグ表示の文字列 (範囲の最小・最大の桁数で、数字を 8 にしたもの) */
-internal fun ghostText(def: PidDef): String {
-    val a = def.format(def.min)
-    val b = def.format(def.max)
-    val t = if (a.length > b.length) a else b
-    return t.map { if (it.isDigit() || it == '-') '8' else it }.joinToString("")
-}
+/** 消えている 7 セグ表示の文字列 (範囲の最大の桁数で、数字を 8 にしたもの。マイナス記号の分は足さない) */
+internal fun ghostText(def: PidDef): String = def.digitTemplate().replace('0', '8')

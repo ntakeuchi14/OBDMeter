@@ -42,5 +42,17 @@ data class PidDef(
     val isCustom: Boolean get() = kind == Kind.CUSTOM
 
     fun format(value: Double?): String =
-        if (value == null) "---" else "%.${decimals}f".format(value)
+        if (value == null) blankText() else "%.${decimals}f".format(value)
+
+    /**
+     * 表示の最大の桁の形 (例: 0〜9 → "0"、-40〜150 → "000"、10〜16 小数 1 桁 → "00.0")。
+     * 最小・最大の絶対値の大きいほうの桁数で、マイナス記号は数えない
+     */
+    fun digitTemplate(): String {
+        val m = maxOf(kotlin.math.abs(min), kotlin.math.abs(max))
+        return "%.${decimals}f".format(m).map { if (it.isDigit()) '0' else it }.joinToString("")
+    }
+
+    /** 値が無いときの表示。最大の桁数に合わせて数字を "-" にしたもの (例: 0〜9 → "-"、0〜14.7 → "--.-") */
+    fun blankText(): String = digitTemplate().replace('0', '-')
 }
