@@ -1645,6 +1645,7 @@ internal fun PageBackgroundDialog(
         Box(Modifier.fillMaxSize().background(GaugeColors.Background).safeDrawingPadding()) {
             BoxWithConstraints(Modifier.fillMaxSize()) {
                 val wide = maxWidth > maxHeight
+                val previewH = maxHeight * 0.32f
                 // ページの縦横比 (マスの縦横比 × 24 / 12) でプレビューする
                 val pageRatio = (cellAspect * Layout.COLS / Layout.ROWS).coerceIn(0.3f, 4f)
                 val preview: @Composable (Modifier) -> Unit = { m ->
@@ -1720,7 +1721,7 @@ internal fun PageBackgroundDialog(
                             settings(Modifier.weight(1f).fillMaxHeight())
                         }
                     } else {
-                        preview(Modifier.fillMaxWidth().height(maxHeight * 0.32f))
+                        preview(Modifier.fillMaxWidth().height(previewH))
                         settings(Modifier.fillMaxWidth().weight(1f))
                     }
                 }
