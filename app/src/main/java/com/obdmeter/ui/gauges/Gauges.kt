@@ -10,6 +10,8 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.runtime.MutableFloatState
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -208,6 +210,9 @@ fun rememberGaugeFonts(look: GaugeLook): GaugeFontSet {
     }
 }
 
+/** メーターのどの部分を描くか (アナログの針だけ別の層にして、ほかのメーターより手前に出す) */
+enum class GaugeLayer { ALL, BODY, NEEDLE }
+
 /** メーター 1 個分。スタイルに応じて描き分ける。 */
 @Composable
 fun GaugeCard(
@@ -225,8 +230,22 @@ fun GaugeCard(
     interactive: Boolean = false,
     /** 折れ線グラフの記録の置き場所 ([com.obdmeter.data.HistorySlot]) */
     historySlot: String? = null,
+    /** 描く部分 (アナログの針を別の層にするとき) */
+    layer: GaugeLayer = GaugeLayer.ALL,
+    needleState: MutableFloatState? = null,
 ) {
     val shape = RoundedCornerShape(14.dp)
+    if (layer == GaugeLayer.NEEDLE) {
+        // 針の層: カードの背景は描かず、本体と同じ余白で針とノブだけ描く
+        Box(modifier.padding(if (look.showCard) 8.dp else 2.dp)) {
+            val fonts = rememberGaugeFonts(look)
+            if (style == GaugeStyle.ANALOG) {
+                AnalogGauge(def, if (unsupported) null else value, unsupported, look, null, Modifier.fillMaxSize(), null, fonts,
+                    GaugeLayer.NEEDLE, needleState)
+            }
+        }
+        return
+    }
     // ピーク値 (生の値で記録する。表示用のならし前の値)
     val peakHolder = remember(def.key, peakResetKey, def.min, def.max) { doubleArrayOf(Double.NaN) }
     if (look.showPeak && value != null && !unsupported && (peakHolder[0].isNaN() || value > peakHolder[0])) {
@@ -244,7 +263,8 @@ fun GaugeCard(
         val image = rememberGaugeImage(look.image)
         val fonts = rememberGaugeFonts(look)
         when (style) {
-            GaugeStyle.ANALOG -> AnalogGauge(def, v, unsupported, look, image, Modifier.fillMaxSize(), peak, fonts)
+            GaugeStyle.ANALOG -> AnalogGauge(def, v, unsupported, look, image, Modifier.fillMaxSize(), peak, fonts,
+                if (layer == GaugeLayer.BODY) GaugeLayer.BODY else GaugeLayer.ALL, needleState)
             GaugeStyle.BAR -> BarGauge(def, v, unsupported, look, image, Modifier.fillMaxSize(), peak, fonts)
             GaugeStyle.DIGITAL -> DigitalGauge(def, v, unsupported, look, image, Modifier.fillMaxSize(), peak, fonts)
             // ランプは条件判定をならし前の値で行う
@@ -342,9 +362,14 @@ fun AnalogGauge(
     modifier: Modifier = Modifier,
     peak: Double? = null,
     fonts: GaugeFontSet = GaugeFontSet(FontFamily.Monospace, null),
+    /** 描く部分 (針を別の層にして、ほかのメーターより手前に出すため) */
+    layer: GaugeLayer = GaugeLayer.ALL,
+    /** 本体と針の層で針の位置を共有する (本体が書き、針の層が読む) */
+    needleState: MutableFloatState? = null,
 ) {
     val tm = rememberTextMeasurer()
-    val f = animated(def, value, look.smoothing)
+    val f = if (layer == GaugeLayer.NEEDLE && needleState != null) needleState.floatValue else animated(def, value, look.smoothing)
+    if (layer == GaugeLayer.BODY && needleState != null) SideEffect { needleState.floatValue = f }
     val warn = isWarn(def, value)
     Canvas(modifier) {
         val d = min(size.width, size.height)
@@ -352,19 +377,6 @@ fun AnalogGauge(
         val outer = d / 2
 
         val ringWidth = ringWidthFor(look, d)
-
-        // 背景色で文字盤を塗り、その上に背景画像 (透過した画像なら背景色が透けて見える)。目盛りや針は上から描く
-        look.faceColor?.let { c ->
-            val fc = if (image != null) Offset(center.x + d * look.imageOffsetX, center.y + d * look.imageOffsetY) else center
-            drawCircle(c, (outer - ringWidth / 2) * look.faceScale, fc)
-        }
-        if (image != null) {
-            drawImageFit(image, Offset(center.x + d * look.imageOffsetX, center.y + d * look.imageOffsetY), d * look.imageScale)
-        }
-
-        // 外周リング
-        if (ringWidth > 0f) drawRing(look, center, outer, ringWidth)
-
         // 目盛り・弧の基準半径
         val gaugeR = (outer - ringWidth - d * 0.01f) * look.tickRadius
         val rawStroke = d * 0.045f * look.arcWidth
@@ -381,12 +393,26 @@ fun AnalogGauge(
         val start = look.startAngle + capInset
         val sweep = look.sweep - capInset * 2
         val cap = if (look.arcRoundCap) StrokeCap.Round else StrokeCap.Butt
+        // 目盛りの位置 (レッドゾーンを内側に描くときにも使う)
+        val tickOuter = gaugeR - stroke - d * 0.008f
+
+        if (layer != GaugeLayer.NEEDLE) {
+
+        // 背景色で文字盤を塗り、その上に背景画像 (透過した画像なら背景色が透けて見える)。目盛りや針は上から描く
+        look.faceColor?.let { c ->
+            val fc = if (image != null) Offset(center.x + d * look.imageOffsetX, center.y + d * look.imageOffsetY) else center
+            drawCircle(c, (outer - ringWidth / 2) * look.faceScale, fc)
+        }
+        if (image != null) {
+            drawImageFit(image, Offset(center.x + d * look.imageOffsetX, center.y + d * look.imageOffsetY), d * look.imageScale)
+        }
+
+        // 外周リング
+        if (ringWidth > 0f) drawRing(look, center, outer, ringWidth)
 
         if (look.showTrack && stroke > 0f) {
             drawArc(look.trackColor ?: GaugeColors.Track, start, sweep, false, arcTopLeft, arcSize, style = Stroke(stroke, cap = cap))
         }
-        // 目盛りの位置 (レッドゾーンを内側に描くときにも使う)
-        val tickOuter = gaugeR - stroke - d * 0.008f
         val majorLen = d * 0.05f
         val minorLen = d * 0.025f
         val zoneInsideW = d * 0.025f
@@ -471,41 +497,6 @@ fun AnalogGauge(
             drawPath(path, look.peakColor)
         }
 
-        // 針 (根元が太く先が細い形) と中心のノブ
-        if (value != null && look.showNeedle) {
-            val a = Math.toRadians((start + sweep * f).toDouble())
-            val ca = cos(a).toFloat()
-            val sa = sin(a).toFloat()
-            val len = tickOuter * look.needleLength
-            val tail = len * look.needleTail
-            val baseW = d * 0.016f * look.needleWidth
-            val tipW = baseW * 0.35f
-            val color = if (warn) GaugeColors.Warn else look.needleColor
-            val needle = Path().apply {
-                // 尾の端 → 根元 → 先端 → 根元 → 尾の端 (針の向きに垂直な方向へ幅を取る)
-                moveTo(center.x - tail * ca - baseW * sa, center.y - tail * sa + baseW * ca)
-                lineTo(center.x + len * ca - tipW * sa, center.y + len * sa + tipW * ca)
-                lineTo(center.x + len * ca + tipW * sa, center.y + len * sa - tipW * ca)
-                lineTo(center.x - tail * ca + baseW * sa, center.y - tail * sa - baseW * ca)
-                close()
-            }
-            drawPath(needle, color)
-        }
-        if (look.showNeedle && look.knobSize > 0f) {
-            val kr = d * 0.035f * look.knobSize
-            val kc = look.knobColor ?: look.needleColor
-            drawCircle(kc, kr, center)
-            // ノブの立体感 (左上が明るく右下が暗い)
-            drawCircle(
-                Brush.linearGradient(
-                    listOf(Color.White.copy(alpha = 0.35f), Color.Transparent, Color.Black.copy(alpha = 0.35f)),
-                    start = Offset(center.x - kr, center.y - kr), end = Offset(center.x + kr, center.y + kr),
-                ),
-                kr, center,
-            )
-            drawCircle(Color(0xFF20242B), kr * 0.4f, center)
-        }
-
         // 名前・数値・単位
         if (look.showName) {
             drawCenteredText(tm, def.shortName,
@@ -541,6 +532,45 @@ fun AnalogGauge(
             drawCenteredText(tm, "MAX " + def.format(peak),
                 Offset(valueX + size.width * look.peakTextX, valueY + d * 0.17f * max(look.valueSize, 0.6f) + size.height * look.peakTextY),
                 TextStyle(color = look.peakTextColor, fontSize = (d * 0.05f * look.peakTextSize).toSp(), fontFamily = fonts.value))
+        }
+        }
+
+        // 針 (根元が太く先が細い形) と中心のノブ。数値などより手前に描く
+        if (layer != GaugeLayer.BODY) {
+        if (value != null && look.showNeedle) {
+            val a = Math.toRadians((start + sweep * f).toDouble())
+            val ca = cos(a).toFloat()
+            val sa = sin(a).toFloat()
+            val len = tickOuter * look.needleLength
+            val tail = len * look.needleTail
+            val baseW = d * 0.016f * look.needleWidth
+            val tipW = baseW * 0.35f
+            val color = if (warn) GaugeColors.Warn else look.needleColor
+            val needle = Path().apply {
+                // 尾の端 → 根元 → 先端 → 根元 → 尾の端 (針の向きに垂直な方向へ幅を取る)
+                moveTo(center.x - tail * ca - baseW * sa, center.y - tail * sa + baseW * ca)
+                lineTo(center.x + len * ca - tipW * sa, center.y + len * sa + tipW * ca)
+                lineTo(center.x + len * ca + tipW * sa, center.y + len * sa - tipW * ca)
+                lineTo(center.x - tail * ca + baseW * sa, center.y - tail * sa - baseW * ca)
+                close()
+            }
+            drawPath(needle, color)
+        }
+        if (look.showNeedle && look.knobSize > 0f) {
+            val kr = d * 0.035f * look.knobSize
+            val kc = look.knobColor ?: look.needleColor
+            drawCircle(kc, kr, center)
+            // ノブの立体感 (左上が明るく右下が暗い)
+            drawCircle(
+                Brush.linearGradient(
+                    listOf(Color.White.copy(alpha = 0.35f), Color.Transparent, Color.Black.copy(alpha = 0.35f)),
+                    start = Offset(center.x - kr, center.y - kr), end = Offset(center.x + kr, center.y + kr),
+                ),
+                kr, center,
+            )
+            drawCircle(Color(0xFF20242B), kr * 0.4f, center)
+        }
+
         }
     }
 }

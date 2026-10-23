@@ -1,5 +1,6 @@
 package com.obdmeter.ui
 
+import androidx.compose.ui.zIndex
 import com.obdmeter.ui.gauges.PageBackgroundView
 import com.obdmeter.data.HistorySlot
 import androidx.compose.ui.platform.LocalContext
@@ -532,6 +533,7 @@ private fun DashboardCanvas(
             key(g.id) {
                 val def = g.resolvedDef(catalog)
                 val gid = g.layoutGroup?.takeIf { it in groups }
+                val needle = remember(g.id) { androidx.compose.runtime.mutableFloatStateOf(0f) }
                 GaugeOnGrid(
                     gauge = g,
                     cellWPx = cellWPx,
@@ -549,9 +551,15 @@ private fun DashboardCanvas(
                     selecting = selecting,
                     selected = g.id in selected,
                     onToggleSelect = onToggleSelect,
+                    // アナログの針は、ほかのメーター (中に重ねて置いたものも) より手前に描く
+                    overlay = if (g.style == GaugeStyle.ANALOG && def != null) {
+                        { GaugeView(g, def, values, supported, layer = com.obdmeter.ui.gauges.GaugeLayer.NEEDLE, needleState = needle) }
+                    } else null,
                 ) {
                     GaugeView(g, def, values, supported, peakResets[g.id] ?: 0, catalog = catalog, interactive = !editing,
-                        historySlot = HistorySlot.of(dashboard.id, g.id))
+                        historySlot = HistorySlot.of(dashboard.id, g.id),
+                        layer = if (g.style == GaugeStyle.ANALOG) com.obdmeter.ui.gauges.GaugeLayer.BODY else com.obdmeter.ui.gauges.GaugeLayer.ALL,
+                        needleState = needle)
                 }
             }
         }
@@ -632,6 +640,9 @@ fun GaugeView(
     interactive: Boolean = false,
     /** 折れ線グラフの記録の置き場所 ([HistorySlot]) */
     historySlot: String? = null,
+    /** 描く部分 (アナログの針を別の層にして、ほかのメーターより手前に出すとき) */
+    layer: com.obdmeter.ui.gauges.GaugeLayer = com.obdmeter.ui.gauges.GaugeLayer.ALL,
+    needleState: androidx.compose.runtime.MutableFloatState? = null,
 ) {
     if (def != null) {
         GaugeCard(
@@ -646,8 +657,10 @@ fun GaugeView(
             series = if (g.style == GaugeStyle.CHART || g.style == GaugeStyle.TABLE || g.style == GaugeStyle.MONITOR) chartSeries(g, def, values, catalog) else emptyList(),
             interactive = interactive,
             historySlot = historySlot,
+            layer = layer,
+            needleState = needleState,
         )
-    } else {
+    } else if (layer != com.obdmeter.ui.gauges.GaugeLayer.NEEDLE) {
         // 削除されたカスタム PID など
         Box(
             Modifier.fillMaxSize().background(GaugeColors.Card, RoundedCornerShape(14.dp)),
@@ -676,6 +689,8 @@ private fun GaugeOnGrid(
     selecting: Boolean = false,
     selected: Boolean = false,
     onToggleSelect: (GaugeConfig) -> Unit = {},
+    /** ほかのメーターより手前に重ねて描くもの (アナログの針)。触っても下のメーターに届く */
+    overlay: (@Composable () -> Unit)? = null,
     content: @Composable () -> Unit,
 ) {
     val isGrouped by rememberUpdatedState(grouped)
@@ -706,6 +721,17 @@ private fun GaugeOnGrid(
     val r = preview()
     val density = LocalDensity.current
     val dragging = move != Offset.Zero || resize != Offset.Zero || override != null
+
+    // 手前の層 (アナログの針)。同じ位置・大きさで、ほかのメーターより上に重ねる
+    overlay?.let { o ->
+        Box(
+            Modifier
+                .zIndex(1f)
+                .offset(with(density) { (r[0] * cellWPx).toDp() }, with(density) { (r[1] * cellHPx).toDp() })
+                .size(with(density) { (r[2] * cellWPx).toDp() }, with(density) { (r[3] * cellHPx).toDp() })
+                .padding(3.dp)
+        ) { o() }
+    }
 
     Box(
         Modifier

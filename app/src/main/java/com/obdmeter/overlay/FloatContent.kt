@@ -1,5 +1,7 @@
 package com.obdmeter.overlay
 
+import androidx.compose.runtime.remember
+import androidx.compose.ui.zIndex
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
@@ -83,13 +85,24 @@ fun FloatGauge(
                     val ch = maxHeight / b[3]
                     members.forEach { g ->
                         key(g.id) {
-                            Box(
-                                Modifier
-                                    .offset(cw * (g.x - b[0]), ch * (g.y - b[1]))
-                                    .size(cw * g.w, ch * g.h)
-                                    .padding(2.dp)
-                            ) { GaugeView(g, g.resolvedDef(catalog), values, supported, noCard = true, catalog = catalog,
-                                historySlot = unitPage?.let { com.obdmeter.data.HistorySlot.of(it.id, g.id) }) }
+                            val def = g.resolvedDef(catalog)
+                            val analog = g.style == com.obdmeter.data.GaugeStyle.ANALOG && def != null
+                            val needle = remember(g.id) { androidx.compose.runtime.mutableFloatStateOf(0f) }
+                            val place = Modifier
+                                .offset(cw * (g.x - b[0]), ch * (g.y - b[1]))
+                                .size(cw * g.w, ch * g.h)
+                                .padding(2.dp)
+                            Box(place) {
+                                GaugeView(g, def, values, supported, noCard = true, catalog = catalog,
+                                    historySlot = unitPage?.let { com.obdmeter.data.HistorySlot.of(it.id, g.id) },
+                                    layer = if (analog) com.obdmeter.ui.gauges.GaugeLayer.BODY else com.obdmeter.ui.gauges.GaugeLayer.ALL,
+                                    needleState = needle)
+                            }
+                            // アナログの針は、まとめて表示しているほかのメーターより手前に描く
+                            if (analog) Box(Modifier.zIndex(1f).then(place)) {
+                                GaugeView(g, def, values, supported, noCard = true,
+                                    layer = com.obdmeter.ui.gauges.GaugeLayer.NEEDLE, needleState = needle)
+                            }
                         }
                     }
                 }
