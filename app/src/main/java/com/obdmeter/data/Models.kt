@@ -272,6 +272,10 @@ data class GaugeDesign(
     /** 値テーブルの各行の下・各段の右の余白 (行の高さ・段の幅に対する比率) */
     val tableMarginBottom: Float = 0f,
     val tableMarginRight: Float = 0f,
+    /** 値テーブル: 上下に並んだ値と値の間 (dp。最後の行の下には付けない) */
+    val tableRowGap: Float = 0f,
+    /** 値テーブル: 左右に並んだ段と段の間 (dp。最後の段の右には付けない) */
+    val tableColGap: Float = 0f,
     // --- 折れ線グラフ ---
     /** 1 画面に表示する期間 (秒)。左右のスクロールで記録の全期間を見られる */
     val chartSpanSec: Int = 3600,

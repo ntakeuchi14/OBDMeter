@@ -1154,6 +1154,11 @@ private fun TableLayoutSettings(
     SliderLine("値の文字の大きさ", d.valueSize * 100, 30f..300f, "%.0f%%") { v -> update { it.copy(valueSize = snap(v, 5f) / 100f) } }
     SliderLine("各行の下の余白", d.tableMarginBottom * 100, 0f..60f, "%.0f%%") { v -> update { it.copy(tableMarginBottom = snap(v, 1f) / 100f) } }
     SliderLine("各段の右の余白", d.tableMarginRight * 100, 0f..60f, "%.0f%%") { v -> update { it.copy(tableMarginRight = snap(v, 1f) / 100f) } }
+    SliderLine("値と値の間 (上下)", d.tableRowGap, 0f..80f, "%.0f dp") { v -> update { it.copy(tableRowGap = snap(v, 1f)) } }
+    if (d.tableMaxRows < g.chartAllKeys.size) {
+        SliderLine("段と段の間 (左右)", d.tableColGap, 0f..120f, "%.0f dp") { v -> update { it.copy(tableColGap = snap(v, 1f)) } }
+    }
+    Hint("「値と値の間」は行と行・段と段の間だけに空け、外側には空けません。「余白」は各行・各段の内側に空けます (文字も小さくなります)。")
     Hint("項目名は右寄せ、単位は左寄せで表示します。残りの幅が値の部分です。")
 
     Head("値の部分の背景")

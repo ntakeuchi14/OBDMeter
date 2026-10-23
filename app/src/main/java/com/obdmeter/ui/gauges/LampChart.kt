@@ -168,8 +168,11 @@ internal fun TableGauge(series: List<ChartSeries>, look: GaugeLook, fonts: Gauge
         val n = series.size.coerceAtLeast(1)
         val rows = look.tableMaxRows.coerceIn(1, 30).coerceAtMost(n)
         val cols = (n + rows - 1) / rows
-        val colW = maxWidth / cols
-        val rowH = maxHeight / rows
+        // 値と値の間 (行・段の間だけ。外側には付けない)
+        val rowGap = look.tableRowGap.dp
+        val colGap = look.tableColGap.dp
+        val colW = ((maxWidth - colGap * (cols - 1)) / cols).coerceAtLeast(1.dp)
+        val rowH = ((maxHeight - rowGap * (rows - 1)) / rows).coerceAtLeast(1.dp)
         // 文字の大きさは行の高さから決める (幅が足りなければ 1 行に収まるよう省略)
         val base = with(density) { (rowH.toPx() * (1f - look.tableMarginBottom) * 0.42f).toSp() }
         val inlineName = look.showName && look.tableNameInline
@@ -179,9 +182,9 @@ internal fun TableGauge(series: List<ChartSeries>, look: GaugeLook, fonts: Gauge
         val inlineUnit = look.showUnit && look.tableUnitInline
         val unitW = if (look.showUnit && !inlineUnit) look.tableUnitRatio else 0f
         val valueW = (1f - nameW - unitW).coerceAtLeast(0.15f)
-        Row(Modifier.fillMaxSize()) {
+        Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(colGap)) {
             for (c in 0 until cols) {
-                Column(Modifier.width(colW).fillMaxSize()) {
+                Column(Modifier.width(colW).fillMaxSize(), verticalArrangement = Arrangement.spacedBy(rowGap)) {
                     for (r in 0 until rows) {
                         val i = c * rows + r
                         val s = series.getOrNull(i)

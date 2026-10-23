@@ -138,6 +138,8 @@ data class GaugeLook(
     val tableUnitSize: Float = 1f,
     val tableMarginBottom: Float = 0f,
     val tableMarginRight: Float = 0f,
+    val tableRowGap: Float = 0f,
+    val tableColGap: Float = 0f,
     /** 折れ線グラフの 1 画面の期間 (ミリ秒) */
     val chartSpanMs: Long = 3_600_000L,
     val barAngle: Float = 0f,
