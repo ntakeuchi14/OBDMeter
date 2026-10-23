@@ -95,8 +95,32 @@ class AppCore private constructor(context: Context) {
     /** 「起動時にフロート表示で始める」をこのプロセスで済ませたか */
     @Volatile var startInFloatDone = false
 
-    /** フロート表示を閉じたときに切断した。次にアプリが前面に来たら再接続する */
+    /** 誰も見ていないので切断した。次にアプリが前面に来たら再接続する */
     @Volatile var reconnectOnReturn = false
+
+    private var idleDisconnect: kotlinx.coroutines.Job? = null
+
+    /**
+     * アプリの画面もフロート表示も出ていなくなった。しばらく (1 分) 戻ってこなければ切断し、
+     * 次にアプリが前面に来たときに再接続する。すぐ戻ってきたとき (アプリの切り替えなど) は接続を続ける
+     */
+    fun scheduleIdleDisconnect() {
+        if (session.state.value == com.obdmeter.session.ConnectionState.Disconnected) return
+        idleDisconnect?.cancel()
+        idleDisconnect = scope.launch {
+            kotlinx.coroutines.delay(60_000)
+            if (!appVisible.value && !floatActive.value && session.state.value != com.obdmeter.session.ConnectionState.Disconnected) {
+                session.disconnect()
+                reconnectOnReturn = true
+            }
+        }
+    }
+
+    /** アプリの画面かフロート表示が出たので、予定していた切断を取りやめる */
+    fun cancelIdleDisconnect() {
+        idleDisconnect?.cancel()
+        idleDisconnect = null
+    }
 
     init {
         // 項目一覧 (約 1,200 項目) を裏で先に作っておく (画面の最初の描画を待たせない)

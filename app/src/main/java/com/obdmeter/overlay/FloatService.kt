@@ -177,11 +177,8 @@ class FloatService : LifecycleService(), SavedStateRegistryOwner {
         removeAll()
         core.floatActive.value = false
         core.floatPage.value = null
-        // アプリの画面も出ていないなら、誰も見ていないので切断する (アプリに戻ったら自動で再接続)
-        if (!core.appVisible.value && core.session.state.value != ConnectionState.Disconnected) {
-            core.session.disconnect()
-            core.reconnectOnReturn = true
-        }
+        // アプリの画面も出ていないなら、誰も見ていないので、しばらくして切断する (アプリに戻ったら再接続)
+        if (!core.appVisible.value) core.scheduleIdleDisconnect()
         super.onDestroy()
     }
 

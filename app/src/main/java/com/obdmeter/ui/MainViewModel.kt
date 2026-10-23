@@ -329,12 +329,11 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     /** アプリの画面が前面に出た / 隠れた (フロート表示の出し入れに使う) */
     fun setAppVisible(visible: Boolean) {
         core.appVisible.value = visible
+        if (visible) core.cancelIdleDisconnect()
         if (visible && core.reconnectOnReturn) {
+            // 見ていない間に切断していた (接続していたのだから、自動接続の設定に関係なくつなぎ直す)
             core.reconnectOnReturn = false
-            val s = settings.value
-            if (s.autoConnectEffective && session.state.value == ConnectionState.Disconnected) {
-                session.connect(s)
-            }
+            if (session.state.value == ConnectionState.Disconnected) connect()
         }
     }
 
@@ -539,8 +538,9 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     fun resetDashboards() = viewModelScope.launch { repo.saveDashboards(Defaults.dashboards) }
 
     override fun onCleared() {
-        // フロート表示中は接続を続ける
-        if (!core.floatActive.value) session.disconnect()
+        // 画面を閉じた・Android が裏で画面を破棄した。すぐには切断せず、しばらく戻ってこなければ切断する
+        // (戻ってきたら再接続する。フロート表示中は接続を続ける)
+        if (!core.floatActive.value) core.scheduleIdleDisconnect()
     }
 }
 
