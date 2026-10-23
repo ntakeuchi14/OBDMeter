@@ -27,6 +27,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.CircleShape
@@ -171,8 +172,8 @@ internal fun TableGauge(series: List<ChartSeries>, look: GaugeLook, fonts: Gauge
         // 値と値の間 (行・段の間だけ。外側には付けない)
         val rowGap = look.tableRowGap.dp
         val colGap = look.tableColGap.dp
-        val colW = ((maxWidth - colGap * (cols - 1)) / cols).coerceAtLeast(1.dp)
-        val rowH = ((maxHeight - rowGap * (rows - 1)) / rows).coerceAtLeast(1.dp)
+        val colW = ((maxWidth - colGap * (cols - 1)) / cols).coerceIn(1.dp, maxWidth)
+        val rowH = ((maxHeight - rowGap * (rows - 1)) / rows).coerceIn(1.dp, maxHeight)
         // 文字の大きさは行の高さから決める (幅が足りなければ 1 行に収まるよう省略)
         val base = with(density) { (rowH.toPx() * (1f - look.tableMarginBottom) * 0.42f).toSp() }
         val inlineName = look.showName && look.tableNameInline
@@ -182,17 +183,19 @@ internal fun TableGauge(series: List<ChartSeries>, look: GaugeLook, fonts: Gauge
         val inlineUnit = look.showUnit && look.tableUnitInline
         val unitW = if (look.showUnit && !inlineUnit) look.tableUnitRatio else 0f
         val valueW = (1f - nameW - unitW).coerceAtLeast(0.15f)
-        Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(colGap)) {
+        // 行・段の位置を直接決めて置く (間をマイナスにすると、文字の上下の空きを重ねて詰められる)
+        Box(Modifier.fillMaxSize()) {
             for (c in 0 until cols) {
-                Column(Modifier.width(colW).fillMaxSize(), verticalArrangement = Arrangement.spacedBy(rowGap)) {
                     for (r in 0 until rows) {
                         val i = c * rows + r
                         val s = series.getOrNull(i)
                         Row(
-                            Modifier.height(rowH).fillMaxWidth()
-                                .padding(start = 2.dp, top = 1.dp)
+                            Modifier
+                                .offset((colW + colGap) * c, (rowH + rowGap) * r)
+                                .size(colW, rowH)
+                                .padding(start = 2.dp)
                                 // 下と右の余白 (行の高さ・段の幅に対する比率)
-                                .padding(end = 2.dp + colW * look.tableMarginRight, bottom = 1.dp + rowH * look.tableMarginBottom),
+                                .padding(end = 2.dp + colW * look.tableMarginRight, bottom = rowH * look.tableMarginBottom),
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
                             if (s == null) return@Row
@@ -271,7 +274,6 @@ internal fun TableGauge(series: List<ChartSeries>, look: GaugeLook, fonts: Gauge
                             }
                         }
                     }
-                }
             }
         }
     }
