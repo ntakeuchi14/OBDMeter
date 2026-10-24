@@ -437,9 +437,11 @@ fun AnalogGauge(
         val arcSize = Size(arcR * 2, arcR * 2)
         // 端を丸くするときは、丸みの分だけ角度を内側に詰めて全体の範囲を変えない
         val capInset = if (look.arcRoundCap && arcR > 0f) Math.toDegrees((stroke / 2 / arcR).toDouble()).toFloat()
-            .coerceAtMost(look.sweep / 4) else 0f
-        val start = look.startAngle + capInset
-        val sweep = look.sweep - capInset * 2
+            .coerceAtMost(abs(look.sweep) / 4) else 0f
+        // 反時計回りのときは振れ幅が負 (角度が減る向き)
+        val dir = if (look.sweep < 0f) -1f else 1f
+        val start = look.startAngle + capInset * dir
+        val sweep = look.sweep - capInset * 2 * dir
         val cap = if (look.arcRoundCap) StrokeCap.Round else StrokeCap.Butt
         // 目盛りの位置 (レッドゾーンを内側に描くときにも使う)
         val tickOuter = gaugeR - stroke - d * 0.008f

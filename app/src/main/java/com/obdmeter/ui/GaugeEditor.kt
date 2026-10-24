@@ -490,7 +490,7 @@ private fun PlaceTab(
     }
 
     Head("重なりの順番")
-    Hint("メーターが重なっているときに、どちらを手前に描くかです。ダッシュボードの編集中にメーターをダブルタップしても最前面にできます。")
+    Hint("メーターが重なっているときに、どちらを手前に描くかです。ダッシュボードの編集中は、メーター右上の ▲ (最前面) ▼ (最背面) でも変えられます。")
     Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         OutlinedButton(onClick = { onMoveZ(Int.MAX_VALUE) }) { Text("最前面へ") }
         OutlinedButton(onClick = { onMoveZ(1) }) { Text("1 つ手前へ") }
@@ -527,7 +527,7 @@ private fun ScaleTab(g: GaugeConfig, update: ((GaugeDesign) -> GaugeDesign) -> U
         }
     }) { Text("シンプルな扇形にする") }
 
-    AngleSection(d, update)
+    AngleSection(d, update, analog = true)
 
     Head("目盛り")
     SwitchLine("目盛りの線を表示", null, d.showTicks) { v -> update { it.copy(showTicks = v) } }
@@ -581,25 +581,39 @@ private fun ScaleTab(g: GaugeConfig, update: ((GaugeDesign) -> GaugeDesign) -> U
     }
 }
 
-/** 開始・終了角度 (アナログ・弧のバー) */
+/** 開始・終了角度 (アナログ・弧のバー)。[analog] なら回る向き (反時計回り) と下側の扇形のプリセットも出す */
 @Composable
-private fun AngleSection(d: GaugeDesign, update: ((GaugeDesign) -> GaugeDesign) -> Unit) {
+private fun AngleSection(d: GaugeDesign, update: ((GaugeDesign) -> GaugeDesign) -> Unit, analog: Boolean = false) {
     Head("開始・終了角度 (12 時 = 0°、時計回り)")
+    data class P(val name: String, val start: Float, val end: Float, val ccw: Boolean = false)
+    val presets = listOf(
+        P("標準 240°", -120f, 120f),
+        P("270°", -135f, 135f),
+        P("300°", -150f, 150f),
+        P("半円 180°", -90f, 90f),
+        P("右上 90°", 0f, 90f),
+        P("全周 360°", -180f, 180f),
+    ) + if (analog) listOf(
+        // 下側の扇形を左から右へ (反時計回りに進む)
+        P("下 半円 180° 左→右", -90f, 90f, true),
+        P("下 240° 左→右", -60f, 60f, true),
+        P("下 90° 左→右", -135f, 135f, true),
+    ) else emptyList()
     Row(Modifier.horizontalScroll(rememberScrollState())) {
-        listOf(
-            "標準 240°" to (-120f to 120f),
-            "270°" to (-135f to 135f),
-            "300°" to (-150f to 150f),
-            "半円 180°" to (-90f to 90f),
-            "右上 90°" to (0f to 90f),
-            "全周 360°" to (-180f to 180f),
-        ).forEach { (name, a) ->
-            FilterChip(d.startAngle == a.first && d.endAngle == a.second,
-                { update { it.copy(startAngle = a.first, endAngle = a.second) } }, { Text(name) }, Modifier.padding(end = 6.dp))
+        presets.forEach { p ->
+            val ccw = analog && d.counterClockwise
+            FilterChip(d.startAngle == p.start && d.endAngle == p.end && ccw == p.ccw,
+                { update { it.copy(startAngle = p.start, endAngle = p.end, counterClockwise = p.ccw) } }, { Text(p.name) },
+                Modifier.padding(end = 6.dp))
         }
     }
     SliderLine("開始角度", d.startAngle, -180f..180f, "%.0f°") { v -> update { it.copy(startAngle = snap(v, 5f)) } }
     SliderLine("終了角度", d.endAngle, -180f..360f, "%.0f°") { v -> update { it.copy(endAngle = snap(v, 5f)) } }
+    if (analog) {
+        SwitchLine("反時計回りに進む",
+            "ON にすると、開始角度から終了角度へ反時計回りに目盛りを振ります (下側の扇形で、左から右へ針が動くようにするときなど)",
+            d.counterClockwise) { v -> update { it.copy(counterClockwise = v) } }
+    }
 }
 
 /** レッドゾーン (アナログ・バー) */

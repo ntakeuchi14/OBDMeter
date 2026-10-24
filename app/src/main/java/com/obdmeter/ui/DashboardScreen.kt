@@ -159,7 +159,7 @@ fun DashboardScreen(vm: MainViewModel, onNavigate: (Screen) -> Unit, onCreateCus
                     color = GaugeColors.Peak, fontSize = 13.sp, modifier = Modifier.weight(1f),
                     maxLines = 2, overflow = TextOverflow.Ellipsis)
             } else if (editing) {
-                Text("レイアウト編集中: ドラッグで移動、右下の ◢ でサイズ変更、タップで設定、ダブルタップで最前面、長押しでコピー (グループはまとめて)",
+                Text("レイアウト編集中: ドラッグで移動、右下の ◢ でサイズ変更、タップで設定、右上の ▲▼ で重なり順、長押しでコピー (グループはまとめて)",
                     color = GaugeColors.Accent, fontSize = 13.sp, modifier = Modifier.weight(1f),
                     maxLines = 2, overflow = TextOverflow.Ellipsis)
                 Box {
@@ -224,7 +224,7 @@ fun DashboardScreen(vm: MainViewModel, onNavigate: (Screen) -> Unit, onCreateCus
                     onCellAspect = vm::reportCellAspect,
                     onCellSize = vm::reportCellSize,
                     gridStep = settings.gridStep,
-                    onBringToFront = { g -> vm.moveZ(d.id, g.id, Int.MAX_VALUE) },
+                    onMoveZ = { g, delta -> vm.moveZ(d.id, g.id, delta) },
                     onCommitMany = { placements -> vm.placeGauges(d.id, placements) },
                     selecting = selecting && d.id == current?.id,
                     selected = selected,
@@ -480,8 +480,8 @@ private fun DashboardCanvas(
     onCellSize: (Float, Float) -> Unit = { _, _ -> },
     /** 移動・大きさ変更の吸着の間隔 (単位) */
     gridStep: Int = Layout.SCALE,
-    /** ダブルタップ (編集中): 最前面へ */
-    onBringToFront: (GaugeConfig) -> Unit = {},
+    /** 重なり順を変える (編集中の ▲ ▼ ボタン) */
+    onMoveZ: (GaugeConfig, Int) -> Unit = { _, _ -> },
     /** グループの移動・大きさ変更の確定 (メーター id → x, y, w, h) */
     onCommitMany: (Map<Long, IntArray>) -> Unit = {},
     /** グループにするメーターを選んでいる */
@@ -588,7 +588,7 @@ private fun DashboardCanvas(
                     selected = g.id in selected,
                     onToggleSelect = onToggleSelect,
                     gridStep = gridStep,
-                    onDoubleTap = onBringToFront,
+                    onMoveZ = onMoveZ,
                     // アナログの針は、ほかのメーター (中に重ねて置いたものも) より手前に描く
                     overlay = if (g.style == GaugeStyle.ANALOG && def != null) {
                         { GaugeView(g, def, values, supported, layer = com.obdmeter.ui.gauges.GaugeLayer.NEEDLE, needleState = needle) }
@@ -731,8 +731,8 @@ private fun GaugeOnGrid(
     overlay: (@Composable () -> Unit)? = null,
     /** 移動・大きさ変更の吸着の間隔 (単位) */
     gridStep: Int = Layout.SCALE,
-    /** ダブルタップ (編集中): 最前面へ */
-    onDoubleTap: (GaugeConfig) -> Unit = {},
+    /** 重なり順を変える (編集中の ▲ ▼ ボタン)。+MAX = 最前面、MIN = 最背面 */
+    onMoveZ: (GaugeConfig, Int) -> Unit = { _, _ -> },
     content: @Composable () -> Unit,
 ) {
     val isGrouped by rememberUpdatedState(grouped)
@@ -740,6 +740,7 @@ private fun GaugeOnGrid(
     val groupDragEnd by rememberUpdatedState(onGroupDragEnd)
     val groupDragCancel by rememberUpdatedState(onGroupDragCancel)
     val toggleSelect by rememberUpdatedState(onToggleSelect)
+    val moveZ by rememberUpdatedState(onMoveZ)
     val g by rememberUpdatedState(gauge)
     // ドラッグ中の累積移動量 (px)
     var move by remember { mutableStateOf(Offset.Zero) }
@@ -788,7 +789,7 @@ private fun GaugeOnGrid(
                 else if (editing) Modifier
                     .border(2.dp, if (dragging) GaugeColors.Warn else GaugeColors.Accent, RoundedCornerShape(14.dp))
                     .pointerInput(gauge.id) {
-                        detectTapGestures(onTap = { onTap(g) }, onLongPress = { onCopy(g) }, onDoubleTap = { onDoubleTap(g) })
+                        detectTapGestures(onTap = { onTap(g) }, onLongPress = { onCopy(g) })
                     }
                     .pointerInput(gauge.id) {
                         detectDragGestures(
@@ -832,6 +833,20 @@ private fun GaugeOnGrid(
                 Modifier.align(Alignment.Center).size(36.dp).clip(CircleShape).background(GaugeColors.Peak),
                 contentAlignment = Alignment.Center,
             ) { Icon(Icons.Default.Check, null, tint = GaugeColors.Background) }
+        }
+        if (editing && !selecting) {
+            // 重なり順 (右上): ▲ 最前面 / ▼ 最背面
+            Row(Modifier.align(Alignment.TopEnd).padding(4.dp), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                listOf("▲" to Int.MAX_VALUE, "▼" to Int.MIN_VALUE).forEach { (label, delta) ->
+                    Box(
+                        Modifier.size(30.dp).clip(RoundedCornerShape(8.dp))
+                            .background(GaugeColors.Background.copy(alpha = 0.75f))
+                            .border(1.dp, GaugeColors.Accent, RoundedCornerShape(8.dp))
+                            .pointerInput(gauge.id, delta) { detectTapGestures(onTap = { moveZ(g, delta) }) },
+                        contentAlignment = Alignment.Center,
+                    ) { Text(label, color = GaugeColors.Accent, fontSize = 13.sp) }
+                }
+            }
         }
         if (editing && !selecting && !grouped) {
             // サイズ変更のつまみ (右下)

@@ -114,6 +114,8 @@ data class GaugeDesign(
     // ---- 角度 (アナログ) : 12 時 = 0°、時計回りが正 ----
     val startAngle: Float = -120f,
     val endAngle: Float = 120f,
+    /** アナログ: 開始角度から終了角度へ反時計回りに進む (下側の扇形を左から右へ動かすときなど) */
+    val counterClockwise: Boolean = false,
 
     // ---- 目盛り ----
     /** 主目盛りの区間数。null = 範囲から自動 */

@@ -40,7 +40,11 @@ fun GaugeDesign.toLook(def: PidDef, style: GaugeStyle): GaugeLook {
     // 角度: 保存は「12 時 = 0°、時計回り」、描画は「3 時 = 0°」
     val s = startAngle.coerceIn(-360f, 360f)
     val e = endAngle.coerceIn(-360f, 360f)
-    val sweep = (e - s).let { if (it <= 0f) it + 360f else it }.coerceIn(10f, 360f)
+    val cw = (e - s).let { if (it <= 0f) it + 360f else it }.coerceIn(10f, 360f)
+    // 反時計回り (アナログのみ): 開始から終了へ角度が減る向きに進む。描画では負の振れ幅として扱う
+    val sweep = if (counterClockwise && style == GaugeStyle.ANALOG) {
+        -((s - e).let { if (it <= 0f) it + 360f else it }.coerceIn(10f, 360f))
+    } else cw
 
     val zone: ClosedFloatingPointRange<Double>? = when {
         !showRedZone -> null
