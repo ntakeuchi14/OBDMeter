@@ -565,7 +565,7 @@ private fun DashboardCanvas(
             if (changed.isNotEmpty()) { groupPending = p; onCommitMany(changed) }
         }
 
-        dashboard.gauges.forEach { g ->
+        dashboard.gauges.forEachIndexed { zi, g ->
             key(g.id) {
                 val def = g.resolvedDef(catalog)
                 val gid = g.layoutGroup?.takeIf { it in groups }
@@ -589,6 +589,8 @@ private fun DashboardCanvas(
                     onToggleSelect = onToggleSelect,
                     gridStep = gridStep,
                     onMoveZ = onMoveZ,
+                    // 重なり順はリストの順番。描く順を明示して、並べ替えたらすぐ反映されるようにする
+                    zOrder = zi.toFloat(),
                     // アナログの針は、ほかのメーター (中に重ねて置いたものも) より手前に描く
                     overlay = if (g.style == GaugeStyle.ANALOG && def != null) {
                         { GaugeView(g, def, values, supported, layer = com.obdmeter.ui.gauges.GaugeLayer.NEEDLE, needleState = needle) }
@@ -614,6 +616,7 @@ private fun DashboardCanvas(
                     val commitNow by rememberUpdatedState({ commitGroup() })
                     Box(
                         Modifier
+                            .zIndex(NEEDLE_Z + 1f)
                             .offset(with(density) { (b[0] * cellWPx).toDp() }, with(density) { (b[1] * cellHPx).toDp() })
                             .size(with(density) { (b[2] * cellWPx).toDp() }, with(density) { (b[3] * cellHPx).toDp() })
                     ) {
@@ -661,6 +664,9 @@ private fun DashboardCanvas(
     }
     }
 }
+
+/** アナログの針の層の描く順番 (どのメーターよりも手前) */
+private const val NEEDLE_Z = 100_000f
 
 /** メーター 1 つ (アプリのダッシュボードとフロート表示で共通) */
 @Composable
@@ -733,6 +739,8 @@ private fun GaugeOnGrid(
     gridStep: Int = Layout.SCALE,
     /** 重なり順を変える (編集中の ▲ ▼ ボタン)。+MAX = 最前面、MIN = 最背面 */
     onMoveZ: (GaugeConfig, Int) -> Unit = { _, _ -> },
+    /** 描く順番 (大きいほど手前) */
+    zOrder: Float = 0f,
     content: @Composable () -> Unit,
 ) {
     val isGrouped by rememberUpdatedState(grouped)
@@ -769,7 +777,7 @@ private fun GaugeOnGrid(
     overlay?.let { o ->
         Box(
             Modifier
-                .zIndex(1f)
+                .zIndex(NEEDLE_Z)
                 .offset(with(density) { (r[0] * cellWPx).toDp() }, with(density) { (r[1] * cellHPx).toDp() })
                 .size(with(density) { (r[2] * cellWPx).toDp() }, with(density) { (r[3] * cellHPx).toDp() })
                 .padding(3.dp)
@@ -778,6 +786,7 @@ private fun GaugeOnGrid(
 
     Box(
         Modifier
+            .zIndex(zOrder)
             .offset(with(density) { (r[0] * cellWPx).toDp() }, with(density) { (r[1] * cellHPx).toDp() })
             .size(with(density) { (r[2] * cellWPx).toDp() }, with(density) { (r[3] * cellHPx).toDp() })
             .padding(3.dp)
