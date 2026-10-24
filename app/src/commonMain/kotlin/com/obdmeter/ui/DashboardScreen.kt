@@ -30,6 +30,7 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.wrapContentSize
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
@@ -615,48 +616,52 @@ private fun DashboardCanvas(
                     }
                     val active = groupMove?.first == gid || groupResize?.first == gid
                     val commitNow by rememberUpdatedState({ commitGroup() })
+                    val ox = with(density) { (b[0] * cellWPx).toDp() }
+                    val oy = with(density) { (b[1] * cellHPx).toDp() }
+                    val ow = with(density) { (b[2] * cellWPx).toDp() }
+                    val oh = with(density) { (b[3] * cellHPx).toDp() }
+                    // 点線の囲みはメーターの後ろに描く (全体を覆う層を手前に置くと、Web 版でメーターのタップが届かなかった)
+                    Canvas(Modifier.zIndex(-1f).offset(ox, oy).size(ow, oh)) {
+                        drawRoundRect(
+                            if (active) GaugeColors.Warn else GaugeColors.Peak,
+                            cornerRadius = androidx.compose.ui.geometry.CornerRadius(6.dp.toPx()),
+                            style = androidx.compose.ui.graphics.drawscope.Stroke(
+                                2.dp.toPx(),
+                                pathEffect = androidx.compose.ui.graphics.PathEffect.dashPathEffect(floatArrayOf(10f, 8f)),
+                            ),
+                        )
+                    }
+                    // 右上: グループの印 (▲▼ ボタンと重ならないよう、囲みの上の辺に載せる)
+                    Box(
+                        Modifier.zIndex(NEEDLE_Z + 1f).offset(ox, oy).size(ow, 0.dp).wrapContentSize(Alignment.TopEnd, unbounded = true)
+                    ) {
+                        Box(
+                            Modifier.offset(x = (-44).dp, y = (-9).dp).clip(RoundedCornerShape(11.dp))
+                                .background(GaugeColors.Peak).padding(horizontal = 6.dp, vertical = 2.dp),
+                        ) { Text("グループ", color = GaugeColors.Background, fontSize = 11.sp, fontWeight = FontWeight.Bold) }
+                    }
+                    // 右下: グループの大きさ変更のつまみ
                     Box(
                         Modifier
                             .zIndex(NEEDLE_Z + 1f)
-                            .offset(with(density) { (b[0] * cellWPx).toDp() }, with(density) { (b[1] * cellHPx).toDp() })
-                            .size(with(density) { (b[2] * cellWPx).toDp() }, with(density) { (b[3] * cellHPx).toDp() })
-                    ) {
-                        Canvas(Modifier.fillMaxSize()) {
-                            drawRoundRect(
-                                if (active) GaugeColors.Warn else GaugeColors.Peak,
-                                cornerRadius = androidx.compose.ui.geometry.CornerRadius(6.dp.toPx()),
-                                style = androidx.compose.ui.graphics.drawscope.Stroke(
-                                    2.dp.toPx(),
-                                    pathEffect = androidx.compose.ui.graphics.PathEffect.dashPathEffect(floatArrayOf(10f, 8f)),
-                                ),
-                            )
-                        }
-                        // 右上: グループの印
-                        Box(
-                            Modifier.align(Alignment.TopEnd).padding(4.dp).clip(RoundedCornerShape(11.dp))
-                                .background(GaugeColors.Peak).padding(horizontal = 6.dp, vertical = 2.dp),
-                        ) { Text("グループ", color = GaugeColors.Background, fontSize = 11.sp, fontWeight = FontWeight.Bold) }
-                        Box(
-                            Modifier
-                                .align(Alignment.BottomEnd)
-                                .size(40.dp)
-                                .pointerInput(gid) {
-                                    detectDragGestures(
-                                        onDragEnd = { commitNow() },
-                                        onDragCancel = { groupResize = null },
-                                    ) { change, amount ->
-                                        change.consume()
-                                        groupResize = gid to ((groupResize?.second ?: Offset.Zero) + amount)
-                                    }
-                                },
-                            contentAlignment = Alignment.BottomEnd,
-                        ) {
-                            Canvas(Modifier.size(28.dp).padding(3.dp)) {
-                                val path = androidx.compose.ui.graphics.Path().apply {
-                                    moveTo(size.width, 0f); lineTo(size.width, size.height); lineTo(0f, size.height); close()
+                            .offset(ox + ow - 40.dp, oy + oh - 40.dp)
+                            .size(40.dp)
+                            .pointerInput(gid) {
+                                detectDragGestures(
+                                    onDragEnd = { commitNow() },
+                                    onDragCancel = { groupResize = null },
+                                ) { change, amount ->
+                                    change.consume()
+                                    groupResize = gid to ((groupResize?.second ?: Offset.Zero) + amount)
                                 }
-                                drawPath(path, GaugeColors.Peak)
+                            },
+                        contentAlignment = Alignment.BottomEnd,
+                    ) {
+                        Canvas(Modifier.size(28.dp).padding(3.dp)) {
+                            val path = androidx.compose.ui.graphics.Path().apply {
+                                moveTo(size.width, 0f); lineTo(size.width, size.height); lineTo(0f, size.height); close()
                             }
+                            drawPath(path, GaugeColors.Peak)
                         }
                     }
                 }
@@ -801,10 +806,8 @@ private fun GaugeOnGrid(
                     // タップ (設定)・長押し (コピー)・ドラッグ (移動) を 1 つの処理で見分ける
                     // (別々の検出を重ねると、グループのメーターで Web 版のタップが効かなかったため)
                     .pointerInput(gauge.id) {
-                        println("DBG pointer start ${gauge.id} grouped=$isGrouped")
                         awaitEachGesture {
                             val down = awaitFirstDown(requireUnconsumed = false)
-                            println("DBG down ${gauge.id}")
                             val slop = viewConfiguration.touchSlop
                             val longMs = viewConfiguration.longPressTimeoutMillis
                             val started = kotlin.time.TimeSource.Monotonic.markNow()
