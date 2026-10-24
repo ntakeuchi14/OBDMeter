@@ -29,6 +29,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.drawscope.clipPath
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.DrawScope
@@ -117,6 +118,9 @@ data class GaugeLook(
     /** 文字盤の背景色 (背景画像が無いときだけ塗る) */
     val faceColor: Color? = null,
     val faceScale: Float = 1f,
+    val panelStyle: com.obdmeter.data.PanelStyle = com.obdmeter.data.PanelStyle.FLAT,
+    val panelDepth: Float = 0.6f,
+    val panelGloss: Boolean = false,
     /** 名前・単位の位置のずれ (メーターの大きさに対する比率) と色 */
     val nameOffsetX: Float = 0f,
     val nameOffsetY: Float = 0f,
@@ -401,7 +405,10 @@ fun AnalogGauge(
         // 背景色で文字盤を塗り、その上に背景画像 (透過した画像なら背景色が透けて見える)。目盛りや針は上から描く
         look.faceColor?.let { c ->
             val fc = if (image != null) Offset(center.x + d * look.imageOffsetX, center.y + d * look.imageOffsetY) else center
-            drawCircle(c, (outer - ringWidth / 2) * look.faceScale, fc)
+            val fr = (outer - ringWidth / 2) * look.faceScale
+            drawCircle(c, fr, fc)
+            val rect = androidx.compose.ui.geometry.Rect(fc, fr)
+            drawPanel(Path().apply { addOval(rect) }, rect, look.panelStyle, look.panelDepth, look.panelGloss)
         }
         if (image != null) {
             drawImageFit(image, Offset(center.x + d * look.imageOffsetX, center.y + d * look.imageOffsetY), d * look.imageScale)
@@ -954,8 +961,65 @@ internal fun DrawScope.drawFace(look: GaugeLook) {
     val s = look.faceScale
     val r = min(size.width, size.height) * 0.08f * s
     val sz = androidx.compose.ui.geometry.Size(size.width * s, size.height * s)
-    drawRoundRect(c, topLeft = Offset((size.width - sz.width) / 2, (size.height - sz.height) / 2), size = sz,
-        cornerRadius = CornerRadius(r, r))
+    val tl = Offset((size.width - sz.width) / 2, (size.height - sz.height) / 2)
+    drawRoundRect(c, topLeft = tl, size = sz, cornerRadius = CornerRadius(r, r))
+    val path = Path().apply { addRoundRect(androidx.compose.ui.geometry.RoundRect(androidx.compose.ui.geometry.Rect(tl, sz), CornerRadius(r, r))) }
+    drawPanel(path, androidx.compose.ui.geometry.Rect(tl, sz), look.panelStyle, look.panelDepth, look.panelGloss)
+}
+
+/**
+ * 背景の立体感 ([path] の形、[bounds] はその外接矩形)。
+ * 埋め込み: 縁の左上を暗く・右下を明るくして、パネルがへこんで埋め込まれたように見せる (浮き出しは逆)。
+ * 面にもうっすら縦のグラデーションを付け、[gloss] ならガラスの映り込みを上半分に重ねる
+ */
+internal fun DrawScope.drawPanel(
+    path: Path,
+    bounds: androidx.compose.ui.geometry.Rect,
+    style: com.obdmeter.data.PanelStyle,
+    depth: Float,
+    gloss: Boolean,
+) {
+    if (style == com.obdmeter.data.PanelStyle.FLAT && !gloss) return
+    if (bounds.width <= 0f || bounds.height <= 0f) return
+    val k = depth.coerceIn(0f, 1f)
+    val bevel = (min(bounds.width, bounds.height) * 0.06f).coerceIn(2f, 28f) * (0.5f + k)
+    val dark = Color.Black.copy(alpha = 0.6f * k)
+    val light = Color.White.copy(alpha = 0.35f * k)
+    clipPath(path) {
+        if (style != com.obdmeter.data.PanelStyle.FLAT) {
+            val inset = style == com.obdmeter.data.PanelStyle.INSET
+            val a = if (inset) dark else light
+            val b = if (inset) light.copy(alpha = light.alpha * 0.7f) else dark
+            val edge = Brush.linearGradient(listOf(a, Color.Transparent, b), start = bounds.topLeft, end = bounds.bottomRight)
+            // 縁の内側の陰影 (太くて薄い線 + 細くて濃い線で、やわらかい影にする)
+            drawPath(path, Brush.linearGradient(listOf(a.copy(alpha = a.alpha * 0.45f), Color.Transparent, b.copy(alpha = b.alpha * 0.45f)),
+                start = bounds.topLeft, end = bounds.bottomRight), style = Stroke(bevel * 4f))
+            drawPath(path, edge, style = Stroke(bevel * 1.6f))
+            // 面: へこみは上が暗く、浮き出しは上が明るい
+            val top = if (inset) Color.Black.copy(alpha = 0.18f * k) else Color.White.copy(alpha = 0.10f * k)
+            val bottom = if (inset) Color.White.copy(alpha = 0.04f * k) else Color.Black.copy(alpha = 0.18f * k)
+            drawRect(Brush.verticalGradient(listOf(top, Color.Transparent, bottom), bounds.top, bounds.bottom),
+                bounds.topLeft, bounds.size)
+        }
+        if (gloss) {
+            val h = bounds.height * 0.5f
+            drawRect(
+                Brush.verticalGradient(listOf(Color.White.copy(alpha = 0.16f), Color.White.copy(alpha = 0.04f), Color.Transparent),
+                    bounds.top, bounds.top + h),
+                bounds.topLeft, androidx.compose.ui.geometry.Size(bounds.width, h),
+            )
+        }
+    }
+    // 外側の縁 (へこみなら穴のふちが下側で光り、浮き出しなら上側が光る)
+    if (style != com.obdmeter.data.PanelStyle.FLAT) {
+        val inset = style == com.obdmeter.data.PanelStyle.INSET
+        val rim = Brush.linearGradient(
+            listOf(if (inset) Color.Black.copy(alpha = 0.35f * k) else Color.White.copy(alpha = 0.25f * k), Color.Transparent,
+                if (inset) Color.White.copy(alpha = 0.22f * k) else Color.Black.copy(alpha = 0.35f * k)),
+            start = bounds.topLeft, end = bounds.bottomRight,
+        )
+        drawPath(path, rim, style = Stroke(maxOf(1f, bevel * 0.35f)))
+    }
 }
 
 /**

@@ -1,5 +1,6 @@
 package com.obdmeter.ui.gauges
 
+import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.foundation.layout.height
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -213,7 +214,22 @@ internal fun TableGauge(series: List<ChartSeries>, look: GaugeLook, fonts: Gauge
                                     .weight(valueW)
                                     .fillMaxSize()
                                     .clip(RoundedCornerShape(4.dp))
-                                    .then(look.tableValueBg?.let { Modifier.background(it) } ?: Modifier),
+                                    .then(look.tableValueBg?.let { Modifier.background(it) } ?: Modifier)
+                                    // 値の部分の立体感 (背景色か背景画像があるときだけ)
+                                    .then(
+                                        if (look.tableValueBg == null && look.tableValueImage == null) Modifier
+                                        else Modifier.drawWithContent {
+                                            drawContent()
+                                            val r = 4.dp.toPx()
+                                            val rect = androidx.compose.ui.geometry.Rect(Offset.Zero, size)
+                                            drawPanel(
+                                                androidx.compose.ui.graphics.Path().apply {
+                                                    addRoundRect(androidx.compose.ui.geometry.RoundRect(rect, androidx.compose.ui.geometry.CornerRadius(r, r)))
+                                                },
+                                                rect, look.panelStyle, look.panelDepth, look.panelGloss,
+                                            )
+                                        }
+                                    ),
                                 contentAlignment = Alignment.Center,
                             ) {
                                 if (image != null) {

@@ -210,6 +210,12 @@ data class GaugeDesign(
     val faceColor: Long? = null,
     /** 背景色を塗る大きさ (倍率)。透過した背景画像の内側に合わせる */
     val faceScale: Float = 1f,
+    /** 背景色 (メーターの背景・値テーブルの値の部分) の立体感: なし / 埋め込み / 浮き出し */
+    val panelStyle: PanelStyle = PanelStyle.FLAT,
+    /** 立体感の強さ (0〜1) */
+    val panelDepth: Float = 0.6f,
+    /** ガラスのような映り込み (上半分をうっすら明るく) */
+    val panelGloss: Boolean = false,
     /** バー表示: バーの角度 (度、時計回り。0 = 横) */
     val barAngle: Float = 0f,
     /** バー表示: 破線のマスの数 (0 = 実線) と、マスの間のすき間 (マスの幅に対する比率) */
@@ -325,6 +331,13 @@ enum class LegendPosition(val label: String) {
 
 /** 凡例を上・下に置くときの横の寄せ方 */
 enum class LegendAlign(val label: String) { START("左寄せ"), CENTER("中央"), END("右寄せ") }
+
+/** 背景色の立体感 */
+enum class PanelStyle(val label: String) {
+    FLAT("なし (平ら)"),
+    INSET("埋め込み (へこみ)"),
+    RAISED("浮き出し"),
+}
 
 /** メーター外周のリング */
 enum class RingStyle(val label: String) {

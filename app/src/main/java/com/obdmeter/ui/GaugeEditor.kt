@@ -740,7 +740,26 @@ private fun FaceSection(d: GaugeDesign, update: ((GaugeDesign) -> GaugeDesign) -
         if (d.backgroundImage != null) {
             Hint("背景色は背景画像の下に塗ります。画像の透過した部分から見えるので、大きさを画像の内側に合わせてください。")
         }
+        PanelSection(d, update)
     }
+}
+
+/** 背景色の立体感 (埋め込み・浮き出し・ガラスの映り込み) */
+@Composable
+private fun PanelSection(d: GaugeDesign, update: ((GaugeDesign) -> GaugeDesign) -> Unit) {
+    Text("背景の立体感", fontSize = 14.sp, modifier = Modifier.padding(top = 12.dp, bottom = 6.dp))
+    Row(Modifier.horizontalScroll(rememberScrollState())) {
+        com.obdmeter.data.PanelStyle.entries.forEach { p ->
+            FilterChip(d.panelStyle == p, { update { it.copy(panelStyle = p) } }, { Text(p.label) }, Modifier.padding(end = 6.dp))
+        }
+    }
+    if (d.panelStyle != com.obdmeter.data.PanelStyle.FLAT) {
+        SliderLine("立体感の強さ", d.panelDepth * 100, 0f..100f, "%.0f%%") { v -> update { it.copy(panelDepth = snap(v, 5f) / 100f) } }
+    }
+    SwitchLine("ガラスの映り込み", "上半分をうっすら明るくして、表示部にガラスがはまっているように見せます", d.panelGloss) { v ->
+        update { it.copy(panelGloss = v) }
+    }
+    Hint("「埋め込み」は縁の左上を暗く・右下を明るくして、表示部がパネルにはめ込まれたように見せます。背景色は暗めの色が合います。")
 }
 
 @Composable
@@ -1167,6 +1186,7 @@ private fun TableLayoutSettings(
 
     Head("値の部分の背景")
     ColorLine("背景色 (既定 = なし)", d.tableValueBg, Color.Transparent) { c -> update { it.copy(tableValueBg = c) } }
+    if (d.tableValueBg != null || d.tableValueImage != null) PanelSection(d, update)
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
         if (uri == null) return@rememberLauncherForActivityResult
         loading = true
