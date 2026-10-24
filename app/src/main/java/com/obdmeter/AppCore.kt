@@ -88,6 +88,8 @@ class AppCore private constructor(context: Context) {
 
     /** アプリのダッシュボードの 1 マスの縦横比 (幅 / 高さ)。フロート表示の形をアプリと合わせるのに使う */
     val cellAspect = MutableStateFlow(defaultCellAspect())
+    /** ダッシュボードの 1 マスの実際の大きさ (dp、幅と高さ)。編集画面のプレビューを実物と同じ大きさで描くのに使う */
+    val cellSizeDp = MutableStateFlow<Pair<Float, Float>?>(null)
 
     /** 起動時の自動接続をこのプロセスで済ませたか */
     @Volatile var autoConnectDone = false

@@ -1,5 +1,7 @@
 package com.obdmeter.ui
 
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.foundation.layout.requiredSize
 import com.obdmeter.data.HistoryStore
 import com.obdmeter.data.historyRetentionMs
 import android.widget.Toast
@@ -112,6 +114,7 @@ fun GaugeSettingsDialog(
     var draft by remember(gauge.id) { mutableStateOf(gauge) }
     val context = LocalContext.current
     val cellAspect by vm.cellAspect.collectAsState()
+    val cellSize by vm.cellSizeDp.collectAsState()
     val latestOnChange by rememberUpdatedState(onChange)
     // 下書きを 250ms 遅れで保存
     LaunchedEffect(draft) {
@@ -149,10 +152,18 @@ fun GaugeSettingsDialog(
                 val previewHeight = maxHeight * 0.38f
                 val preview: @Composable (Modifier) -> Unit = { m ->
                     Column(m.padding(12.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                        Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
-                            // メーターの縦横比 (マス目の比率) に合わせてプレビューする
-                            // ダッシュボードの実際のマスの縦横比を使う (プレビューと実物の形を合わせる)
+                        BoxWithConstraints(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
+                            // ダッシュボードで実際に表示する大きさ (dp) で描いてから、枠に収まるように拡大縮小する。
+                            // 文字の大きさ (sp)・余白 (dp) と、メーターの大きさとの比率まで実物と同じになる
                             val ratio = (draft.w.coerceAtLeast(1) * cellAspect / draft.h.coerceAtLeast(1)).coerceIn(0.2f, 6f)
+                            val real = cellSize?.let { (cw, ch) ->
+                                // ダッシュボードのメーターは周りに 3dp ずつ空けて置く
+                                (cw * draft.w - 6f).coerceAtLeast(10f) to (ch * draft.h - 6f).coerceAtLeast(10f)
+                            }
+                            val previewModifier = if (real != null) {
+                                val k = minOf(maxWidth.value / real.first, maxHeight.value / real.second)
+                                Modifier.requiredSize(real.first.dp, real.second.dp).graphicsLayer { scaleX = k; scaleY = k }
+                            } else Modifier.aspectRatio(ratio)
                             if (def != null) {
                                 GaugeCard(
                                     def = def,
@@ -160,7 +171,7 @@ fun GaugeSettingsDialog(
                                     style = draft.style,
                                     unsupported = false,
                                     look = draft.look(def),
-                                    modifier = Modifier.aspectRatio(ratio),
+                                    modifier = previewModifier,
                                     series = if (draft.style == GaugeStyle.CHART || draft.style == GaugeStyle.TABLE || draft.style == GaugeStyle.MONITOR) {
                                         chartSeries(draft, def, mapOf(def.key to (previewValue ?: 0.0)), catalog)
                                     } else emptyList(),

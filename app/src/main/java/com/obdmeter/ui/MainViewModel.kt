@@ -367,6 +367,11 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     /** アプリのダッシュボードの 1 マスの縦横比を覚えておく (フロート表示の形に使う) */
     fun reportCellAspect(aspect: Float) { if (aspect.isFinite() && aspect > 0f) core.cellAspect.value = aspect }
 
+    val cellSizeDp: StateFlow<Pair<Float, Float>?> = core.cellSizeDp
+
+    /** ダッシュボードの 1 マスの大きさ (dp) */
+    fun reportCellSize(w: Float, h: Float) { if (w > 0f && h > 0f) core.cellSizeDp.value = w to h }
+
     // ---- カスタム PID ----
 
     private val customLock = Mutex()

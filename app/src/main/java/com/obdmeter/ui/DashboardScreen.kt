@@ -207,6 +207,7 @@ fun DashboardScreen(vm: MainViewModel, onNavigate: (Screen) -> Unit, onCreateCus
                         ).show()
                     },
                     onCellAspect = vm::reportCellAspect,
+                    onCellSize = vm::reportCellSize,
                     onCommitMany = { placements -> vm.placeGauges(d.id, placements) },
                     selecting = selecting && d.id == current?.id,
                     selected = selected,
@@ -458,6 +459,7 @@ private fun DashboardCanvas(
     onTap: (GaugeConfig) -> Unit,
     onCopy: (GaugeConfig) -> Unit = {},
     onCellAspect: (Float) -> Unit = {},
+    onCellSize: (Float, Float) -> Unit = { _, _ -> },
     /** グループの移動・大きさ変更の確定 (メーター id → x, y, w, h) */
     onCommitMany: (Map<Long, IntArray>) -> Unit = {},
     /** グループにするメーターを選んでいる */
@@ -484,7 +486,10 @@ private fun DashboardCanvas(
         val density = LocalDensity.current
         val cellWPx = with(density) { cellW.toPx() }
         val cellHPx = with(density) { cellH.toPx() }
-        LaunchedEffect(cellWPx, cellHPx) { if (cellHPx > 0f) onCellAspect(cellWPx / cellHPx) }
+        LaunchedEffect(cellWPx, cellHPx) {
+            if (cellHPx > 0f) onCellAspect(cellWPx / cellHPx)
+            onCellSize(cellW.value, cellH.value)
+        }
 
         if (editing) {
             // マス目のガイド
