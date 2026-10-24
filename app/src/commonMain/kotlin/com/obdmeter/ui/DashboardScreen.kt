@@ -66,6 +66,8 @@ import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -590,13 +592,14 @@ private fun DashboardCanvas(
                     // 重なり順はリストの順番。描く順を明示して、並べ替えたらすぐ反映されるようにする
                     zOrder = zi.toFloat(),
                     // アナログの針は、ほかのメーター (中に重ねて置いたものも) より手前に描く
-                    overlay = if (g.style == GaugeStyle.ANALOG && def != null) {
+                    // (グループにするメーターを選んでいる間は、選んだ印が隠れないよう針もメーターと一緒に描く)
+                    overlay = if (g.style == GaugeStyle.ANALOG && def != null && !(editing && selecting)) {
                         { GaugeView(g, def, values, supported, layer = com.obdmeter.ui.gauges.GaugeLayer.NEEDLE, needleState = needle) }
                     } else null,
                 ) {
                     GaugeView(g, def, values, supported, peakResets[g.id] ?: 0, catalog = catalog, interactive = !editing,
                         historySlot = HistorySlot.of(dashboard.id, g.id),
-                        layer = if (g.style == GaugeStyle.ANALOG) com.obdmeter.ui.gauges.GaugeLayer.BODY else com.obdmeter.ui.gauges.GaugeLayer.ALL,
+                        layer = if (g.style == GaugeStyle.ANALOG && !(editing && selecting)) com.obdmeter.ui.gauges.GaugeLayer.BODY else com.obdmeter.ui.gauges.GaugeLayer.ALL,
                         needleState = needle)
                 }
             }
@@ -795,22 +798,61 @@ private fun GaugeOnGrid(
                     .pointerInput(gauge.id) { detectTapGestures(onTap = { toggleSelect(g) }) }
                 else if (editing) Modifier
                     .border(2.dp, if (dragging) GaugeColors.Warn else GaugeColors.Accent, RoundedCornerShape(14.dp))
+                    // タップ (設定)・長押し (コピー)・ドラッグ (移動) を 1 つの処理で見分ける
+                    // (別々の検出を重ねると、グループのメーターで Web 版のタップが効かなかったため)
                     .pointerInput(gauge.id) {
-                        detectTapGestures(onTap = { onTap(g) }, onLongPress = { onCopy(g) })
-                    }
-                    .pointerInput(gauge.id) {
-                        detectDragGestures(
-                            onDragEnd = {
-                                if (isGrouped) { groupDragEnd(); return@detectDragGestures }
-                                val p = preview()
-                                pending = p
-                                move = Offset.Zero
-                                if (p[0] != g.x || p[1] != g.y) onCommit(g, p[0], p[1], p[2], p[3]) else pending = null
-                            },
-                            onDragCancel = { if (isGrouped) groupDragCancel() else move = Offset.Zero },
-                        ) { change, amount ->
-                            change.consume()
-                            if (isGrouped) groupDrag(amount) else move += amount
+                        awaitEachGesture {
+                            val down = awaitFirstDown(requireUnconsumed = false)
+                            val slop = viewConfiguration.touchSlop
+                            val longMs = viewConfiguration.longPressTimeoutMillis
+                            val started = kotlin.time.TimeSource.Monotonic.markNow()
+                            var dragging = false
+                            var longDone = false
+                            var total = Offset.Zero
+                            var finished = false
+                            fun dragBy(amount: Offset) { if (isGrouped) groupDrag(amount) else move += amount }
+                            try {
+                                while (true) {
+                                    val event = if (!dragging && !longDone) {
+                                        val left = longMs - started.elapsedNow().inWholeMilliseconds
+                                        if (left <= 0) null else withTimeoutOrNull(left) { awaitPointerEvent() }
+                                    } else awaitPointerEvent()
+                                    if (event == null) {
+                                        // 長押し: コピー
+                                        longDone = true
+                                        onCopy(g)
+                                        continue
+                                    }
+                                    val change = event.changes.firstOrNull { it.id == down.id } ?: break
+                                    if (!change.pressed) {
+                                        if (dragging) {
+                                            finished = true
+                                            if (isGrouped) groupDragEnd()
+                                            else {
+                                                val p = preview()
+                                                pending = p
+                                                move = Offset.Zero
+                                                if (p[0] != g.x || p[1] != g.y) onCommit(g, p[0], p[1], p[2], p[3]) else pending = null
+                                            }
+                                        } else if (!longDone) onTap(g)
+                                        break
+                                    }
+                                    val delta = change.position - change.previousPosition
+                                    if (dragging) {
+                                        change.consume()
+                                        dragBy(delta)
+                                    } else {
+                                        total += delta
+                                        if (total.getDistance() > slop) {
+                                            dragging = true
+                                            change.consume()
+                                            dragBy(total)
+                                        }
+                                    }
+                                }
+                            } finally {
+                                if (dragging && !finished) { if (isGrouped) groupDragCancel() else move = Offset.Zero }
+                            }
                         }
                     }
                 else Modifier.pointerInput(gauge.id) {
