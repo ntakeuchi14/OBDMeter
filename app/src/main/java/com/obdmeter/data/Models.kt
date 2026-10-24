@@ -216,6 +216,12 @@ data class GaugeDesign(
     val panelDepth: Float = 0.6f,
     /** ガラスのような映り込み (上半分をうっすら明るく) */
     val panelGloss: Boolean = false,
+    /** アナログの針 (とノブ) に影を付ける */
+    val needleShadow: Boolean = false,
+    /** メーター自体に影を付ける (カード・文字盤・背景色の形に合わせる) */
+    val objectShadow: Boolean = false,
+    /** 影の濃さ (0〜1.5) */
+    val shadowStrength: Float = 1f,
     /** バー表示: バーの角度 (度、時計回り。0 = 横) */
     val barAngle: Float = 0f,
     /** バー表示: 破線のマスの数 (0 = 実線) と、マスの間のすき間 (マスの幅に対する比率) */

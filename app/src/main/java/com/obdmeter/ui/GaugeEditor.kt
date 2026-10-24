@@ -703,7 +703,7 @@ private fun LookTab(g: GaugeConfig, update: ((GaugeDesign) -> GaugeDesign) -> Un
 
     PeakSection(g, update)
     ValueNameUnitSection(g, update)
-    CardSwitch(d, update)
+    CardSwitch(d, update, g.style)
 }
 
 @Composable
@@ -759,7 +759,7 @@ private fun PanelSection(d: GaugeDesign, update: ((GaugeDesign) -> GaugeDesign) 
     SwitchLine("ガラスの映り込み", "上半分をうっすら明るくして、表示部にガラスがはまっているように見せます", d.panelGloss) { v ->
         update { it.copy(panelGloss = v) }
     }
-    Hint("「埋め込み」は縁の左上を暗く・右下を明るくして、表示部がパネルにはめ込まれたように見せます。背景色は暗めの色が合います。")
+    Hint("「埋め込み」は計器の液晶窓のように、上の縁から内側へ短い影を落とし、ふちを細く暗くして、表示部が文字盤の奥に沈んでいるように見せます。")
 }
 
 @Composable
@@ -861,10 +861,25 @@ private fun ValueNameUnitSection(g: GaugeConfig, update: ((GaugeDesign) -> Gauge
 }
 
 @Composable
-private fun CardSwitch(d: GaugeDesign, update: ((GaugeDesign) -> GaugeDesign) -> Unit) {
+private fun CardSwitch(d: GaugeDesign, update: ((GaugeDesign) -> GaugeDesign) -> Unit, style: GaugeStyle? = null) {
     Head("カード")
     SwitchLine("四角いカードの背景を表示", "丸い背景画像を使うときや、背景を透かしたいときは OFF にします", d.showCard) { v ->
         update { it.copy(showCard = v) }
+    }
+    Head("影")
+    if (style == GaugeStyle.ANALOG) {
+        SwitchLine("針に影を付ける", "針とノブが文字盤から少し浮いているように、右下に影を落とします", d.needleShadow) { v ->
+            update { it.copy(needleShadow = v) }
+        }
+    }
+    val shapeNote = when {
+        style == GaugeStyle.ANALOG -> "カードを出していなければ、丸い文字盤 (背景色・リング・画像があるとき) の形に付けます"
+        style == GaugeStyle.BAR || style == GaugeStyle.DIGITAL || style == GaugeStyle.LAMP -> "カードを出していなければ、背景色の形に付けます"
+        else -> "カードを出しているときに、カードの形に付けます"
+    }
+    SwitchLine("メーター自体に影を付ける", shapeNote, d.objectShadow) { v -> update { it.copy(objectShadow = v) } }
+    if (d.needleShadow || d.objectShadow) {
+        SliderLine("影の濃さ", d.shadowStrength * 100, 0f..150f, "%.0f%%") { v -> update { it.copy(shadowStrength = snap(v, 5f) / 100f) } }
     }
 }
 
@@ -880,7 +895,7 @@ private fun LampTab(g: GaugeConfig, update: ((GaugeDesign) -> GaugeDesign) -> Un
     FaceSection(d, update)
     RingSection(d, update)
     ValueNameUnitSection(g, update)
-    CardSwitch(d, update)
+    CardSwitch(d, update, g.style)
     Head("背景画像")
     ImageTab(g, update)
 }

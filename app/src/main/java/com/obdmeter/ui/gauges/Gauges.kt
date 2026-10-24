@@ -1,5 +1,6 @@
 package com.obdmeter.ui.gauges
 
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
@@ -29,6 +30,9 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.asAndroidPath
+import androidx.compose.ui.graphics.nativeCanvas
+import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
 import androidx.compose.ui.graphics.drawscope.clipPath
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.StrokeCap
@@ -121,6 +125,9 @@ data class GaugeLook(
     val panelStyle: com.obdmeter.data.PanelStyle = com.obdmeter.data.PanelStyle.FLAT,
     val panelDepth: Float = 0.6f,
     val panelGloss: Boolean = false,
+    val needleShadow: Boolean = false,
+    val objectShadow: Boolean = false,
+    val shadowStrength: Float = 1f,
     /** 名前・単位の位置のずれ (メーターの大きさに対する比率) と色 */
     val nameOffsetX: Float = 0f,
     val nameOffsetY: Float = 0f,
@@ -214,6 +221,40 @@ fun rememberGaugeFonts(look: GaugeLook): GaugeFontSet {
     }
 }
 
+/**
+ * メーター自体の影。カードを出していればカードの形、なければアナログは文字盤 (背景色・リング・画像があるとき)、
+ * バー・デジタル・ランプは背景色の形に合わせて、下へずらしてぼかす
+ */
+internal fun DrawScope.drawObjectShadow(style: GaugeStyle, look: GaugeLook) {
+    val m = min(size.width, size.height)
+    val path = Path()
+    val pad = 2.dp.toPx()
+    if (look.showCard) {
+        val r = 14.dp.toPx()
+        path.addRoundRect(androidx.compose.ui.geometry.RoundRect(androidx.compose.ui.geometry.Rect(Offset.Zero, size), CornerRadius(r, r)))
+    } else {
+        val inner = androidx.compose.ui.geometry.Rect(pad, pad, size.width - pad, size.height - pad)
+        when (style) {
+            GaugeStyle.ANALOG -> {
+                if (look.faceColor == null && look.ring == RingStyle.NONE && look.image == null) return
+                val d = min(inner.width, inner.height)
+                val fr = if (look.ring == RingStyle.NONE && look.faceColor != null) d / 2 * look.faceScale else d / 2
+                path.addOval(androidx.compose.ui.geometry.Rect(inner.center, fr))
+            }
+            GaugeStyle.BAR, GaugeStyle.DIGITAL, GaugeStyle.LAMP -> {
+                if (look.faceColor == null) return
+                val sc = look.faceScale
+                val sz = androidx.compose.ui.geometry.Size(inner.width * sc, inner.height * sc)
+                val r = min(inner.width, inner.height) * 0.08f * sc
+                val tl = Offset(inner.center.x - sz.width / 2, inner.center.y - sz.height / 2)
+                path.addRoundRect(androidx.compose.ui.geometry.RoundRect(androidx.compose.ui.geometry.Rect(tl, sz), CornerRadius(r, r)))
+            }
+            else -> return
+        }
+    }
+    drawSoftShadow(path, m * 0.01f, m * 0.035f, m * 0.045f, 0.55f * look.shadowStrength)
+}
+
 /** メーターのどの部分を描くか (アナログの針だけ別の層にして、ほかのメーターより手前に出す) */
 enum class GaugeLayer { ALL, BODY, NEEDLE }
 
@@ -257,10 +298,13 @@ fun GaugeCard(
     }
     val peak = peakHolder[0].takeIf { look.showPeak && !it.isNaN() }
     Box(
-        if (look.showCard) {
-            modifier.background(GaugeColors.Card, shape).border(1.dp, GaugeColors.CardBorder, shape).padding(8.dp)
-        } else {
-            modifier.padding(2.dp)
+        // メーター自体の影 (カード、なければ文字盤・背景色の形)
+        (if (look.objectShadow) modifier.drawBehind { drawObjectShadow(style, look) } else modifier).let { m ->
+            if (look.showCard) {
+                m.background(GaugeColors.Card, shape).border(1.dp, GaugeColors.CardBorder, shape).padding(8.dp)
+            } else {
+                m.padding(2.dp)
+            }
         }
     ) {
         val v = rememberDisplayValue(def, if (unsupported) null else value, look.smoothing)
@@ -561,10 +605,14 @@ fun AnalogGauge(
                 lineTo(center.x - tail * ca + baseW * sa, center.y - tail * sa - baseW * ca)
                 close()
             }
+            // 針の影 (文字盤から少し浮いているように、右下へずらしてぼかす)
+            if (look.needleShadow) drawSoftShadow(needle, d * 0.012f, d * 0.02f, d * 0.012f, 0.45f * look.shadowStrength)
             drawPath(needle, color)
         }
         if (look.showNeedle && look.knobSize > 0f) {
             val kr = d * 0.035f * look.knobSize
+            if (look.needleShadow) drawSoftShadow(Path().apply { addOval(androidx.compose.ui.geometry.Rect(center, kr)) },
+                d * 0.01f, d * 0.016f, d * 0.012f, 0.45f * look.shadowStrength)
             val kc = look.knobColor ?: look.needleColor
             drawCircle(kc, kr, center)
             // ノブの立体感 (左上が明るく右下が暗い)
@@ -969,8 +1017,9 @@ internal fun DrawScope.drawFace(look: GaugeLook) {
 
 /**
  * 背景の立体感 ([path] の形、[bounds] はその外接矩形)。
- * 埋め込み: 縁の左上を暗く・右下を明るくして、パネルがへこんで埋め込まれたように見せる (浮き出しは逆)。
- * 面にもうっすら縦のグラデーションを付け、[gloss] ならガラスの映り込みを上半分に重ねる
+ * 埋め込み: 計器の液晶窓のように、上 (と少し左) の縁から内側へ短く落ちる影と、切り欠きの細い暗い縁で、
+ * 表示部が文字盤の裏に沈んでいるように見せる。浮き出し: 上の縁を明るく、下の縁から外へ影を落とす。
+ * [gloss] ならガラスの映り込みを上半分に重ねる
  */
 internal fun DrawScope.drawPanel(
     path: Path,
@@ -982,24 +1031,44 @@ internal fun DrawScope.drawPanel(
     if (style == com.obdmeter.data.PanelStyle.FLAT && !gloss) return
     if (bounds.width <= 0f || bounds.height <= 0f) return
     val k = depth.coerceIn(0f, 1f)
-    val bevel = (min(bounds.width, bounds.height) * 0.06f).coerceIn(2f, 28f) * (0.5f + k)
-    val dark = Color.Black.copy(alpha = 0.6f * k)
-    val light = Color.White.copy(alpha = 0.35f * k)
+    val m = min(bounds.width, bounds.height)
     clipPath(path) {
-        if (style != com.obdmeter.data.PanelStyle.FLAT) {
-            val inset = style == com.obdmeter.data.PanelStyle.INSET
-            val a = if (inset) dark else light
-            val b = if (inset) light.copy(alpha = light.alpha * 0.7f) else dark
-            val edge = Brush.linearGradient(listOf(a, Color.Transparent, b), start = bounds.topLeft, end = bounds.bottomRight)
-            // 縁の内側の陰影 (太くて薄い線 + 細くて濃い線で、やわらかい影にする)
-            drawPath(path, Brush.linearGradient(listOf(a.copy(alpha = a.alpha * 0.45f), Color.Transparent, b.copy(alpha = b.alpha * 0.45f)),
-                start = bounds.topLeft, end = bounds.bottomRight), style = Stroke(bevel * 4f))
-            drawPath(path, edge, style = Stroke(bevel * 1.6f))
-            // 面: へこみは上が暗く、浮き出しは上が明るい
-            val top = if (inset) Color.Black.copy(alpha = 0.18f * k) else Color.White.copy(alpha = 0.10f * k)
-            val bottom = if (inset) Color.White.copy(alpha = 0.04f * k) else Color.Black.copy(alpha = 0.18f * k)
-            drawRect(Brush.verticalGradient(listOf(top, Color.Transparent, bottom), bounds.top, bounds.bottom),
-                bounds.topLeft, bounds.size)
+        when (style) {
+            com.obdmeter.data.PanelStyle.INSET -> {
+                // 上の縁から落ちる影 (窓の深さ)
+                val sh = (m * 0.16f * (0.4f + k)).coerceAtLeast(2f)
+                drawRect(
+                    Brush.verticalGradient(listOf(Color.Black.copy(alpha = 0.55f * k), Color.Black.copy(alpha = 0.18f * k), Color.Transparent),
+                        bounds.top, bounds.top + sh),
+                    bounds.topLeft, androidx.compose.ui.geometry.Size(bounds.width, sh),
+                )
+                // 左の縁の影 (上より浅く)
+                val sw = sh * 0.45f
+                drawRect(
+                    Brush.horizontalGradient(listOf(Color.Black.copy(alpha = 0.30f * k), Color.Transparent), bounds.left, bounds.left + sw),
+                    bounds.topLeft, androidx.compose.ui.geometry.Size(sw, bounds.height),
+                )
+                // 下の縁はわずかに暗く (窓の奥のふち)
+                val bh = sh * 0.3f
+                drawRect(
+                    Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(alpha = 0.12f * k)), bounds.bottom - bh, bounds.bottom),
+                    androidx.compose.ui.geometry.Offset(bounds.left, bounds.bottom - bh), androidx.compose.ui.geometry.Size(bounds.width, bh),
+                )
+                // 切り欠きの細い暗い縁
+                drawPath(path, Color.Black.copy(alpha = 0.45f * k), style = Stroke(maxOf(1.5f, m * 0.02f)))
+            }
+            com.obdmeter.data.PanelStyle.RAISED -> {
+                val sh = (m * 0.12f * (0.4f + k)).coerceAtLeast(2f)
+                drawRect(
+                    Brush.verticalGradient(listOf(Color.White.copy(alpha = 0.30f * k), Color.Transparent), bounds.top, bounds.top + sh),
+                    bounds.topLeft, androidx.compose.ui.geometry.Size(bounds.width, sh),
+                )
+                drawRect(
+                    Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(alpha = 0.35f * k)), bounds.bottom - sh, bounds.bottom),
+                    androidx.compose.ui.geometry.Offset(bounds.left, bounds.bottom - sh), androidx.compose.ui.geometry.Size(bounds.width, sh),
+                )
+            }
+            com.obdmeter.data.PanelStyle.FLAT -> {}
         }
         if (gloss) {
             val h = bounds.height * 0.5f
@@ -1010,15 +1079,28 @@ internal fun DrawScope.drawPanel(
             )
         }
     }
-    // 外側の縁 (へこみなら穴のふちが下側で光り、浮き出しなら上側が光る)
-    if (style != com.obdmeter.data.PanelStyle.FLAT) {
-        val inset = style == com.obdmeter.data.PanelStyle.INSET
-        val rim = Brush.linearGradient(
-            listOf(if (inset) Color.Black.copy(alpha = 0.35f * k) else Color.White.copy(alpha = 0.25f * k), Color.Transparent,
-                if (inset) Color.White.copy(alpha = 0.22f * k) else Color.Black.copy(alpha = 0.35f * k)),
-            start = bounds.topLeft, end = bounds.bottomRight,
-        )
-        drawPath(path, rim, style = Stroke(maxOf(1f, bevel * 0.35f)))
+    if (style == com.obdmeter.data.PanelStyle.INSET) {
+        // 窓のすぐ下の文字盤側がほんの少し明るい (切り欠きのふちに光が当たる)
+        drawLine(Color.White.copy(alpha = 0.25f * k), Offset(bounds.left + m * 0.04f, bounds.bottom + 1f),
+            Offset(bounds.right - m * 0.04f, bounds.bottom + 1f), 1.2f)
+    }
+}
+
+/**
+ * ぼかした影 ([path] を ([dx], [dy]) ずらして、[blur] px でぼかす)。針やメーター自体の影に使う
+ */
+internal fun DrawScope.drawSoftShadow(path: Path, dx: Float, dy: Float, blur: Float, alpha: Float) {
+    if (alpha <= 0f) return
+    drawIntoCanvas { canvas ->
+        val paint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
+            color = android.graphics.Color.argb((alpha.coerceIn(0f, 1f) * 255).toInt(), 0, 0, 0)
+            if (blur > 0.5f) maskFilter = android.graphics.BlurMaskFilter(blur, android.graphics.BlurMaskFilter.Blur.NORMAL)
+        }
+        val ap = path.asAndroidPath()
+        canvas.nativeCanvas.save()
+        canvas.nativeCanvas.translate(dx, dy)
+        canvas.nativeCanvas.drawPath(ap, paint)
+        canvas.nativeCanvas.restore()
     }
 }
 
