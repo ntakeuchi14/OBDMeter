@@ -35,7 +35,9 @@ jobs:
         run: |
           chmod +x gradlew
           set -o pipefail
-          ./gradlew --no-daemon :app:wasmJsBrowserDistribution 2>&1 | tee build.log
+          ./gradlew --no-daemon :app:wasmJsBrowserDistribution :app:wasmJsBrowserDevelopmentExecutableDistribution 2>&1 | tee build.log
+          # 調査用に、関数名の残る開発版も dev/ に置く
+          cp -r app/build/dist/wasmJs/developmentExecutable app/build/dist/wasmJs/productionExecutable/dev
 
       - name: Report compile errors
         if: failure()
