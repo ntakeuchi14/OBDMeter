@@ -40,8 +40,28 @@ import kotlinx.coroutines.delay
 
 private fun hideLoading(): Unit = js("{ var e = document.getElementById('loading'); if (e) e.remove(); }")
 
+private fun jsRethrow(e: JsAny): Unit = js("{ throw e; }")
+
+private fun jsOnUnhandled(handler: (JsAny) -> Unit): Unit = js(
+    "{ window.addEventListener('unhandledrejection', function (ev) { if (ev.reason) handler(ev.reason); });" +
+        " window.addEventListener('error', function (ev) { if (ev.error) handler(ev.error); }); }"
+)
+
+private var reported = 0
+
+/** 捕まえられなかった例外の中身をコンソールに出す (Kotlin の例外は JS からは中身が見えないため) */
+private fun report(e: JsAny) {
+    if (++reported > 5) return
+    try {
+        jsRethrow(e)
+    } catch (t: Throwable) {
+        println("未処理の例外: " + t.stackTraceToString())
+    }
+}
+
 @OptIn(ExperimentalComposeUiApi::class)
 fun main() {
+    jsOnUnhandled { report(it) }
     try {
         start()
     } catch (e: Throwable) {
