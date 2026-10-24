@@ -18,6 +18,7 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.viewModels
+import androidx.lifecycle.viewmodel.initializer
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
@@ -42,7 +43,7 @@ import com.obdmeter.ui.gauges.LocalHistory
 class MainActivity : ComponentActivity() {
     private val vm: MainViewModel by viewModels {
         androidx.lifecycle.viewmodel.viewModelFactory {
-            androidx.lifecycle.viewmodel.initializer { MainViewModel(AppCore.get(application)) }
+            initializer { MainViewModel(AppCore.get(application)) }
         }
     }
 

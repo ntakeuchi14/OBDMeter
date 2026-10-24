@@ -210,7 +210,7 @@ class MemoryHistoryStore(
         val sb = StringBuilder()
         sb.append(HistoryStore.CSV_HEADER).append('\n')
         var n = 0
-        for (k in keys.toSortedSet()) {
+        for (k in keys.toSet().sorted()) {
             for (r in series(slot, k).orEmpty()) {
                 sb.append(HistoryCsv.line(k, r.t, r.v, fmt)).append('\n')
                 n++

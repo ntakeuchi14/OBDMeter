@@ -50,10 +50,12 @@ actual fun rememberFileOpener(mimeTypes: List<String>, onPicked: (PickedFile) ->
     }
     return if (mimeTypes.isNotEmpty() && mimeTypes.all { it.startsWith("image/") }) {
         val launcher = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia(), deliver)
-        { runCatching { launcher.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) }.isSuccess }
+        val open: () -> Boolean = { runCatching { launcher.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) }.isSuccess }
+        open
     } else {
         val launcher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument(), deliver)
-        { runCatching { launcher.launch(mimeTypes.toTypedArray()) }.isSuccess }
+        val open: () -> Boolean = { runCatching { launcher.launch(mimeTypes.toTypedArray()) }.isSuccess }
+        open
     }
 }
 

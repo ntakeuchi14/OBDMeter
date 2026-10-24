@@ -39,7 +39,7 @@ object PollPlan {
      * 番号が足りないとき (周期が 10 種類以上) は、長い周期のものを最後のまとまりにまとめる
      */
     fun blockGroups(block: List<PidDef>, intervals: Map<String, Long>): List<Pair<Int, List<PidDef>>> {
-        var groups = block.groupBy { intervals[it.key] ?: 0L }.toSortedMap().values.toList()
+        var groups = block.groupBy { intervals[it.key] ?: 0L }.entries.sortedBy { it.key }.map { it.value }
         if (groups.size > MAX_GROUPS) groups = groups.take(MAX_GROUPS - 1) + listOf(groups.drop(MAX_GROUPS - 1).flatten())
         return groups.mapIndexed { i, g -> (LID_FIRST + i) to g }
     }
