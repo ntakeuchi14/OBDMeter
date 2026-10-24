@@ -62,7 +62,7 @@ fun SettingsScreen(vm: MainViewModel, onBack: () -> Unit, onOpenCustomPids: () -
         Column(
             Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp)
         ) {
-            if (connection !is ConnectionState.Disconnected) {
+            if (!isWebApp && connection !is ConnectionState.Disconnected) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text("変更は次の接続から反映されます", color = GaugeColors.SubText, modifier = Modifier.weight(1f))
                     FilledTonalButton(onClick = vm::connect) { Text("再接続") }

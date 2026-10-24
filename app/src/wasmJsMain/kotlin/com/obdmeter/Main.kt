@@ -72,7 +72,6 @@ fun main() {
 
 @OptIn(ExperimentalComposeUiApi::class)
 private fun start() {
-    hideLoading()
     println("OBD Meter Web: 起動")
     val platform = WebPlatform()
     WebUi.platform = platform
@@ -91,6 +90,7 @@ private fun start() {
             }
             println("OBD Meter Web: フォント OK")
             fontsReady = true
+            hideLoading()
         }
         MaterialTheme(colorScheme = AppColors) {
             Box(
@@ -104,8 +104,6 @@ private fun start() {
                 if (fontsReady) {
                     val vm = remember { println("OBD Meter Web: 画面"); MainViewModel(core) }
                     App(vm, onKeepScreenOn = {})
-                } else {
-                    Text("読み込み中…", Modifier.align(Alignment.Center), color = GaugeColors.Text)
                 }
                 Toast(Modifier.align(Alignment.BottomCenter))
             }

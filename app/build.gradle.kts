@@ -104,7 +104,3 @@ dependencies {
     testImplementation("junit:junit:4.13.2")
 }
 
-// Web 版: 最適化しても関数名を残す (ブラウザーでエラーの場所が分かるように)
-tasks.withType<org.jetbrains.kotlin.gradle.targets.js.binaryen.BinaryenExec>().configureEach {
-    binaryenArgs.add("--debuginfo")
-}

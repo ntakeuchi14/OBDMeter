@@ -9,6 +9,14 @@
         #loading { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center;
                    color: #B3BAC5; font-family: sans-serif; font-size: 16px; }
     </style>
+    <script>
+        window.OBDMETER_VERSION = '__VERSION__';
+        // ブラウザーの言語設定が Intl で読めない形式 (例: en-US@posix) だと画面が出ないので、日本語にしておく
+        try { new Intl.Locale(navigator.language); } catch (e) {
+            Object.defineProperty(navigator, 'language', { get: function () { return 'ja-JP'; } });
+            Object.defineProperty(navigator, 'languages', { get: function () { return ['ja-JP']; } });
+        }
+    </script>
     <script type="application/javascript" src="obdmeter.js"></script>
 </head>
 <body>

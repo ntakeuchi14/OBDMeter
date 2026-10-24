@@ -33,6 +33,7 @@ jobs:
 
       - name: Build web app (WebAssembly)
         run: |
+          sed -i "s/__VERSION__/web-${GITHUB_RUN_NUMBER}/" app/src/wasmJsMain/resources/index.html
           chmod +x gradlew
           set -o pipefail
           ./gradlew --no-daemon :app:wasmJsBrowserDistribution 2>&1 | tee build.log
