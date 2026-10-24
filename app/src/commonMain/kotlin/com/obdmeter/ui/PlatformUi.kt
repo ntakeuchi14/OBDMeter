@@ -83,3 +83,9 @@ class FloatPermissionState(val canDraw: Boolean, val request: () -> Unit, val op
 
 @Composable
 expect fun rememberFloatPermission(): FloatPermissionState
+
+/**
+ * 画面サイズの設定 (Web は表示する大きさを選ぶ。Android はこの端末の画面の大きさを表示する)
+ */
+@Composable
+expect fun ScreenSizeSection()

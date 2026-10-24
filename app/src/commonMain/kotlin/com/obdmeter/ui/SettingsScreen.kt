@@ -165,6 +165,9 @@ fun SettingsScreen(vm: MainViewModel, onBack: () -> Unit, onOpenCustomPids: () -
             Section("バックアップ")
             BackupSection(vm)
 
+            Section("画面サイズ")
+            ScreenSizeSection()
+
             Section("その他")
             if (!isWebApp) SwitchRow(
                 "iDrive・方向キーでページを切り替え",
