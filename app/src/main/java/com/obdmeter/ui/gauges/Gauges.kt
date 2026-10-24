@@ -581,7 +581,8 @@ fun AnalogGauge(
         }
         if (peak != null && look.showPeakValue) {
             drawCenteredText(tm, "MAX " + def.format(peak),
-                Offset(valueX + size.width * look.peakTextX, valueY + d * 0.17f * max(look.valueSize, 0.6f) + size.height * look.peakTextY),
+                // ずれは文字盤の大きさに対する割合 (メーターの縦横比が変わっても同じ位置になるように)
+                Offset(valueX + d * look.peakTextX, valueY + d * 0.17f * max(look.valueSize, 0.6f) + d * look.peakTextY),
                 TextStyle(color = look.peakTextColor, fontSize = (d * 0.05f * look.peakTextSize).toSp(), fontFamily = fonts.value))
         }
         }
