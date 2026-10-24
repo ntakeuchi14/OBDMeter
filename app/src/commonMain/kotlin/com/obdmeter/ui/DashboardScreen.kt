@@ -620,7 +620,7 @@ private fun DashboardCanvas(
                     val oy = with(density) { (b[1] * cellHPx).toDp() }
                     val ow = with(density) { (b[2] * cellWPx).toDp() }
                     val oh = with(density) { (b[3] * cellHPx).toDp() }
-                    // 点線の囲みはメーターの後ろに描く (全体を覆う層を手前に置くと、Web 版でメーターのタップが届かなかった)
+                    // 点線の囲みはメーターの後ろに描く (メーターの操作の邪魔をしない)
                     Canvas(Modifier.zIndex(-1f).offset(ox, oy).size(ow, oh)) {
                         drawRoundRect(
                             if (active) GaugeColors.Warn else GaugeColors.Peak,
@@ -800,12 +800,12 @@ private fun GaugeOnGrid(
                 if (editing && selecting) Modifier
                     // グループにするメーターを選ぶ
                     .border(if (selected) 4.dp else 2.dp, if (selected) GaugeColors.Peak else GaugeColors.CardBorder, RoundedCornerShape(14.dp))
-                    .pointerInput(gauge.id) { detectTapGestures(onTap = { toggleSelect(g) }) }
+                    // キーを状態ごとに変える (同じキーだと、前の状態の処理が動き続けてタップが効かなかった)
+                    .pointerInput(gauge.id, "select") { detectTapGestures(onTap = { toggleSelect(g) }) }
                 else if (editing) Modifier
                     .border(2.dp, if (dragging) GaugeColors.Warn else GaugeColors.Accent, RoundedCornerShape(14.dp))
                     // タップ (設定)・長押し (コピー)・ドラッグ (移動) を 1 つの処理で見分ける
-                    // (別々の検出を重ねると、グループのメーターで Web 版のタップが効かなかったため)
-                    .pointerInput(gauge.id) {
+                    .pointerInput(gauge.id, "edit") {
                         awaitEachGesture {
                             val down = awaitFirstDown(requireUnconsumed = false)
                             val slop = viewConfiguration.touchSlop
@@ -860,7 +860,7 @@ private fun GaugeOnGrid(
                             }
                         }
                     }
-                else Modifier.pointerInput(gauge.id) {
+                else Modifier.pointerInput(gauge.id, "view") {
                     // 通常表示中は長押しでピーク値をリセット
                     detectTapGestures(onLongPress = { onLongPress() })
                 }
