@@ -43,6 +43,7 @@ class Repository(private val context: Context) {
         val START_IN_FLOAT = booleanPreferencesKey("start_in_float")
         val LAST_PAGE = longPreferencesKey("last_page")
         val KEY_PAGE_NAV = booleanPreferencesKey("key_page_nav")
+        val GRID_STEP = intPreferencesKey("grid_step")
         val DASHBOARDS = stringPreferencesKey("dashboards_json")
         val CUSTOM_PIDS = stringPreferencesKey("custom_pids_json")
         val FONTS = stringPreferencesKey("fonts_json")
@@ -105,6 +106,7 @@ class Repository(private val context: Context) {
             p[Keys.START_IN_FLOAT] = s.startInFloat
             s.lastPageId?.let { p[Keys.LAST_PAGE] = it } ?: p.remove(Keys.LAST_PAGE)
             p[Keys.KEY_PAGE_NAV] = s.keyPageNav
+            p[Keys.GRID_STEP] = s.gridStep
             p[Keys.POLL_INTERVALS] = json.encodeToString(s.pollIntervalsMs)
         }
     }
@@ -141,6 +143,7 @@ class Repository(private val context: Context) {
             startInFloat = this[Keys.START_IN_FLOAT] ?: d.startInFloat,
             lastPageId = this[Keys.LAST_PAGE],
             keyPageNav = this[Keys.KEY_PAGE_NAV] ?: d.keyPageNav,
+            gridStep = this[Keys.GRID_STEP] ?: d.gridStep,
             pollIntervalsMs = this[Keys.POLL_INTERVALS]
                 ?.let { runCatching { json.decodeFromString<Map<String, Int>>(it) }.getOrNull() }
                 ?: d.pollIntervalsMs,

@@ -109,6 +109,7 @@ fun DashboardScreen(vm: MainViewModel, onNavigate: (Screen) -> Unit, onCreateCus
     /** メーター追加の項目選択ダイアログ (null = 閉じる) */
     var pickerFor by remember { mutableStateOf<Long?>(null) }
     var arrangeMenu by remember { mutableStateOf(false) }
+    var gridMenu by remember { mutableStateOf(false) }
     /** グループにするメーターを選んでいる (編集中) */
     var selecting by remember { mutableStateOf(false) }
     var selected by remember { mutableStateOf(emptySet<Long>()) }
@@ -158,9 +159,23 @@ fun DashboardScreen(vm: MainViewModel, onNavigate: (Screen) -> Unit, onCreateCus
                     color = GaugeColors.Peak, fontSize = 13.sp, modifier = Modifier.weight(1f),
                     maxLines = 2, overflow = TextOverflow.Ellipsis)
             } else if (editing) {
-                Text("レイアウト編集中: ドラッグで移動、右下の ◢ でサイズ変更、タップで設定、長押しでコピー (グループはまとめて)",
+                Text("レイアウト編集中: ドラッグで移動、右下の ◢ でサイズ変更、タップで設定、ダブルタップで最前面、長押しでコピー (グループはまとめて)",
                     color = GaugeColors.Accent, fontSize = 13.sp, modifier = Modifier.weight(1f),
                     maxLines = 2, overflow = TextOverflow.Ellipsis)
+                Box {
+                    OutlinedButton(onClick = { gridMenu = true }) {
+                        Text("グリッド " + (Layout.GRID_STEPS.firstOrNull { it.first == settings.gridStep }?.second ?: ""))
+                    }
+                    DropdownMenu(expanded = gridMenu, onDismissRequest = { gridMenu = false }) {
+                        Layout.GRID_STEPS.forEach { (step, label) ->
+                            DropdownMenuItem(
+                                text = { Text((if (step == settings.gridStep) "✓ " else "    ") + label + "ごとに吸着") },
+                                onClick = { vm.updateSettings { it.copy(gridStep = step) }; gridMenu = false },
+                            )
+                        }
+                    }
+                }
+                Spacer(Modifier.width(8.dp))
                 FilledTonalButton(onClick = { editing = false }) {
                     Icon(Icons.Default.Check, null); Spacer(Modifier.width(4.dp)); Text("完了")
                 }
@@ -208,6 +223,8 @@ fun DashboardScreen(vm: MainViewModel, onNavigate: (Screen) -> Unit, onCreateCus
                     },
                     onCellAspect = vm::reportCellAspect,
                     onCellSize = vm::reportCellSize,
+                    gridStep = settings.gridStep,
+                    onBringToFront = { g -> vm.moveZ(d.id, g.id, Int.MAX_VALUE) },
                     onCommitMany = { placements -> vm.placeGauges(d.id, placements) },
                     selecting = selecting && d.id == current?.id,
                     selected = selected,
@@ -353,6 +370,7 @@ fun DashboardScreen(vm: MainViewModel, onNavigate: (Screen) -> Unit, onCreateCus
             historySlot = HistorySlot.of(current.id, gaugeInSettings.id),
             onChange = { updated -> vm.updateGauge(current.id, updated.id) { updated } },
             onBringToFront = { vm.bringToFront(current.id, gaugeInSettings.id) },
+            onMoveZ = { delta -> vm.moveZ(current.id, gaugeInSettings.id, delta) },
             onDelete = { vm.removeGauge(current.id, gaugeInSettings.id); settingsFor = null },
             onCreateCustomPid = { settingsFor = null; onCreateCustomPid() },
             onDismiss = { settingsFor = null },
@@ -460,6 +478,10 @@ private fun DashboardCanvas(
     onCopy: (GaugeConfig) -> Unit = {},
     onCellAspect: (Float) -> Unit = {},
     onCellSize: (Float, Float) -> Unit = { _, _ -> },
+    /** 移動・大きさ変更の吸着の間隔 (単位) */
+    gridStep: Int = Layout.SCALE,
+    /** ダブルタップ (編集中): 最前面へ */
+    onBringToFront: (GaugeConfig) -> Unit = {},
     /** グループの移動・大きさ変更の確定 (メーター id → x, y, w, h) */
     onCommitMany: (Map<Long, IntArray>) -> Unit = {},
     /** グループにするメーターを選んでいる */
@@ -494,8 +516,12 @@ private fun DashboardCanvas(
         if (editing) {
             // マス目のガイド
             Canvas(Modifier.fillMaxSize()) {
-                for (x in 0..Layout.COLS) for (y in 0..Layout.ROWS) {
-                    drawCircle(GaugeColors.CardBorder, 2f, Offset(x * cellWPx, y * cellHPx))
+                // 吸着の間隔ごとに点を打つ (点が詰まりすぎるときは間引く)。1 マスごとの点は少し大きく
+                var step = gridStep.coerceAtLeast(1)
+                while (step * cellWPx < 6f && step < Layout.COLS) step *= 2
+                for (x in 0..Layout.COLS step step) for (y in 0..Layout.ROWS step step) {
+                    val major = x % Layout.SCALE == 0 && y % Layout.SCALE == 0
+                    drawCircle(GaugeColors.CardBorder, if (major) 2f else 1.2f, Offset(x * cellWPx, y * cellHPx))
                 }
             }
         }
@@ -515,12 +541,17 @@ private fun DashboardCanvas(
             groupPending?.let { return it }
             groupMove?.let { (gid, o) ->
                 val members = groups[gid] ?: return emptyMap()
-                return Layout.moveGroup(members, (o.x / cellWPx).roundToInt(), (o.y / cellHPx).roundToInt())
+                val b = Layout.bounds(members)
+                val dx = if (o.x != 0f) Layout.snap(b[0] + (o.x / cellWPx).roundToInt(), gridStep) - b[0] else 0
+                val dy = if (o.y != 0f) Layout.snap(b[1] + (o.y / cellHPx).roundToInt(), gridStep) - b[1] else 0
+                return Layout.moveGroup(members, dx, dy)
             }
             groupResize?.let { (gid, o) ->
                 val members = groups[gid] ?: return emptyMap()
                 val b = Layout.bounds(members)
-                return Layout.resizeGroup(members, b[2] + (o.x / cellWPx).roundToInt(), b[3] + (o.y / cellHPx).roundToInt())
+                val nw = if (o.x != 0f) Layout.snap(b[0] + b[2] + (o.x / cellWPx).roundToInt(), gridStep) - b[0] else b[2]
+                val nh = if (o.y != 0f) Layout.snap(b[1] + b[3] + (o.y / cellHPx).roundToInt(), gridStep) - b[1] else b[3]
+                return Layout.resizeGroup(members, nw, nh)
             }
             return emptyMap()
         }
@@ -556,6 +587,8 @@ private fun DashboardCanvas(
                     selecting = selecting,
                     selected = g.id in selected,
                     onToggleSelect = onToggleSelect,
+                    gridStep = gridStep,
+                    onDoubleTap = onBringToFront,
                     // アナログの針は、ほかのメーター (中に重ねて置いたものも) より手前に描く
                     overlay = if (g.style == GaugeStyle.ANALOG && def != null) {
                         { GaugeView(g, def, values, supported, layer = com.obdmeter.ui.gauges.GaugeLayer.NEEDLE, needleState = needle) }
@@ -696,6 +729,10 @@ private fun GaugeOnGrid(
     onToggleSelect: (GaugeConfig) -> Unit = {},
     /** ほかのメーターより手前に重ねて描くもの (アナログの針)。触っても下のメーターに届く */
     overlay: (@Composable () -> Unit)? = null,
+    /** 移動・大きさ変更の吸着の間隔 (単位) */
+    gridStep: Int = Layout.SCALE,
+    /** ダブルタップ (編集中): 最前面へ */
+    onDoubleTap: (GaugeConfig) -> Unit = {},
     content: @Composable () -> Unit,
 ) {
     val isGrouped by rememberUpdatedState(grouped)
@@ -714,13 +751,13 @@ private fun GaugeOnGrid(
     fun preview(): IntArray {
         override?.let { return it }
         pending?.let { return it }
-        val dx = (move.x / cellWPx).roundToInt()
-        val dy = (move.y / cellHPx).roundToInt()
+        // 動かした・大きさを変えた向きだけ、グリッドの間隔 [gridStep] に吸着させる
+        val x = if (move.x != 0f) Layout.snap(g.x + (move.x / cellWPx).roundToInt(), gridStep) else g.x
+        val y = if (move.y != 0f) Layout.snap(g.y + (move.y / cellHPx).roundToInt(), gridStep) else g.y
+        val w = if (resize.x != 0f) Layout.snap(g.x + g.w + (resize.x / cellWPx).roundToInt(), gridStep) - g.x else g.w
+        val h = if (resize.y != 0f) Layout.snap(g.y + g.h + (resize.y / cellHPx).roundToInt(), gridStep) - g.y else g.h
         // ページの外へのはみ出しも可 (つかめるよう、少なくとも 1 マスはページ内に残す)
-        return Layout.clampPlacement(
-            g.x + dx, g.y + dy,
-            g.w + (resize.x / cellWPx).roundToInt(), g.h + (resize.y / cellHPx).roundToInt(),
-        )
+        return Layout.clampPlacement(x, y, w, h)
     }
 
     val r = preview()
@@ -751,7 +788,7 @@ private fun GaugeOnGrid(
                 else if (editing) Modifier
                     .border(2.dp, if (dragging) GaugeColors.Warn else GaugeColors.Accent, RoundedCornerShape(14.dp))
                     .pointerInput(gauge.id) {
-                        detectTapGestures(onTap = { onTap(g) }, onLongPress = { onCopy(g) })
+                        detectTapGestures(onTap = { onTap(g) }, onLongPress = { onCopy(g) }, onDoubleTap = { onDoubleTap(g) })
                     }
                     .pointerInput(gauge.id) {
                         detectDragGestures(

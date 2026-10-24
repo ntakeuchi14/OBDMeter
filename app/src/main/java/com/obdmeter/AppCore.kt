@@ -245,7 +245,7 @@ class AppCore private constructor(context: Context) {
         val long = maxOf(m.widthPixels, m.heightPixels).toFloat()
         val short = minOf(m.widthPixels, m.heightPixels).toFloat()
         // 横向きで使う前提: 24 列 × 12 行
-        return (long / 24f) / (short / 12f)
+        return (long / com.obdmeter.data.Layout.COLS) / (short / com.obdmeter.data.Layout.ROWS)
     }
 
     companion object {

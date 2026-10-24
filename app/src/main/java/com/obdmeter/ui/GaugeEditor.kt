@@ -109,6 +109,8 @@ fun GaugeSettingsDialog(
     onBringToFront: () -> Unit,
     onDelete: () -> Unit,
     onCreateCustomPid: () -> Unit,
+    /** 重なりの順番 (+1 = 1 つ手前、-1 = 1 つ奥、MAX = 最前面、MIN = 最背面) */
+    onMoveZ: (Int) -> Unit = {},
     onDismiss: () -> Unit,
 ) {
     var draft by remember(gauge.id) { mutableStateOf(gauge) }
@@ -219,7 +221,7 @@ fun GaugeSettingsDialog(
                                 EditorTab.PLACE -> PlaceTab(draft, { draft = it }, {
                                     vm.copyGauge(draft)
                                     Toast.makeText(context, "コピーしました。下の「貼り付け」で、このページや別のページに貼り付けられます", Toast.LENGTH_LONG).show()
-                                }, onBringToFront) { confirmDelete = true }
+                                }, onMoveZ) { confirmDelete = true }
                             }
                             Spacer(Modifier.height(24.dp))
                         }
@@ -445,11 +447,11 @@ private fun PlaceTab(
     g: GaugeConfig,
     replace: (GaugeConfig) -> Unit,
     onCopy: () -> Unit,
-    onBringToFront: () -> Unit,
+    onMoveZ: (Int) -> Unit,
     onDelete: () -> Unit,
 ) {
     Head("位置と大きさ")
-    Text("位置 (${g.x}, ${g.y})  大きさ ${g.w} × ${g.h} マス (ページ全体 ${Layout.COLS} × ${Layout.ROWS})",
+    Text("位置 (${g.x}, ${g.y})  大きさ ${g.w} × ${g.h} (ページ全体 ${Layout.COLS} × ${Layout.ROWS}、1 マス = ${Layout.SCALE})",
         color = GaugeColors.SubText, fontSize = 12.sp)
     Hint("ページの外にはみ出して置けます (はみ出した部分は表示されません)。右や下にはみ出して大きさ変更のつまみが見えないときは、ここで調整してください。")
     fun place(x: Int, y: Int, w: Int, h: Int) {
@@ -459,8 +461,8 @@ private fun PlaceTab(
     fun IntRange.f() = first.toFloat()..last.toFloat()
     SliderLine("横の位置", g.x.toFloat(), Layout.xRange(g.w).f(), "%.0f") { v -> place(v.roundToInt(), g.y, g.w, g.h) }
     SliderLine("縦の位置", g.y.toFloat(), Layout.yRange(g.h).f(), "%.0f") { v -> place(g.x, v.roundToInt(), g.w, g.h) }
-    SliderLine("幅", g.w.toFloat(), Layout.widthRange.f(), "%.0f マス") { v -> place(g.x, g.y, v.roundToInt(), g.h) }
-    SliderLine("高さ", g.h.toFloat(), Layout.heightRange.f(), "%.0f マス") { v -> place(g.x, g.y, g.w, v.roundToInt()) }
+    SliderLine("幅", g.w.toFloat(), Layout.widthRange.f(), "%.0f") { v -> place(g.x, g.y, v.roundToInt(), g.h) }
+    SliderLine("高さ", g.h.toFloat(), Layout.heightRange.f(), "%.0f") { v -> place(g.x, g.y, g.w, v.roundToInt()) }
 
     Head("グループ")
     if (g.layoutGroup != null) {
@@ -487,10 +489,18 @@ private fun PlaceTab(
         }
     }
 
+    Head("重なりの順番")
+    Hint("メーターが重なっているときに、どちらを手前に描くかです。ダッシュボードの編集中にメーターをダブルタップしても最前面にできます。")
+    Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        OutlinedButton(onClick = { onMoveZ(Int.MAX_VALUE) }) { Text("最前面へ") }
+        OutlinedButton(onClick = { onMoveZ(1) }) { Text("1 つ手前へ") }
+        OutlinedButton(onClick = { onMoveZ(-1) }) { Text("1 つ奥へ") }
+        OutlinedButton(onClick = { onMoveZ(Int.MIN_VALUE) }) { Text("最背面へ") }
+    }
+
     Head("操作")
     Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(top = 4.dp)) {
         OutlinedButton(onClick = onCopy) { Text(if (g.layoutGroup != null) "このメーターだけコピー" else "コピー") }
-        OutlinedButton(onClick = onBringToFront) { Text("最前面へ") }
         OutlinedButton(onClick = onDelete) { Text("削除", color = GaugeColors.Warn) }
     }
 }

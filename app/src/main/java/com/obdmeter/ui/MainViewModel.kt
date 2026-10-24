@@ -453,8 +453,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     fun addGauge(dashboardId: Long, pidKey: String, style: GaugeStyle): Long {
         val gaugeId = System.currentTimeMillis()
         editDashboard(dashboardId) { d ->
-            val w = if (style == GaugeStyle.ANALOG) 8 else 6
-            val h = if (style == GaugeStyle.ANALOG) 6 else 3
+            val w = (if (style == GaugeStyle.ANALOG) 8 else 6) * Layout.SCALE
+            val h = (if (style == GaugeStyle.ANALOG) 6 else 3) * Layout.SCALE
             val (x, y) = Layout.findFreeSpot(d.gauges, w, h)
             d.copy(gauges = d.gauges + GaugeConfig(pidKey, style, gaugeId, x, y, w, h))
         }
@@ -533,6 +533,24 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     fun ungroupGauges(dashboardId: Long, ids: Set<Long>) = editDashboard(dashboardId) { d ->
         val groups = d.gauges.filter { it.id in ids }.mapNotNullTo(HashSet()) { it.layoutGroup }
         d.copy(gauges = d.gauges.map { if (it.layoutGroup in groups) it.copy(layoutGroup = null) else it })
+    }
+
+    /**
+     * 重なりの順番を変える。[delta] = +1 で 1 つ手前、-1 で 1 つ奥、
+     * [Int.MAX_VALUE] で最前面、[Int.MIN_VALUE] で最背面
+     */
+    fun moveZ(dashboardId: Long, gaugeId: Long, delta: Int) = editDashboard(dashboardId) { d ->
+        val i = d.gauges.indexOfFirst { it.id == gaugeId }
+        if (i < 0) return@editDashboard d
+        val list = d.gauges.toMutableList()
+        val g = list.removeAt(i)
+        val to = when (delta) {
+            Int.MAX_VALUE -> list.size
+            Int.MIN_VALUE -> 0
+            else -> (i + delta).coerceIn(0, list.size)
+        }
+        list.add(to, g)
+        d.copy(gauges = list)
     }
 
     fun bringToFront(dashboardId: Long, gaugeId: Long) = editDashboard(dashboardId) { d ->

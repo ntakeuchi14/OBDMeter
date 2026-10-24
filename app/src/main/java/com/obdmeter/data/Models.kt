@@ -56,6 +56,8 @@ data class AppSettings(
     val startInFloat: Boolean = false,
     /** iDrive (ダイヤル・方向キー) でダッシュボードのページを切り替える */
     val keyPageNav: Boolean = true,
+    /** レイアウト編集で、移動・大きさ変更を吸着させる間隔 ([Layout.GRID_STEPS]、単位) */
+    val gridStep: Int = Layout.SCALE,
     /** 項目ごとの取得周期 (項目キー → ミリ秒)。無い項目は毎回 (遅い項目は 8 回に 1 回) */
     val pollIntervalsMs: Map<String, Int> = emptyMap(),
     /** 最後に表示していたダッシュボードのページ (次の起動時にこのページから始める) */
@@ -470,20 +472,33 @@ data class Dashboard(
     val gauges: List<GaugeConfig> = emptyList(),
     /** ページの背景 (色・柄・画像) */
     val background: PageBackground = PageBackground(),
+    /**
+     * メーターの位置・大きさの単位 (旧来の 1 マスを何分割した単位か)。
+     * 以前の版 (1 = 24 × 12 マス) の保存データは、読み込み時に [Layout.SCALE] 倍して細かい単位に直す
+     */
+    val unitScale: Int = 1,
 )
 
 object Layout {
-    const val COLS = 24
-    const val ROWS = 12
-    /** メーターの最小の大きさ (マス) */
-    const val MIN_SIZE = 2
+    /** 旧来の 1 マス (横 24 × 縦 12 分割) を、さらに何分割して位置・大きさを持つか */
+    const val SCALE = 4
+    /** ページの横・縦の単位数 (96 × 48) */
+    const val COLS = 24 * SCALE
+    const val ROWS = 12 * SCALE
+    /** メーターの最小の大きさ (単位) */
+    const val MIN_SIZE = 2 * SCALE
+    /** 移動・大きさ変更の吸着の間隔の選択肢 (単位)。4 = 旧来の 1 マス */
+    val GRID_STEPS = listOf(1 to "1/4 マス", 2 to "1/2 マス", 4 to "1 マス", 8 to "2 マス")
+
+    /** [v] を [step] の倍数に丸める */
+    fun snap(v: Int, step: Int): Int = if (step <= 1) v else Math.round(v.toDouble() / step).toInt() * step
 
     /** 幅の範囲 (ページの 2 倍まで) */
     val widthRange: IntRange get() = MIN_SIZE..COLS * 2
     val heightRange: IntRange get() = MIN_SIZE..ROWS * 2
     /** 幅 [w] のメーターを置ける横の位置 (ページの外にはみ出してよいが、つかめるよう 1 マスはページ内に残す) */
-    fun xRange(w: Int): IntRange = (1 - w)..(COLS - 1)
-    fun yRange(h: Int): IntRange = (1 - h)..(ROWS - 1)
+    fun xRange(w: Int): IntRange = (SCALE - w)..(COLS - SCALE)
+    fun yRange(h: Int): IntRange = (SCALE - h)..(ROWS - SCALE)
 
     /** 位置・大きさを置ける範囲に収める。戻り値は (x, y, w, h) */
     fun clampPlacement(x: Int, y: Int, w: Int, h: Int): IntArray {
@@ -496,8 +511,13 @@ object Layout {
     fun normalize(d: Dashboard): Dashboard {
         var nextId = (d.gauges.maxOfOrNull { it.id } ?: 0L) + 1
         val withIds = d.gauges.map { if (it.id == 0L) it.copy(id = nextId++) else it }
-        if (withIds.all { it.w > 0 && it.h > 0 }) return d.copy(gauges = withIds)
-        return d.copy(gauges = arrangeInGrid(withIds, d.columns))
+        // 以前の版の単位 (24 × 12 マス) なら細かい単位に直す
+        val scaled = if (d.unitScale < SCALE) {
+            val f = SCALE / d.unitScale.coerceAtLeast(1)
+            withIds.map { g -> if (g.w > 0 && g.h > 0) g.copy(x = g.x * f, y = g.y * f, w = g.w * f, h = g.h * f) else g }
+        } else withIds
+        val placed = if (scaled.all { it.w > 0 && it.h > 0 }) scaled else arrangeInGrid(scaled, d.columns)
+        return d.copy(gauges = placed, unitScale = SCALE)
     }
 
     /** [columns] 列で均等に並べ直す */
@@ -531,8 +551,8 @@ object Layout {
     /** グループを (dx, dy) マス動かした配置。グループ全体がページの外へ出きらないように動きを抑える */
     fun moveGroup(gauges: List<GaugeConfig>, dx: Int, dy: Int): Map<Long, IntArray> {
         val b = bounds(gauges)
-        val nx = (b[0] + dx).coerceIn(1 - b[2], COLS - 1)
-        val ny = (b[1] + dy).coerceIn(1 - b[3], ROWS - 1)
+        val nx = (b[0] + dx).coerceIn(SCALE - b[2], COLS - SCALE)
+        val ny = (b[1] + dy).coerceIn(SCALE - b[3], ROWS - SCALE)
         return gauges.associate { it.id to intArrayOf(it.x + nx - b[0], it.y + ny - b[1], it.w, it.h) }
     }
 
@@ -571,8 +591,8 @@ object Layout {
         if (free(b[0], b[1])) return 0 to 0
         val spot = findFreeSpot(existing, b[2], b[3])
         if (free(spot.first, spot.second) && fits(spot.first, spot.second)) return spot.first - b[0] to spot.second - b[1]
-        val x = (b[0] + 1).coerceAtMost(COLS - b[2]).coerceAtLeast(0)
-        val y = (b[1] + 1).coerceAtMost(ROWS - b[3]).coerceAtLeast(0)
+        val x = (b[0] + SCALE).coerceAtMost(COLS - b[2]).coerceAtLeast(0)
+        val y = (b[1] + SCALE).coerceAtMost(ROWS - b[3]).coerceAtLeast(0)
         return x - b[0] to y - b[1]
     }
 

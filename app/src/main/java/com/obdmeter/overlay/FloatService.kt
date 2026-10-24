@@ -300,7 +300,7 @@ class FloatService : LifecycleService(), SavedStateRegistryOwner {
     /** 位置を保存していないウィンドウの既定の位置・幅: アプリのダッシュボードの並びを縮小したもの */
     private fun defaultPlacement(b: IntArray): FloatPlacement {
         val m = resources.displayMetrics
-        val cellW = m.widthPixels / 24f * DEFAULT_SCALE
+        val cellW = m.widthPixels / com.obdmeter.data.Layout.COLS.toFloat() * DEFAULT_SCALE
         val cellH = cellW / core.cellAspect.value
         return FloatPlacement(
             x = (dp(16) + b[0] * cellW).roundToInt(),
