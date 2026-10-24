@@ -801,8 +801,10 @@ private fun GaugeOnGrid(
                     // タップ (設定)・長押し (コピー)・ドラッグ (移動) を 1 つの処理で見分ける
                     // (別々の検出を重ねると、グループのメーターで Web 版のタップが効かなかったため)
                     .pointerInput(gauge.id) {
+                        println("DBG pointer start ${gauge.id} grouped=$isGrouped")
                         awaitEachGesture {
                             val down = awaitFirstDown(requireUnconsumed = false)
+                            println("DBG down ${gauge.id}")
                             val slop = viewConfiguration.touchSlop
                             val longMs = viewConfiguration.longPressTimeoutMillis
                             val started = kotlin.time.TimeSource.Monotonic.markNow()
