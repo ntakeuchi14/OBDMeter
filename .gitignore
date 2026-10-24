@@ -5,3 +5,4 @@ local.properties
 .idea/
 *.iml
 .DS_Store
+app/src/wasmJsMain/resources/fonts/

@@ -26,3 +26,6 @@ inline fun <T> PlatformLock.locked(block: () -> T): T {
         unlock()
     }
 }
+
+/** 時刻 [ms] での、端末のタイムゾーンの UTC からのずれ (ミリ秒) */
+expect fun tzOffsetMs(ms: Long): Int

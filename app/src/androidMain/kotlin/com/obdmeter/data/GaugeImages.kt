@@ -3,7 +3,6 @@ package com.obdmeter.data
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
-import android.net.Uri
 import android.util.LruCache
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
@@ -24,16 +23,15 @@ object GaugeImages {
     private fun dir(context: Context) = File(context.filesDir, "gauge_images").apply { mkdirs() }
 
     /** 画像を取り込み、保存したファイル名を返す。読めない画像なら例外。 */
-    suspend fun import(context: Context, uri: Uri, maxSize: Int = MAX_SIZE): String = withContext(Dispatchers.IO) {
-        val resolver = context.contentResolver
+    suspend fun importBytes(context: Context, data: ByteArray, maxSize: Int = MAX_SIZE): String = withContext(Dispatchers.IO) {
         val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-        resolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it, null, bounds) }
+        BitmapFactory.decodeByteArray(data, 0, data.size, bounds)
         if (bounds.outWidth <= 0 || bounds.outHeight <= 0) throw IllegalArgumentException("画像を読み込めませんでした")
 
         var sample = 1
         while (maxOf(bounds.outWidth, bounds.outHeight) / (sample * 2) >= maxSize) sample *= 2
         val opts = BitmapFactory.Options().apply { inSampleSize = sample }
-        var bmp = resolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it, null, opts) }
+        var bmp = BitmapFactory.decodeByteArray(data, 0, data.size, opts)
             ?: throw IllegalArgumentException("画像を読み込めませんでした")
         val longest = maxOf(bmp.width, bmp.height)
         if (longest > maxSize) {

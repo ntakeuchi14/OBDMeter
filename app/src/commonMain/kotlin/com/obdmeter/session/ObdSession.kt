@@ -1,24 +1,19 @@
 package com.obdmeter.session
 
-import android.content.Context
-import com.obdmeter.core.BmwFastProtocol
+import com.obdmeter.AppPlatform
 import com.obdmeter.core.CommLogger
-import com.obdmeter.core.Elm327Protocol
 import com.obdmeter.core.ObdProtocol
 import com.obdmeter.core.ObdReader
 import com.obdmeter.core.PidDef
 import com.obdmeter.core.PidRequest
-import com.obdmeter.core.SimulatorProtocol
 import com.obdmeter.data.AppSettings
-import com.obdmeter.data.ConnectionType
-import com.obdmeter.data.UsbAdapter
-import com.obdmeter.usb.UsbSerialTransport
+import com.obdmeter.util.nowMs
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -28,7 +23,7 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
-import java.util.concurrent.ConcurrentLinkedQueue
+import kotlin.concurrent.Volatile
 
 sealed interface ConnectionState {
     data object Disconnected : ConnectionState
@@ -48,9 +43,9 @@ sealed interface ConnectionState {
  * 通信はすべて Dispatchers.IO 上のブロッキング呼び出しで行う。
  */
 class ObdSession(
-    private val context: Context,
     private val scope: CoroutineScope,
     val log: LogBuffer,
+    private val platform: AppPlatform,
 ) {
     private val _state = MutableStateFlow<ConnectionState>(ConnectionState.Disconnected)
     val state: StateFlow<ConnectionState> = _state.asStateFlow()
@@ -79,7 +74,7 @@ class ObdSession(
     private var job: Job? = null
 
     /** カスタム PID 編集画面の「車両から読む」用。ポーリングの合間に 1 件ずつ処理する */
-    private val testQueue = ConcurrentLinkedQueue<Pair<PidRequest, CompletableDeferred<TestResult>>>()
+    private val testQueue = Channel<Pair<PidRequest, CompletableDeferred<TestResult>>>(Channel.UNLIMITED)
 
     data class TestResult(val data: IntArray?, val error: String?)
 
@@ -89,12 +84,12 @@ class ObdSession(
             return TestResult(null, "未接続です。先にダッシュボードで「接続」してください")
         }
         val d = CompletableDeferred<TestResult>()
-        testQueue.add(request to d)
+        testQueue.trySend(request to d)
         return withTimeoutOrNull(8000) { d.await() } ?: TestResult(null, "タイムアウトしました")
     }
 
     /** グラフの記録用の読み出し。ポーリングの合間にまとめて処理する */
-    private val sampleQueue = ConcurrentLinkedQueue<Pair<List<PidDef>, CompletableDeferred<Map<String, Double>>>>()
+    private val sampleQueue = Channel<Pair<List<PidDef>, CompletableDeferred<Map<String, Double>>>>(Channel.UNLIMITED)
 
     /**
      * [defs] の値を 1 回だけ読む (表示中のページに無い項目も読める)。
@@ -103,7 +98,7 @@ class ObdSession(
     suspend fun sample(defs: List<PidDef>): Map<String, Double>? {
         if (_state.value !is ConnectionState.Connected || defs.isEmpty()) return null
         val d = CompletableDeferred<Map<String, Double>>()
-        sampleQueue.add(defs to d)
+        sampleQueue.trySend(defs to d)
         return withTimeoutOrNull(20_000) { d.await() }
     }
 
@@ -115,7 +110,7 @@ class ObdSession(
      * (グラフの項目が多いときに、メーターの反応が悪くならないように)
      */
     private fun drainSamples(reader: ObdReader) {
-        val cur = samplePending ?: sampleQueue.poll()?.let { (defs, d) -> Triple(defs, HashMap<String, Double>(), d) } ?: return
+        val cur = samplePending ?: sampleQueue.tryReceive().getOrNull()?.let { (defs, d) -> Triple(defs, HashMap<String, Double>(), d) } ?: return
         val (defs, got, d) = cur
         // BMW の測定値はまとめて 1 回で読めるので一緒に、それ以外は 3 項目まで
         val block = defs.filter { it.kind == PidDef.Kind.BMW_BLOCK }
@@ -133,7 +128,7 @@ class ObdSession(
 
     private fun drainTests(p: ObdProtocol) {
         while (true) {
-            val (req, d) = testQueue.poll() ?: return
+            val (req, d) = testQueue.tryReceive().getOrNull() ?: return
             log.log(CommLogger.Direction.INFO, "テスト読み出し: $req")
             val data = runCatching { p.query(req) }.getOrNull()
             d.complete(TestResult(data, if (data == null) p.lastFailure ?: "応答なし" else null))
@@ -143,7 +138,7 @@ class ObdSession(
     fun connect(settings: AppSettings) {
         val old = job
         disconnect()
-        job = scope.launch(Dispatchers.IO) {
+        job = scope.launch(platform.ioDispatcher) {
             // 前のセッションが USB を閉じ終わるまで待つ
             old?.join()
             var attempt = 0
@@ -218,7 +213,7 @@ class ObdSession(
             _rate.value = 0.0
             return SessionEnd.STOP
         } catch (e: Exception) {
-            val msg = e.message ?: e.javaClass.simpleName
+            val msg = e.message ?: (e::class.simpleName ?: "エラー")
             log.log(CommLogger.Direction.ERROR, msg)
             _state.value = ConnectionState.Error(msg, retrying = settings.autoReconnect)
             _values.value = emptyMap()
@@ -234,7 +229,7 @@ class ObdSession(
      * 車両の説明文を返す。
      */
     private suspend fun waitForVehicle(p: ObdProtocol, adapter: String, settings: AppSettings): String {
-        val start = System.currentTimeMillis()
+        val start = nowMs()
         var first = true
         while (true) {
             drainTests(p)
@@ -254,7 +249,7 @@ class ObdSession(
             _state.value = ConnectionState.WaitingForVehicle(adapter, volt)
 
             val limitMin = settings.waitTimeoutMin
-            if (limitMin > 0 && System.currentTimeMillis() - start > limitMin * 60_000L) {
+            if (limitMin > 0 && nowMs() - start > limitMin * 60_000L) {
                 throw StopSession("$limitMin 分間車両が応答しなかったため、バッテリー保護のため待機を終了しました")
             }
             // 待機中の問い合わせ間隔。短すぎると車両のネットワークを起こし続けてしまう
@@ -276,7 +271,7 @@ class ObdSession(
         val values = HashMap<String, Double>()
         var deadCycles = 0
         var count = 0
-        var windowStart = System.currentTimeMillis()
+        var windowStart = nowMs()
         var lastPublish = 0L
         while (currentCoroutineContext().isActive) {
             drainTests(p)
@@ -286,7 +281,7 @@ class ObdSession(
             reader.intervals = pollIntervals
             val r = reader.poll(defs, values, activeFallbacks)
             // 画面への反映は 10 回/秒まで (それ以上は描画負荷が増えるだけ)
-            val t = System.currentTimeMillis()
+            val t = nowMs()
             if (t - lastPublish >= 100) {
                 _values.value = HashMap(values)
                 lastPublish = t
@@ -326,60 +321,19 @@ class ObdSession(
                 repeat(5) { delay(200); drainTests(p); drainSamples(reader) }
                 continue
             }
-            val now = System.currentTimeMillis()
+            val now = nowMs()
             if (now - windowStart >= 1000) {
                 _rate.value = count * 1000.0 / (now - windowStart)
                 count = 0
                 windowStart = now
             }
             if (r.ok + r.failed == 0) delay(20) // 何も読まなかったサイクルで CPU を回し続けない
+            else if (platform.minCycleMs > 0) delay(platform.minCycleMs)
         }
     }
 
-    private suspend fun createProtocol(settings: AppSettings): ObdProtocol {
-        if (settings.connectionType == ConnectionType.SIMULATOR) return SimulatorProtocol()
-
-        val drivers = UsbSerialTransport.findDrivers(context)
-        val driver = drivers.firstOrNull()
-            ?: throw IllegalStateException("USB アダプターが見つかりません。OTG ケーブルとアダプターの接続を確認してください")
-        val name = UsbSerialTransport.describe(driver.device)
-        log.log(CommLogger.Direction.INFO, "USB 機器: $name (${driver.javaClass.simpleName})")
-
-        _state.value = ConnectionState.Connecting("USB の使用許可を待っています…")
-        if (!UsbSerialTransport.requestPermission(context, driver.device)) {
-            throw IllegalStateException("USB の使用が許可されませんでした")
-        }
-
-        return when (settings.usbAdapter) {
-            UsbAdapter.OBDLINK -> {
-                // アダプターは電源投入時 115200。設定の速度へは接続後に切り替える
-                val t = UsbSerialTransport(context, driver, 115200, dtr = true, rts = true)
-                t.open()
-                Elm327Protocol(
-                    t,
-                    Elm327Protocol.Options(
-                        protocol = settings.elmProtocol,
-                        singleResponseHint = settings.elmSingleResponseHint,
-                        baudRate = settings.elmBaudRate,
-                    ),
-                    log,
-                )
-            }
-            UsbAdapter.DCAN -> {
-                // K+DCAN は 115200bps 固定。EdiabasLib と同じく DTR=ON (エコーありアダプター)
-                val t = UsbSerialTransport(context, driver, 115200, dtr = true, rts = false)
-                t.open()
-                BmwFastProtocol(
-                    t,
-                    BmwFastProtocol.Options(
-                        targetAddress = settings.dcanTargetAddress,
-                        adapterEcho = settings.dcanEcho,
-                    ),
-                    log,
-                )
-            }
-        }
-    }
+    private suspend fun createProtocol(settings: AppSettings): ObdProtocol =
+        platform.createProtocol(settings, log) { msg -> _state.value = ConnectionState.Connecting(msg) }
 }
 
 /** 記録用の読み出しで 1 サイクルに読む項目数 (BMW の測定値のまとめ読みは別) */

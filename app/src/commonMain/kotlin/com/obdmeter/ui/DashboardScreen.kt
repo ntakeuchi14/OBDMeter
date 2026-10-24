@@ -1,10 +1,10 @@
 package com.obdmeter.ui
 
+import com.obdmeter.util.format
+
 import androidx.compose.ui.zIndex
 import com.obdmeter.ui.gauges.PageBackgroundView
 import com.obdmeter.data.HistorySlot
-import androidx.compose.ui.platform.LocalContext
-import android.widget.Toast
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.flow.first
 import androidx.compose.runtime.snapshotFlow
@@ -103,7 +103,7 @@ fun DashboardScreen(vm: MainViewModel, onNavigate: (Screen) -> Unit, onCreateCus
     /** レイアウト編集モード (メーターをドラッグで移動・サイズ変更) */
     var editing by rememberSaveable { mutableStateOf(false) }
     val clipboard by vm.clipboard.collectAsStateWithLifecycle()
-    val context = LocalContext.current
+    val toast = rememberToast()
     /** 設定ダイアログを開いているメーターの id */
     var settingsFor by remember { mutableStateOf<Long?>(null) }
     /** メーター追加の項目選択ダイアログ (null = 閉じる) */
@@ -214,12 +214,10 @@ fun DashboardScreen(vm: MainViewModel, onNavigate: (Screen) -> Unit, onCreateCus
                     onCopy = { g ->
                         val group = Layout.groups(d.gauges)[g.layoutGroup]
                         if (group != null) vm.copyGauges(group) else vm.copyGauge(g)
-                        Toast.makeText(
-                            context,
+                        toast(
                             (if (group != null) "グループ (${group.size} 個) を" else "") +
-                                "コピーしました。下の「貼り付け」で、このページや別のページに貼り付けられます",
-                            Toast.LENGTH_LONG,
-                        ).show()
+                                "コピーしました。下の「貼り付け」で、このページや別のページに貼り付けられます"
+                        )
                     },
                     onCellAspect = vm::reportCellAspect,
                     onCellSize = vm::reportCellSize,

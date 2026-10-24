@@ -1,5 +1,7 @@
 package com.obdmeter.ui
 
+import com.obdmeter.util.format
+
 import androidx.compose.material3.IconButton
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
@@ -184,7 +186,7 @@ private fun CustomPidEditor(
     val scope = rememberCoroutineScope()
 
     fun build(): CustomPid = initial.copy(
-        id = if (isNew) System.currentTimeMillis() else initial.id,
+        id = if (isNew) com.obdmeter.util.nowMs() else initial.id,
         name = name.trim(), shortName = shortName.trim(), unit = unit.trim(),
         mode = mode.trim().uppercase(), pid = pid.trim().uppercase().replace(" ", ""),
         header = header.trim().uppercase(), canExtAddress = cea.trim().uppercase(),
@@ -339,7 +341,7 @@ private fun CustomPidEditor(
     }
 }
 
-private fun fmtNum(v: Double): String = if (v == Math.floor(v) && kotlin.math.abs(v) < 1e15) v.toLong().toString() else v.toString()
+private fun fmtNum(v: Double): String = if (v == kotlin.math.floor(v) && kotlin.math.abs(v) < 1e15) v.toLong().toString() else v.toString()
 
 @Composable
 private fun Section(title: String) {

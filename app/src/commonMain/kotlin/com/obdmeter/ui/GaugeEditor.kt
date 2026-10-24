@@ -1,10 +1,11 @@
 package com.obdmeter.ui
 
+import com.obdmeter.util.format
+
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.foundation.layout.requiredSize
 import com.obdmeter.data.HistoryStore
 import com.obdmeter.data.historyRetentionMs
-import android.widget.Toast
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import com.obdmeter.ui.gauges.chartColor
@@ -14,9 +15,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.SliderDefaults
 import androidx.compose.foundation.border
 import androidx.compose.ui.graphics.toArgb
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.PickVisualMediaRequest
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.material.icons.filled.Delete
@@ -25,7 +23,6 @@ import androidx.compose.material3.RadioButton
 import androidx.compose.ui.text.font.FontFamily
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.obdmeter.data.FontEntry
-import com.obdmeter.data.GaugeFonts
 import com.obdmeter.ui.gauges.LocalFontLibrary
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -73,7 +70,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -82,7 +78,6 @@ import androidx.compose.ui.window.DialogProperties
 import com.obdmeter.core.PidCatalog
 import com.obdmeter.data.GaugeConfig
 import com.obdmeter.data.GaugeDesign
-import com.obdmeter.data.GaugeImages
 import com.obdmeter.data.GaugeStyle
 import com.obdmeter.data.Layout
 import com.obdmeter.data.RingStyle
@@ -114,7 +109,7 @@ fun GaugeSettingsDialog(
     onDismiss: () -> Unit,
 ) {
     var draft by remember(gauge.id) { mutableStateOf(gauge) }
-    val context = LocalContext.current
+    val toast = rememberToast()
     val cellAspect by vm.cellAspect.collectAsState()
     val cellSize by vm.cellSizeDp.collectAsState()
     val latestOnChange by rememberUpdatedState(onChange)
@@ -220,7 +215,7 @@ fun GaugeSettingsDialog(
                                 EditorTab.IMAGE -> ImageTab(draft, ::update)
                                 EditorTab.PLACE -> PlaceTab(draft, { draft = it }, {
                                     vm.copyGauge(draft)
-                                    Toast.makeText(context, "コピーしました。下の「貼り付け」で、このページや別のページに貼り付けられます", Toast.LENGTH_LONG).show()
+                                    toast("コピーしました。下の「貼り付け」で、このページや別のページに貼り付けられます")
                                 }, onMoveZ) { confirmDelete = true }
                             }
                             Spacer(Modifier.height(24.dp))
@@ -1041,18 +1036,15 @@ private fun MonitorViewTab(g: GaugeConfig, update: ((GaugeDesign) -> GaugeDesign
 @Composable
 private fun ImageTab(g: GaugeConfig, update: ((GaugeDesign) -> GaugeDesign) -> Unit) {
     val d = g.design
-    val context = LocalContext.current
+    val toast = rememberToast()
     val scope = rememberCoroutineScope()
     var error by remember { mutableStateOf<String?>(null) }
     var loading by remember { mutableStateOf(false) }
     val latestUpdate by rememberUpdatedState(update)
     val analog = g.style == GaugeStyle.ANALOG
 
-    val picker = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
-        if (uri == null) return@rememberLauncherForActivityResult
-        loading = true
-        scope.launch {
-            runCatching { GaugeImages.import(context, uri) }
+    val picker = rememberImageImporter(onStart = { loading = true }) { r ->
+            r
                 .onSuccess { name ->
                     error = null
                     latestUpdate {
@@ -1067,7 +1059,6 @@ private fun ImageTab(g: GaugeConfig, update: ((GaugeDesign) -> GaugeDesign) -> U
                 }
                 .onFailure { error = it.message ?: "画像を読み込めませんでした" }
             loading = false
-        }
     }
 
     Hint(
@@ -1079,8 +1070,8 @@ private fun ImageTab(g: GaugeConfig, update: ((GaugeDesign) -> GaugeDesign) -> U
         FilledTonalButton(
             enabled = !loading,
             onClick = {
-                val ok = runCatching { picker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) }.isSuccess
-                if (!ok) Toast.makeText(context, "この端末では画像を選ぶ画面を開けません", Toast.LENGTH_LONG).show()
+                val ok = picker()
+                if (!ok) toast("この端末では画像を選ぶ画面を開けません")
             },
         ) { Text(if (loading) "読み込み中…" else if (d.backgroundImage == null) "画像を選ぶ" else "画像を変更") }
         if (d.backgroundImage != null) {
@@ -1191,7 +1182,7 @@ private fun TableLayoutSettings(
     update: ((GaugeDesign) -> GaugeDesign) -> Unit,
 ) {
     val d = g.design
-    val context = LocalContext.current
+    val toast = rememberToast()
     val scope = rememberCoroutineScope()
     var loading by remember { mutableStateOf(false) }
     val latestUpdate by rememberUpdatedState(update)
@@ -1237,20 +1228,15 @@ private fun TableLayoutSettings(
     Head("値の部分の背景")
     ColorLine("背景色 (既定 = なし)", d.tableValueBg, Color.Transparent) { c -> update { it.copy(tableValueBg = c) } }
     if (d.tableValueBg != null || d.tableValueImage != null) PanelSection(d, update)
-    val picker = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
-        if (uri == null) return@rememberLauncherForActivityResult
-        loading = true
-        scope.launch {
-            runCatching { GaugeImages.import(context, uri) }
-                .onSuccess { name -> latestUpdate { it.copy(tableValueImage = name) } }
-                .onFailure { Toast.makeText(context, it.message ?: "画像を読み込めませんでした", Toast.LENGTH_LONG).show() }
-            loading = false
-        }
+    val picker = rememberImageImporter(onStart = { loading = true }) { r ->
+        r.onSuccess { name -> latestUpdate { it.copy(tableValueImage = name) } }
+            .onFailure { toast(it.message ?: "画像を読み込めませんでした") }
+        loading = false
     }
     Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(vertical = 8.dp)) {
         FilledTonalButton(enabled = !loading, onClick = {
-            val ok = runCatching { picker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) }.isSuccess
-            if (!ok) Toast.makeText(context, "この端末では画像を選ぶ画面を開けません", Toast.LENGTH_LONG).show()
+            val ok = picker()
+            if (!ok) toast("この端末では画像を選ぶ画面を開けません")
         }) { Text(if (loading) "読み込み中…" else if (d.tableValueImage == null) "背景画像を選ぶ" else "背景画像を変更") }
         if (d.tableValueImage != null) {
             OutlinedButton(onClick = { update { it.copy(tableValueImage = null) } }) { Text("画像を外す") }
@@ -1584,16 +1570,17 @@ private fun FontPickerDialog(
     onDismiss: () -> Unit,
 ) {
     val fonts by vm.fonts.collectAsStateWithLifecycle()
-    val context = LocalContext.current
+    val toast = rememberToast()
     var busy by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
     var renaming by remember { mutableStateOf<FontEntry?>(null) }
     var deleting by remember { mutableStateOf<FontEntry?>(null) }
 
-    val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
-        if (uri == null) return@rememberLauncherForActivityResult
+    val picker = rememberFileOpener(listOf("font/ttf", "font/otf", "font/sfnt", "application/x-font-ttf",
+        "application/x-font-otf", "application/font-sfnt", "application/vnd.ms-opentype",
+        "application/octet-stream", "*/*")) { f ->
         busy = true
-        vm.importFont(uri) { r ->
+        vm.importFont({ f.read() to f.name }) { r ->
             busy = false
             r.onSuccess { entry -> error = null; onPick(entry.id) }
                 .onFailure { error = it.message ?: "読み込めませんでした" }
@@ -1607,7 +1594,7 @@ private fun FontPickerDialog(
             Column(Modifier.verticalScroll(rememberScrollState())) {
                 FontRow("既定", null, selected == null, sample = "0123 回転数") { onPick(null) }
                 fonts.forEach { f ->
-                    val family = remember(f.id) { GaugeFonts.family(context, f) }
+                    val family = rememberFontFamily(f)
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Box(Modifier.weight(1f)) {
                             FontRow(f.name, family, selected == f.id, sample = "0123 回転数") { onPick(f.id) }
@@ -1620,12 +1607,8 @@ private fun FontPickerDialog(
                 FilledTonalButton(
                     enabled = !busy,
                     onClick = {
-                        val ok = runCatching {
-                            picker.launch(arrayOf("font/ttf", "font/otf", "font/sfnt", "application/x-font-ttf",
-                                "application/x-font-otf", "application/font-sfnt", "application/vnd.ms-opentype",
-                                "application/octet-stream", "*/*"))
-                        }.isSuccess
-                        if (!ok) Toast.makeText(context, "この端末ではファイルを選ぶ画面を開けません", Toast.LENGTH_LONG).show()
+                        val ok = picker()
+                        if (!ok) toast("この端末ではファイルを選ぶ画面を開けません")
                     },
                 ) { Text(if (busy) "読み込み中…" else "フォントを追加 (.ttf / .otf)") }
                 error?.let { Text("⚠ $it", color = GaugeColors.Warn, fontSize = 13.sp) }
@@ -1704,20 +1687,15 @@ internal fun PageBackgroundDialog(
         onDismiss()
     }
     val cellAspect by vm.cellAspect.collectAsState()
-    val context = LocalContext.current
+    val toast = rememberToast()
     val scope = rememberCoroutineScope()
     var loading by remember { mutableStateOf(false) }
     var confirmAll by remember { mutableStateOf(false) }
-    val picker = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
-        if (uri == null) return@rememberLauncherForActivityResult
-        loading = true
-        scope.launch {
-            // ページ全体に使うので、メーターの画像より大きめ (長辺 2048) で取り込む
-            runCatching { GaugeImages.import(context, uri, maxSize = 2048) }
-                .onSuccess { name -> bg = bg.copy(image = name) }
-                .onFailure { Toast.makeText(context, it.message ?: "画像を読み込めませんでした", Toast.LENGTH_LONG).show() }
-            loading = false
-        }
+    // ページ全体に使うので、メーターの画像より大きめ (長辺 2048) で取り込む
+    val picker = rememberImageImporter(maxSize = 2048, onStart = { loading = true }) { r ->
+        r.onSuccess { name -> bg = bg.copy(image = name) }
+            .onFailure { toast(it.message ?: "画像を読み込めませんでした") }
+        loading = false
     }
 
     Dialog(onDismissRequest = close, properties = DialogProperties(usePlatformDefaultWidth = false)) {
@@ -1761,8 +1739,8 @@ internal fun PageBackgroundDialog(
                         Head("画像")
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(vertical = 8.dp)) {
                             FilledTonalButton(enabled = !loading, onClick = {
-                                val ok = runCatching { picker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) }.isSuccess
-                                if (!ok) Toast.makeText(context, "この端末では画像を選ぶ画面を開けません", Toast.LENGTH_LONG).show()
+                                val ok = picker()
+                                if (!ok) toast("この端末では画像を選ぶ画面を開けません")
                             }) { Text(if (loading) "読み込み中…" else if (bg.image == null) "画像を選ぶ" else "画像を変更") }
                             if (bg.image != null) OutlinedButton(onClick = { bg = bg.copy(image = null) }) { Text("画像を外す") }
                         }

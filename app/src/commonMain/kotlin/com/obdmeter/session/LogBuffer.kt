@@ -1,12 +1,13 @@
 package com.obdmeter.session
 
 import com.obdmeter.core.CommLogger
+import com.obdmeter.util.DateFmt
+import com.obdmeter.util.PlatformLock
+import com.obdmeter.util.locked
+import com.obdmeter.util.nowMs
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
 
 data class LogLine(val id: Long, val time: String, val direction: CommLogger.Direction, val text: String)
 
@@ -17,37 +18,38 @@ data class LogLine(val id: Long, val time: String, val direction: CommLogger.Dir
 class LogBuffer(private val capacity: Int = 800) : CommLogger {
     private val lines = ArrayDeque<LogLine>()
     private var nextId = 0L
-    private val fmt = SimpleDateFormat("HH:mm:ss.SSS", Locale.US)
+    private val fmt = DateFmt("HH:mm:ss.SSS")
+    private val lock = PlatformLock()
 
     /** ログの一覧 (集めている間だけ動く。変わったときだけ流す) */
     val snapshot: Flow<List<LogLine>> = flow {
         var sent = -1L
         while (true) {
-            val (id, copy) = synchronized(lines) { if (nextId == sent) sent to null else nextId to lines.toList() }
+            val (id, copy) = lock.locked { if (nextId == sent) sent to null else nextId to lines.toList() }
             if (copy != null) { emit(copy); sent = id }
             delay(200)
         }
     }
 
-    @Volatile
     var enabled = true
 
     override fun log(direction: CommLogger.Direction, text: String) {
         if (!enabled && direction != CommLogger.Direction.ERROR && direction != CommLogger.Direction.INFO) return
-        synchronized(lines) {
-            lines.addLast(LogLine(nextId++, fmt.format(Date()), direction, text))
+        val time = fmt.format(nowMs())
+        lock.locked {
+            lines.addLast(LogLine(nextId++, time, direction, text))
             while (lines.size > capacity) lines.removeFirst()
         }
     }
 
     fun clear() {
-        synchronized(lines) {
+        lock.locked {
             lines.clear()
             nextId++
         }
     }
 
-    fun asText(): String = synchronized(lines) {
+    fun asText(): String = lock.locked {
         lines.joinToString("\n") { "${it.time} ${it.direction.name.padEnd(5)} ${it.text}" }
     }
 }

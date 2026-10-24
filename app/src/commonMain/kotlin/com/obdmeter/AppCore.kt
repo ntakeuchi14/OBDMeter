@@ -2,7 +2,6 @@ package com.obdmeter
 
 import kotlinx.coroutines.delay
 import com.obdmeter.session.ConnectionState
-import android.content.Context
 import com.obdmeter.core.PidCatalog
 import com.obdmeter.data.AppSettings
 import com.obdmeter.data.CustomPid
@@ -12,12 +11,10 @@ import com.obdmeter.data.FontEntry
 import com.obdmeter.data.HistoryStore
 import com.obdmeter.data.ReadPlan
 import com.obdmeter.core.DeviceItems
-import com.obdmeter.sensors.DeviceSensors
 import com.obdmeter.data.Repository
 import com.obdmeter.session.LogBuffer
 import com.obdmeter.session.ObdSession
 import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -28,24 +25,24 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import kotlin.concurrent.Volatile
 
 /**
  * アプリ全体で 1 つだけ持つ状態 (保存データ・車両との接続)。
  * アプリの画面とフロート表示 (別ウィンドウ) の両方から同じ接続・同じ値を使うため、
  * 画面 (ViewModel) ではなくプロセスに 1 つ置く。
  */
-class AppCore private constructor(context: Context) {
-    val app: Context = context.applicationContext
-    val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
-    val repo = Repository(app)
+class AppCore(val platform: AppPlatform) {
+    val scope = CoroutineScope(SupervisorJob() + kotlinx.coroutines.Dispatchers.Default)
+    val repo: Repository = platform.repo
     val log = LogBuffer()
-    val session = ObdSession(app, scope, log)
+    val session = ObdSession(scope, log, platform)
     /** 折れ線グラフ用の値の記録 */
-    val history: com.obdmeter.data.HistoryStore = com.obdmeter.data.SqliteHistoryStore(app, scope)
+    val history: HistoryStore = platform.history
     /** 折れ線グラフの項目の記録のしかた (間隔・変化したときだけか) */
     @Volatile private var recordRules: Map<ReadPlan.RecordTarget, ReadPlan.RecordRule> = emptyMap()
     /** 端末のセンサー (傾き・加速度など。テスト用の項目) */
-    val deviceSensors = DeviceSensors(app, scope)
+    val deviceSensors: DeviceSensorSource = platform.deviceSensors
 
     val settings: StateFlow<AppSettings> =
         repo.settings.stateIn(scope, SharingStarted.Eagerly, AppSettings())
@@ -87,7 +84,7 @@ class AppCore private constructor(context: Context) {
     val floatActive = MutableStateFlow(false)
 
     /** アプリのダッシュボードの 1 マスの縦横比 (幅 / 高さ)。フロート表示の形をアプリと合わせるのに使う */
-    val cellAspect = MutableStateFlow(defaultCellAspect())
+    val cellAspect = MutableStateFlow(platform.defaultCellAspect())
     /** ダッシュボードの 1 マスの実際の大きさ (dp、幅と高さ)。編集画面のプレビューを実物と同じ大きさで描くのに使う */
     val cellSizeDp = MutableStateFlow<Pair<Float, Float>?>(null)
 
@@ -126,7 +123,7 @@ class AppCore private constructor(context: Context) {
 
     init {
         // 項目一覧 (約 1,200 項目) を裏で先に作っておく (画面の最初の描画を待たせない)
-        scope.launch(kotlinx.coroutines.Dispatchers.Default) { com.obdmeter.core.Pids.get("RPM") }
+        scope.launch { com.obdmeter.core.Pids.get("RPM") }
         scope.launch {
             // 保存内容を読み、上の StateFlow にも反映されるのを待つ (念のため最大 3 秒)
             val d = repo.dashboards.first()
@@ -191,7 +188,7 @@ class AppCore private constructor(context: Context) {
                 val connected = session.state.value is ConnectionState.Connected
                 if (connected && !wasConnected) nextDue.keys.removeAll { !it.key.startsWith("DEV_") }
                 wasConnected = connected
-                val now = System.currentTimeMillis()
+                val now = com.obdmeter.util.nowMs()
                 val rules = recordRules
                 // 記録をリセットしたメーターは、覚えている前回の値も捨てて初回の計測からやり直す
                 for (slot in history.takeCleared()) {
@@ -211,7 +208,7 @@ class AppCore private constructor(context: Context) {
                 val defs = need.filter { !it.startsWith("DEV_") }.mapNotNull { catalog.value.get(it) }
                 val got = if (defs.isEmpty() || !connected) emptyMap() else (session.sample(defs) ?: continue)
                 val read = reuse + got
-                val time = System.currentTimeMillis()
+                val time = com.obdmeter.util.nowMs()
                 val rows = HashMap<String, HashMap<String, Double>>()
                 val changeRows = ArrayList<com.obdmeter.data.HistoryRow>()
                 val eventRows = ArrayList<com.obdmeter.data.HistoryRow>()
@@ -240,18 +237,5 @@ class AppCore private constructor(context: Context) {
         }
     }
 
-    private fun defaultCellAspect(): Float {
-        val m = app.resources.displayMetrics
-        val long = maxOf(m.widthPixels, m.heightPixels).toFloat()
-        val short = minOf(m.widthPixels, m.heightPixels).toFloat()
-        // 横向きで使う前提: 24 列 × 12 行
-        return (long / com.obdmeter.data.Layout.COLS) / (short / com.obdmeter.data.Layout.ROWS)
-    }
-
-    companion object {
-        @Volatile private var instance: AppCore? = null
-
-        fun get(context: Context): AppCore =
-            instance ?: synchronized(this) { instance ?: AppCore(context).also { instance = it } }
-    }
+    companion object
 }

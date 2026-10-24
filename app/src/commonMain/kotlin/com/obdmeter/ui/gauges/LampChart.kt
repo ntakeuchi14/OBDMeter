@@ -1,17 +1,15 @@
 package com.obdmeter.ui.gauges
 
+import com.obdmeter.util.format
+
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.foundation.layout.height
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.MutableStateFlow
 import androidx.compose.ui.graphics.drawscope.clipRect
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.collectAsState
 import androidx.compose.foundation.clickable
-import androidx.activity.result.contract.ActivityResultContracts
-import androidx.activity.compose.rememberLauncherForActivityResult
-import android.widget.Toast
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectTapGestures
@@ -67,9 +65,6 @@ import com.obdmeter.core.PidDef
 import com.obdmeter.data.HistoryStore
 import com.obdmeter.data.Sample
 import kotlinx.coroutines.delay
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
 import kotlin.math.abs
 import kotlin.math.max
 import kotlin.math.min
@@ -335,11 +330,11 @@ internal fun ChartGauge(
     var endAt by remember { mutableStateOf<Long?>(null) }
     /** タップで選んだ時刻 (null = 現在値を表示) */
     var cursorAt by remember { mutableStateOf<Long?>(null) }
-    var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
+    var now by remember { mutableLongStateOf(com.obdmeter.util.nowMs()) }
     LaunchedEffect(Unit) {
         while (true) {
             delay(5_000)
-            now = System.currentTimeMillis()
+            now = com.obdmeter.util.nowMs()
         }
     }
     // 記録の一番古い時刻 (ここまでさかのぼれる)
@@ -395,7 +390,7 @@ internal fun ChartGauge(
         FlowRow(m, horizontalArrangement = Arrangement.spacedBy((10 * ls).dp, align)) {
             if (cursorTime != null) {
                 Text(
-                    SimpleDateFormat("yyyy/MM/dd HH:mm:ss", Locale.getDefault()).format(Date(cursorTime)),
+                    com.obdmeter.util.DateFmt("yyyy/MM/dd HH:mm:ss").format(cursorTime),
                     color = GaugeColors.Accent, fontSize = (11 * look.labelSize * ls).sp, maxLines = 1,
                     fontWeight = FontWeight.Bold,
                 )
@@ -446,7 +441,7 @@ internal fun ChartGauge(
                     else Modifier
                         .pointerInput(look.chartSpanMs) {
                             detectTransformGestures { _, pan, zoom, _ ->
-                                val t = System.currentTimeMillis()
+                                val t = com.obdmeter.util.nowMs()
                                 val oldest = earliest ?: t
                                 val maxSpan = max(31 * 86_400_000L, t - oldest)
                                 if (zoom != 1f) span = (span / zoom).toLong().coerceIn(60_000L, maxSpan)
@@ -469,7 +464,7 @@ internal fun ChartGauge(
                                     val padR = if (axes.right != null) axisW.toPx() else 0f
                                     val pw = size.width - padL - padR
                                     if (pw > 0) {
-                                        val ec = axis.toC(endAt ?: System.currentTimeMillis())
+                                        val ec = axis.toC(endAt ?: com.obdmeter.util.nowMs())
                                         cursorAt = axis.toReal(ec - span + (((p.x - padL) / pw).coerceIn(0f, 1f) * span).toLong())
                                     }
                                 },
@@ -520,15 +515,14 @@ internal fun ChartGauge(
                 drawAxis(axes.right, true)
                 // 時刻の目盛り
                 val step = timeStep(span)
-                val fmt = SimpleDateFormat(if (step >= 21_600_000L) "M/d HH:mm" else "HH:mm", Locale.getDefault())
-                val tz = java.util.TimeZone.getDefault()
+                val fmt = com.obdmeter.util.DateFmt(if (step >= 21_600_000L) "M/d HH:mm" else "HH:mm")
                 var lastLabelEnd = -1f
                 for ((ra, rb) in axis.overlaps(start, end)) {
-                    var t = ra - Math.floorMod(ra + tz.getOffset(ra), step) + step
+                    var t = ra - com.obdmeter.util.floorMod(ra + com.obdmeter.util.tzOffsetMs(ra), step) + step
                     while (t <= rb) {
                         val x = xAt(t)
                         drawLine(GaugeColors.Track.copy(alpha = 0.5f), Offset(x, 0f), Offset(x, plotH), 1f)
-                        val lay = tm.measure(fmt.format(Date(t)), labelStyle)
+                        val lay = tm.measure(fmt.format(t), labelStyle)
                         val lx = (x - lay.size.width / 2f).coerceIn(0f, max(0f, w - lay.size.width))
                         // 詰めたところで目盛りの文字が重なるときは出さない
                         if (lx > lastLabelEnd + 4f) {
@@ -639,77 +633,36 @@ internal fun ChartGauge(
 /** グラフの記録の CSV 書き出し・読み込みボタン (アプリの画面でだけ出す) */
 @Composable
 internal fun ChartCsvButtons(history: HistoryStore, slot: String, keys: List<String>) {
-    val context = LocalContext.current
+    val toast = com.obdmeter.ui.rememberToast()
     val scope = rememberCoroutineScope()
-    val exporter = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("text/csv")) { uri ->
-        if (uri == null) return@rememberLauncherForActivityResult
+    val exporter = com.obdmeter.ui.rememberFileSaver("text/csv") { target ->
         scope.launch {
             val msg = runCatching {
-                val n = context.contentResolver.openOutputStream(uri)?.use { val (n, t) = history.exportCsvText(slot, keys); it.write(t.toByteArray(Charsets.UTF_8)); n }
-                    ?: error("ファイルを開けませんでした")
-                "$n 件を書き出しました"
+                val (n, t) = history.exportCsvText(slot, keys)
+                val where = target.write(t.encodeToByteArray())
+                "$n 件を" + (where?.let { " $it に保存しました" } ?: "書き出しました")
             }.getOrElse { "書き出しに失敗しました: ${it.message}" }
-            Toast.makeText(context, msg, Toast.LENGTH_LONG).show()
+            toast(msg)
         }
     }
-    val importer = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
-        if (uri == null) return@rememberLauncherForActivityResult
+    val importer = com.obdmeter.ui.rememberFileOpener(listOf("text/*", "application/csv", "application/vnd.ms-excel", "*/*")) { f ->
         scope.launch {
             val msg = runCatching {
-                val (ok, bad) = context.contentResolver.openInputStream(uri)?.use { history.importCsvText(slot, it.readBytes().toString(Charsets.UTF_8)) }
-                    ?: error("ファイルを開けませんでした")
+                val (ok, bad) = history.importCsvText(slot, f.read().decodeToString())
                 "$ok 件を読み込みました" + if (bad > 0) " (読めない行 $bad 件)" else ""
             }.getOrElse { "読み込みに失敗しました: ${it.message}" }
-            Toast.makeText(context, msg, Toast.LENGTH_LONG).show()
+            toast(msg)
         }
     }
     Row {
         CsvButton("書出") {
-            val stamp = SimpleDateFormat("yyyyMMdd_HHmm", Locale.US).format(Date())
-            val name = "obdmeter_chart_$stamp.csv"
-            // 保存先を選ぶ画面が無い端末 (車載ナビなど) では、ダウンロードフォルダに直接保存する
-            val launched = runCatching { exporter.launch(name) }.isSuccess
-            if (!launched) {
-                scope.launch {
-                    val msg = runCatching {
-                        val (n, where) = exportToDownloads(context, history, slot, keys, name)
-                        "$n 件を $where に保存しました"
-                    }.getOrElse { "書き出しに失敗しました: ${it.message}" }
-                    Toast.makeText(context, msg, Toast.LENGTH_LONG).show()
-                }
-            }
+            val stamp = com.obdmeter.util.DateFmt("yyyyMMdd_HHmm").format(com.obdmeter.util.nowMs())
+            exporter("obdmeter_chart_$stamp.csv")
         }
         Spacer(Modifier.width(4.dp))
         CsvButton("読込") {
-            val ok = runCatching { importer.launch(arrayOf("text/*", "application/csv", "application/vnd.ms-excel", "*/*")) }.isSuccess
-            if (!ok) Toast.makeText(context, "この端末ではファイルを選ぶ画面を開けません", Toast.LENGTH_LONG).show()
+            if (!importer()) toast("この端末ではファイルを選ぶ画面を開けません")
         }
-    }
-}
-
-/** ダウンロードフォルダ (Download/OBDMeter) に CSV を直接書き出す。件数と保存先の説明を返す */
-private suspend fun exportToDownloads(
-    context: android.content.Context,
-    history: HistoryStore,
-    slot: String,
-    keys: List<String>,
-    name: String,
-): Pair<Int, String> = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
-    if (android.os.Build.VERSION.SDK_INT >= 29) {
-        val values = android.content.ContentValues().apply {
-            put(android.provider.MediaStore.MediaColumns.DISPLAY_NAME, name)
-            put(android.provider.MediaStore.MediaColumns.MIME_TYPE, "text/csv")
-            put(android.provider.MediaStore.MediaColumns.RELATIVE_PATH, "Download/OBDMeter")
-        }
-        val uri = context.contentResolver.insert(android.provider.MediaStore.Downloads.EXTERNAL_CONTENT_URI, values)
-            ?: error("保存先を作れませんでした")
-        val n = context.contentResolver.openOutputStream(uri)?.use { val (n, t) = history.exportCsvText(slot, keys); it.write(t.toByteArray(Charsets.UTF_8)); n } ?: error("ファイルを開けませんでした")
-        n to "Download/OBDMeter/$name"
-    } else {
-        val dir = context.getExternalFilesDir(android.os.Environment.DIRECTORY_DOWNLOADS) ?: context.filesDir
-        val f = java.io.File(dir, name)
-        val n = f.outputStream().use { val (c, t) = history.exportCsvText(slot, keys); it.write(t.toByteArray(Charsets.UTF_8)); c }
-        n to f.absolutePath
     }
 }
 

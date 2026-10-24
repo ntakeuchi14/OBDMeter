@@ -22,6 +22,15 @@ jobs:
 
       - uses: gradle/actions/setup-gradle@v4
 
+      - name: Download fonts (Japanese)
+        run: |
+          mkdir -p app/src/wasmJsMain/resources/fonts
+          curl -fsSL -o app/src/wasmJsMain/resources/fonts/NotoSansJP-Regular.otf \
+            https://github.com/notofonts/noto-cjk/raw/main/Sans/SubsetOTF/JP/NotoSansJP-Regular.otf
+          curl -fsSL -o app/src/wasmJsMain/resources/fonts/NotoSansMono-Regular.ttf \
+            https://github.com/notofonts/notofonts.github.io/raw/main/fonts/NotoSansMono/hinted/ttf/NotoSansMono-Regular.ttf
+          ls -la app/src/wasmJsMain/resources/fonts
+
       - name: Build web app (WebAssembly)
         run: |
           chmod +x gradlew

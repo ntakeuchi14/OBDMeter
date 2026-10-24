@@ -25,3 +25,7 @@ actual class PlatformLock actual constructor() {
     actual fun lock() {}
     actual fun unlock() {}
 }
+
+private fun jsTzOffsetMin(ms: Double): Int = js("new Date(ms).getTimezoneOffset()")
+
+actual fun tzOffsetMs(ms: Long): Int = -jsTzOffsetMin(ms.toDouble()) * 60_000

@@ -1,5 +1,7 @@
 package com.obdmeter.ui.gauges
 
+import com.obdmeter.util.format
+
 import com.obdmeter.core.PidDef
 import kotlin.math.abs
 import kotlin.math.floor
@@ -30,7 +32,7 @@ internal data class TickScale(val first: Double, val step: Double, val divisor: 
 
     fun label(v: Double): String {
         val x = v / divisor
-        return if (abs(x - Math.round(x)) < 1e-6) Math.round(x).toString() else "%.1f".format(x)
+        return if (abs(x - com.obdmeter.util.jround(x)) < 1e-6) com.obdmeter.util.jround(x).toString() else "%.1f".format(x)
     }
 
     fun values(max: Double): List<Double> {
@@ -51,7 +53,7 @@ internal data class TickScale(val first: Double, val step: Double, val divisor: 
             val raw = range / 8
             val mag = 10.0.pow(floor(log10(raw)))
             val step = listOf(1.0, 2.0, 2.5, 5.0, 10.0).map { it * mag }.first { it >= raw }
-            val first = Math.ceil(min / step) * step
+            val first = kotlin.math.ceil(min / step) * step
             val divisor = if (max(abs(min), abs(max)) >= 1000 && step >= 500) 1000.0 else 1.0
             return TickScale(first, step, divisor)
         }

@@ -1,5 +1,7 @@
 package com.obdmeter.ui.gauges
 
+import com.obdmeter.util.format
+
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
@@ -31,9 +33,6 @@ import androidx.compose.ui.unit.sp
 import com.obdmeter.data.Monitor
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
 
 /**
  * 変動監視。各項目の値が変わった回数を、選んだ期間 (直近 1 時間〜24 か月) で多い順に並べ、
@@ -81,12 +80,12 @@ internal fun MonitorGauge(
     val tickMs = if (Monitor.WINDOWS[window].first <= 600_000L) 2_000L else 30_000L
     LaunchedEffect(tickMs) { while (true) { delay(tickMs); tick++ } }
     val stats by produceState(emptyList<Monitor.Stat>(), keys, revision, tick, slot) {
-        if (history != null && slot != null) value = history.monitorStats(slot, keys, System.currentTimeMillis())
+        if (history != null && slot != null) value = history.monitorStats(slot, keys, com.obdmeter.util.nowMs())
     }
     val byKey = stats.associateBy { it.key }
     val ordered = Monitor.rank(keys.map { k -> byKey[k] ?: Monitor.Stat(k, null, null, null, emptyList()) }, window)
     val seriesByKey = series.associateBy { it.def.key }
-    val timeFmt = remember { SimpleDateFormat("yyyy/MM/dd HH:mm:ss", Locale.getDefault()) }
+    val timeFmt = remember { com.obdmeter.util.DateFmt("yyyy/MM/dd HH:mm:ss") }
 
     BoxWithConstraints(modifier.padding(4.dp)) {
         val base = (maxHeight.value / (keys.size + 2).coerceAtLeast(3) * 0.45f).coerceIn(9f, 22f)
@@ -145,7 +144,7 @@ internal fun MonitorGauge(
                         textAlign = TextAlign.End, maxLines = 1,
                     )
                     Text(
-                        st.lastChangeAt?.let { timeFmt.format(Date(it)) } ?: if (st.first == null) "記録なし" else "変化なし",
+                        st.lastChangeAt?.let { timeFmt.format(it) } ?: if (st.first == null) "記録なし" else "変化なし",
                         Modifier.weight(1.2f).padding(start = 8.dp), color = GaugeColors.SubText, fontSize = nameSize,
                         maxLines = 1, overflow = TextOverflow.Ellipsis,
                     )

@@ -1,6 +1,5 @@
 package com.obdmeter.ui
 
-import android.content.Intent
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
@@ -25,7 +24,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -39,7 +37,7 @@ fun LogScreen(vm: MainViewModel, onBack: () -> Unit) {
     val lines by vm.log.snapshot.collectAsStateWithLifecycle(initialValue = emptyList())
     var follow by remember { mutableStateOf(true) }
     val listState = rememberLazyListState()
-    val context = LocalContext.current
+    val share = rememberShareText()
 
     LaunchedEffect(lines.size, follow) {
         if (follow && lines.isNotEmpty()) listState.scrollToItem(lines.lastIndex)
@@ -49,14 +47,7 @@ fun LogScreen(vm: MainViewModel, onBack: () -> Unit) {
         TopBar("通信ログ", onBack) {
             Text("自動スクロール", fontSize = 12.sp, color = GaugeColors.SubText)
             Switch(follow, { follow = it }, Modifier.padding(horizontal = 4.dp))
-            IconButton(onClick = {
-                val send = Intent(Intent.ACTION_SEND).apply {
-                    type = "text/plain"
-                    putExtra(Intent.EXTRA_SUBJECT, "OBD Meter 通信ログ")
-                    putExtra(Intent.EXTRA_TEXT, vm.log.asText())
-                }
-                context.startActivity(Intent.createChooser(send, "ログを共有"))
-            }) { Icon(Icons.Default.Share, "共有") }
+            IconButton(onClick = { share("OBD Meter 通信ログ", vm.log.asText()) }) { Icon(Icons.Default.Share, "共有") }
             IconButton(onClick = { vm.log.clear() }) { Icon(Icons.Default.Delete, "クリア") }
         }
         LazyColumn(Modifier.fillMaxSize().padding(horizontal = 8.dp), state = listState) {

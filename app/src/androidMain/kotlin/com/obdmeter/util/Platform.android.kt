@@ -30,3 +30,5 @@ actual class PlatformLock actual constructor() {
     actual fun lock() = l.lock()
     actual fun unlock() = l.unlock()
 }
+
+actual fun tzOffsetMs(ms: Long): Int = java.util.TimeZone.getDefault().getOffset(ms)

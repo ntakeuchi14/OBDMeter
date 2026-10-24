@@ -1,50 +1,38 @@
 package com.obdmeter.ui
 
-import android.app.Application
-import android.net.Uri
-import com.obdmeter.data.imageNames
-import com.obdmeter.data.BackupFiles
-import com.obdmeter.data.BackupLogic
-import com.obdmeter.data.BackupManifest
-import com.obdmeter.data.ImportMode
-import com.obdmeter.data.LoadedBackup
-import kotlinx.coroutines.flow.MutableStateFlow
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
-import androidx.lifecycle.AndroidViewModel
+import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.obdmeter.AppCore
-import com.obdmeter.core.Pids
-import com.obdmeter.data.AppSettings
 import com.obdmeter.core.PidCatalog
+import com.obdmeter.data.AppSettings
+import com.obdmeter.data.BackupLogic
+import com.obdmeter.data.BackupManifest
+import com.obdmeter.data.BackupZip
 import com.obdmeter.data.CustomPid
 import com.obdmeter.data.Dashboard
 import com.obdmeter.data.Defaults
-import com.obdmeter.data.GaugeConfig
-import com.obdmeter.data.GaugeImages
 import com.obdmeter.data.FontEntry
-import com.obdmeter.data.GaugeFonts
+import com.obdmeter.data.GaugeConfig
 import com.obdmeter.data.GaugeStyle
+import com.obdmeter.data.ImportMode
 import com.obdmeter.data.Layout
-import com.obdmeter.data.Repository
+import com.obdmeter.data.LoadedBackup
+import com.obdmeter.data.imageNames
 import com.obdmeter.session.ConnectionState
-import com.obdmeter.session.ConnectionTest
-import com.obdmeter.session.LogBuffer
 import com.obdmeter.session.ObdSession
-import kotlinx.coroutines.flow.SharingStarted
+import com.obdmeter.util.DateFmt
+import com.obdmeter.util.nowMs
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.flow.map
-import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withTimeoutOrNull
+import kotlin.concurrent.Volatile
 
-class MainViewModel(app: Application) : AndroidViewModel(app) {
-
-    private val core = AppCore.get(app)
+class MainViewModel(val core: AppCore) : ViewModel() {
+    private val platform = core.platform
     private val repo = core.repo
     val log = core.log
     private val session = core.session
@@ -78,7 +66,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         // どのメーターからも使われなくなった背景画像を消す
         viewModelScope.launch {
             val used = repo.dashboards.first().flatMap { it.imageNames() }.toSet()
-            runCatching { GaugeImages.cleanup(app, used) }
+            runCatching { platform.cleanupImages(used) }
         }
     }
 
@@ -97,52 +85,26 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     fun clearBackupMessage() { _backupMessage.value = null }
 
-    /**
-     * 保存先を選ぶ画面が無い端末 (車載ナビなど) 用: ダウンロードフォルダ (Download/OBDMeter) に直接書き出す
-     */
-    fun exportBackupToDownloads(name: String) {
-        viewModelScope.launch {
-            val app = getApplication<Application>()
-            val target = runCatching {
-                kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
-                    if (android.os.Build.VERSION.SDK_INT >= 29) {
-                        val values = android.content.ContentValues().apply {
-                            put(android.provider.MediaStore.MediaColumns.DISPLAY_NAME, name)
-                            put(android.provider.MediaStore.MediaColumns.MIME_TYPE, "application/zip")
-                            put(android.provider.MediaStore.MediaColumns.RELATIVE_PATH, "Download/OBDMeter")
-                        }
-                        val uri = app.contentResolver.insert(android.provider.MediaStore.Downloads.EXTERNAL_CONTENT_URI, values)
-                            ?: error("保存先を作れませんでした")
-                        uri to "Download/OBDMeter/$name"
-                    } else {
-                        val dir = app.getExternalFilesDir(android.os.Environment.DIRECTORY_DOWNLOADS) ?: app.filesDir
-                        val f = java.io.File(dir, name)
-                        Uri.fromFile(f) to f.absolutePath
-                    }
-                }
-            }.getOrElse {
-                _backupMessage.value = "エクスポートに失敗しました: ${it.message}"
-                return@launch
-            }
-            exportBackup(target.first, target.second)
-        }
-    }
+    /** バックアップのファイル名の既定 */
+    fun backupFileName(): String = "obdmeter_" + DateFmt("yyyyMMdd_HHmm").format(nowMs()) + ".zip"
 
-    fun exportBackup(uri: Uri, savedAs: String? = null) {
+    /**
+     * 設定をバックアップ zip にして [write] で書き出す。[write] は保存先の説明を返す (なければ null)
+     */
+    fun exportBackup(write: suspend (ByteArray) -> String?) {
         viewModelScope.launch {
             _backupBusy.value = true
             runCatching {
-                val app = getApplication<Application>()
-                val version = runCatching { app.packageManager.getPackageInfo(app.packageName, 0).versionName }.getOrNull()
                 val manifest = BackupManifest(
-                    appVersion = version ?: "",
-                    exportedAt = SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.JAPAN).format(Date()),
+                    appVersion = platform.appVersion,
+                    exportedAt = DateFmt("yyyy-MM-dd HH:mm").format(nowMs()),
                     dashboards = repo.dashboards.first(),
                     customPids = repo.customPids.first(),
                     fonts = repo.fonts.first(),
                     pollIntervalsMs = repo.settings.first().pollIntervalsMs,
                 )
-                val images = BackupFiles.export(app, uri, manifest)
+                val (bytes, images) = BackupZip.build(platform, manifest)
+                val savedAs = write(bytes)
                 "エクスポートしました (ページ ${manifest.dashboards.size}、カスタム PID ${manifest.customPids.size}、" +
                     "画像 $images、フォント ${manifest.fonts.size})" + (savedAs?.let { "\n保存先: $it" } ?: "")
             }.onSuccess { _backupMessage.value = it }
@@ -151,15 +113,18 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    fun loadBackup(uri: Uri) {
+    /** [read] で読んだバックアップ zip を、適用方法の選択待ちにする */
+    fun loadBackup(read: suspend () -> ByteArray) {
         viewModelScope.launch {
             _backupBusy.value = true
-            runCatching { BackupFiles.read(getApplication(), uri) }
+            runCatching { BackupZip.read(read()) }
                 .onSuccess { _pendingImport.value = it }
                 .onFailure { _backupMessage.value = "読み込めませんでした: ${it.message}" }
             _backupBusy.value = false
         }
     }
+
+    fun showMessage(text: String) { _backupMessage.value = text }
 
     fun cancelImport() { _pendingImport.value = null }
 
@@ -169,15 +134,15 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch {
             _backupBusy.value = true
             runCatching {
-                val rename = BackupFiles.saveImages(getApplication(), backup)
+                val rename = BackupZip.saveImages(platform, backup)
                 // フォントはライブラリに追加する (置き換えのときも既存のフォントは残す)
                 val fontRename = fontLock.withLock {
                     val library = repo.fonts.first()
-                    val (map, added) = BackupFiles.saveFonts(getApplication(), backup, library)
+                    val (map, added) = BackupZip.saveFonts(platform, backup, library)
                     if (added.isNotEmpty()) repo.saveFonts(library + added)
                     map
                 }
-                var seq = System.currentTimeMillis()
+                var seq = nowMs()
                 // 編集中の保存と競合しないよう、両方のロックを取ってから書く
                 editLock.withLock {
                     customLock.withLock {
@@ -216,12 +181,14 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     private val fontLock = Mutex()
 
     /** フォントファイルを取り込み、ライブラリに追加する。結果 (id かエラー) を [onResult] に返す */
-    fun importFont(uri: Uri, onResult: (Result<FontEntry>) -> Unit) {
+    fun importFont(read: suspend () -> Pair<ByteArray, String>, onResult: (Result<FontEntry>) -> Unit) {
         viewModelScope.launch {
             val r = runCatching {
+                val (bytes, displayName) = read()
+                if (bytes.size > 40 * 1024 * 1024) throw IllegalArgumentException("フォントファイルが大きすぎます (40MB まで)")
                 fontLock.withLock {
                     val current = repo.fonts.first()
-                    val entry = GaugeFonts.import(getApplication(), uri, current)
+                    val entry = platform.saveFont(bytes, displayName, current)
                     if (current.none { it.id == entry.id }) repo.saveFonts(current + entry)
                     entry
                 }
@@ -243,7 +210,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch {
             fontLock.withLock {
                 val list = repo.fonts.first()
-                list.firstOrNull { it.id == id }?.let { GaugeFonts.delete(getApplication(), it) }
+                list.firstOrNull { it.id == id }?.let { platform.deleteFont(it) }
                 repo.saveFonts(list.filterNot { it.id == id })
             }
         }
@@ -278,7 +245,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             session.disconnectAndWait()
             val s = repo.settings.first()
             runCatching {
-                ConnectionTest(getApplication(), log).run(s) { line -> _testLines.value = _testLines.value.orEmpty() + line }
+                platform.connectionTest(s, log) { line -> _testLines.value = _testLines.value.orEmpty() + line }
             }.onFailure { _testLines.value = _testLines.value.orEmpty() + "✗ エラー: ${it.message}" }
             _testRunning.value = false
         }
@@ -297,7 +264,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             session.disconnectAndWait()
             val s = repo.settings.first()
             runCatching {
-                ConnectionTest(getApplication(), log).searchBmw(s, targets, ranges) { line -> _testLines.value = _testLines.value.orEmpty() + line }
+                platform.bmwSearch(s, log, targets, ranges) { line -> _testLines.value = _testLines.value.orEmpty() + line }
             }.onFailure { e ->
                 _testLines.value = _testLines.value.orEmpty() +
                     (if (e is kotlinx.coroutines.CancellationException) "中止しました" else "✗ エラー: ${e.message}")
@@ -427,7 +394,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         editDashboards { list -> list.map { if (it.id == id) transform(it) else it } }
 
     fun addDashboard(name: String): Long {
-        val id = System.currentTimeMillis()
+        val id = nowMs()
         editDashboards { it + Dashboard(id = id, name = name) }
         return id
     }
@@ -451,7 +418,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     /** 空いている場所にメーターを追加し、その id を返す */
     fun addGauge(dashboardId: Long, pidKey: String, style: GaugeStyle): Long {
-        val gaugeId = System.currentTimeMillis()
+        val gaugeId = nowMs()
         editDashboard(dashboardId) { d ->
             val w = (if (style == GaugeStyle.ANALOG) 8 else 6) * Layout.SCALE
             val h = (if (style == GaugeStyle.ANALOG) 6 else 3) * Layout.SCALE
@@ -505,7 +472,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
      */
     fun pasteGauge(dashboardId: Long) {
         val src = _clipboard.value ?: return
-        val base = System.currentTimeMillis()
+        val base = nowMs()
         val group = if (src.size >= 2) base else null
         editDashboard(dashboardId) { d ->
             val (dx, dy) = Layout.pasteOffset(d.gauges, src)
@@ -525,7 +492,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     /** メーターをまとめて 1 つのグループにする */
     fun groupGauges(dashboardId: Long, ids: Set<Long>) {
         if (ids.size < 2) return
-        val group = System.currentTimeMillis()
+        val group = nowMs()
         editDashboard(dashboardId) { d -> d.copy(gauges = d.gauges.map { if (it.id in ids) it.copy(layoutGroup = group) else it }) }
     }
 

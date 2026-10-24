@@ -31,6 +31,7 @@ import androidx.savedstate.SavedStateRegistryController
 import androidx.savedstate.SavedStateRegistryOwner
 import androidx.savedstate.setViewTreeSavedStateRegistryOwner
 import com.obdmeter.AppCore
+import com.obdmeter.get
 import com.obdmeter.R
 import com.obdmeter.data.AppSettings
 import com.obdmeter.data.Dashboard

@@ -51,7 +51,7 @@ import com.obdmeter.data.GaugeStyle
 import com.obdmeter.data.Layout
 import com.obdmeter.ui.gauges.GaugeColors
 
-internal fun fmt(v: Double): String = if (v == Math.floor(v)) v.toLong().toString() else v.toString()
+internal fun fmt(v: Double): String = if (v == kotlin.math.floor(v)) v.toLong().toString() else v.toString()
 
 
 /** 数値入力。空欄は null。入力途中 ("-" や "1.") の間は値を確定しない */

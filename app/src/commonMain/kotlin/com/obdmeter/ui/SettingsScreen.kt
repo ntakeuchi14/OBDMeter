@@ -1,21 +1,13 @@
 package com.obdmeter.ui
 
-import android.widget.Toast
-import android.Manifest
-import android.content.Intent
-import android.content.pm.PackageManager
-import android.os.Build
+import com.obdmeter.util.format
+
 import androidx.compose.material3.Slider
-import androidx.lifecycle.Lifecycle
-import androidx.lifecycle.compose.LifecycleEventEffect
-import com.obdmeter.overlay.FloatController
 import kotlin.math.roundToInt
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontFamily
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.size
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
@@ -23,9 +15,6 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.TextButton
 import androidx.compose.foundation.horizontalScroll
 import com.obdmeter.data.ImportMode
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -52,7 +41,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.unit.dp
@@ -99,6 +87,7 @@ fun SettingsScreen(vm: MainViewModel, onBack: () -> Unit, onOpenCustomPids: () -
             Section("項目ごとの取得周期")
             PollIntervalSection(vm, s)
 
+            if (!isWebApp) {
             Section("接続方式")
             ConnectionType.entries.forEach { t ->
                 RadioRow(t.label, null, s.connectionType == t) { vm.updateSettings { it.copy(connectionType = t) } }
@@ -171,12 +160,13 @@ fun SettingsScreen(vm: MainViewModel, onBack: () -> Unit, onOpenCustomPids: () -
 
             Section("接続テスト")
             ConnectionTestSection(vm)
+            }
 
             Section("バックアップ")
             BackupSection(vm)
 
             Section("その他")
-            SwitchRow(
+            if (!isWebApp) SwitchRow(
                 "iDrive・方向キーでページを切り替え",
                 "車載ナビのダイヤルの回転・上下左右・PageUp/Down でダッシュボードのページを切り替えます。" +
                     "効かないときは、操作してから「ログ」画面の「入力: …」を送ってください",
@@ -187,6 +177,7 @@ fun SettingsScreen(vm: MainViewModel, onBack: () -> Unit, onOpenCustomPids: () -
                 "OFF のときは、接続状態や編集・設定のボタンを隠してメーターを全画面に表示し、右上のボタンで呼び出します",
                 s.alwaysShowToolbar,
             ) { v -> vm.updateSettings { it.copy(alwaysShowToolbar = v) } }
+            if (!isWebApp) {
             SwitchRow(
                 "起動時に自動接続",
                 if (s.floatOnLeave) "フロート表示が ON のため、常に自動接続します"
@@ -224,11 +215,9 @@ fun SettingsScreen(vm: MainViewModel, onBack: () -> Unit, onOpenCustomPids: () -
             SwitchRow("接続中は画面を消灯しない", null, s.keepScreenOn) { v ->
                 vm.updateSettings { it.copy(keepScreenOn = v) }
             }
-            Spacer(Modifier.height(16.dp))
-            val context = LocalContext.current
-            val version = remember {
-                runCatching { context.packageManager.getPackageInfo(context.packageName, 0).versionName }.getOrNull() ?: "?"
             }
+            Spacer(Modifier.height(16.dp))
+            val version = remember { vm.core.platform.appVersion.ifBlank { "?" } }
             Text("バージョン $version", color = GaugeColors.SubText, fontSize = 12.sp)
             Spacer(Modifier.height(24.dp))
         }
@@ -299,11 +288,7 @@ private fun parseSearchRanges(text: String): List<Pair<Int, IntRange>> =
  */
 @Composable
 private fun FloatSection(vm: MainViewModel, s: AppSettings) {
-    val context = LocalContext.current
-    var canDraw by remember { mutableStateOf(FloatController.canDraw(context)) }
-    // 許可画面から戻ってきたら確認し直す
-    LifecycleEventEffect(Lifecycle.Event.ON_RESUME) { canDraw = FloatController.canDraw(context) }
-    val notifyLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { }
+    val permission = rememberFloatPermission()
 
     SwitchRow(
         "メーターをフロート表示",
@@ -312,21 +297,14 @@ private fun FloatSection(vm: MainViewModel, s: AppSettings) {
         s.floatOnLeave,
     ) { v ->
         vm.updateSettings { it.copy(floatOnLeave = v, autoConnect = if (v) true else it.autoConnect) }
-        if (v) {
-            if (Build.VERSION.SDK_INT >= 33 &&
-                context.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
-            ) notifyLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
-            if (!FloatController.canDraw(context)) {
-                runCatching { context.startActivity(FloatController.permissionIntent(context)) }
-            }
-        }
+        if (v) permission.request()
     }
-    if (s.floatOnLeave && !canDraw) {
+    if (s.floatOnLeave && !permission.canDraw) {
         Text(
             "「ほかのアプリの上に重ねて表示」が許可されていないため、フロート表示できません",
             color = GaugeColors.Warn, fontSize = 12.sp,
         )
-        OutlinedButton(onClick = { runCatching { context.startActivity(FloatController.permissionIntent(context)) } }) {
+        OutlinedButton(onClick = permission.openSettings) {
             Text("許可の画面を開く")
         }
     }
@@ -371,16 +349,14 @@ private fun FloatSlider(label: String, value: Float, range: ClosedFloatingPointR
  */
 @Composable
 private fun BackupSection(vm: MainViewModel) {
-    val context = LocalContext.current
+    val toast = rememberToast()
     val busy by vm.backupBusy.collectAsStateWithLifecycle()
     val message by vm.backupMessage.collectAsStateWithLifecycle()
     val pending by vm.pendingImport.collectAsStateWithLifecycle()
 
-    val exportLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/zip")) { uri ->
-        if (uri != null) vm.exportBackup(uri)
-    }
-    val importLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
-        if (uri != null) vm.loadBackup(uri)
+    val exporter = rememberFileSaver("application/zip") { target -> vm.exportBackup(target.write) }
+    val importer = rememberFileOpener(listOf("application/zip", "application/x-zip-compressed", "application/octet-stream")) { f ->
+        vm.loadBackup(f.read)
     }
 
     Text(
@@ -392,20 +368,15 @@ private fun BackupSection(vm: MainViewModel) {
         FilledTonalButton(
             enabled = !busy,
             onClick = {
-                val stamp = SimpleDateFormat("yyyyMMdd_HHmm", Locale.JAPAN).format(Date())
-                val name = "OBDMeter_$stamp.zip"
-                // 保存先を選ぶ画面が無い端末 (車載ナビなど) ではダウンロードフォルダに直接保存する
-                if (runCatching { exportLauncher.launch(name) }.isFailure) vm.exportBackupToDownloads(name)
+                val stamp = com.obdmeter.util.DateFmt("yyyyMMdd_HHmm").format(com.obdmeter.util.nowMs())
+                exporter("OBDMeter_$stamp.zip")
             },
         ) { Text("エクスポート") }
         Spacer(Modifier.width(8.dp))
         OutlinedButton(
             enabled = !busy,
             onClick = {
-                val ok = runCatching {
-                    importLauncher.launch(arrayOf("application/zip", "application/x-zip-compressed", "application/octet-stream"))
-                }.isSuccess
-                if (!ok) Toast.makeText(context, "この端末ではファイルを選ぶ画面を開けません", Toast.LENGTH_LONG).show()
+                if (!importer()) toast("この端末ではファイルを選ぶ画面を開けません")
             },
         ) { Text("インポート") }
         if (busy) {
@@ -458,7 +429,7 @@ private fun BackupSection(vm: MainViewModel) {
 private fun ConnectionTestSection(vm: MainViewModel) {
     val lines by vm.testLines.collectAsStateWithLifecycle()
     val running by vm.testRunning.collectAsStateWithLifecycle()
-    val context = LocalContext.current
+    val share = rememberShareText()
 
     Text(
         "アダプター・ケーブル・車両のどこで止まっているかを調べます。接続中の場合はいったん切断します。" +
@@ -524,12 +495,7 @@ private fun ConnectionTestSection(vm: MainViewModel) {
             confirmButton = {
                 Row {
                     TextButton(enabled = !running, onClick = {
-                        val send = Intent(Intent.ACTION_SEND).apply {
-                            type = "text/plain"
-                            putExtra(Intent.EXTRA_SUBJECT, "OBD Meter 接続テスト")
-                            putExtra(Intent.EXTRA_TEXT, list.joinToString("\n"))
-                        }
-                        context.startActivity(Intent.createChooser(send, "結果を共有"))
+                        share("OBD Meter 接続テスト", list.joinToString("\n"))
                     }) { Text("共有") }
                     if (running) TextButton(onClick = vm::stopTest) { Text("中止") }
                     TextButton(enabled = !running, onClick = vm::closeConnectionTest) { Text("閉じる") }

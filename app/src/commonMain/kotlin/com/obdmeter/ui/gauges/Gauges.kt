@@ -1,5 +1,8 @@
 package com.obdmeter.ui.gauges
 
+import com.obdmeter.ui.drawSoftShadow
+import com.obdmeter.util.format
+
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.animateFloatAsState
@@ -40,7 +43,6 @@ import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.withTransform
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.TextMeasurer
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.drawText
@@ -53,8 +55,6 @@ import androidx.compose.ui.unit.dp
 import com.obdmeter.core.Condition
 import com.obdmeter.core.PidDef
 import com.obdmeter.data.FontEntry
-import com.obdmeter.data.GaugeFonts
-import com.obdmeter.data.GaugeImages
 import com.obdmeter.data.GaugeStyle
 import com.obdmeter.data.RingStyle
 import kotlinx.coroutines.delay
@@ -214,11 +214,9 @@ class GaugeFontSet(val value: FontFamily, val label: FontFamily?)
 @Composable
 fun rememberGaugeFonts(look: GaugeLook): GaugeFontSet {
     val lib = LocalFontLibrary.current
-    val context = LocalContext.current
-    return remember(look.valueFont, look.labelFont, lib) {
-        fun resolve(id: String?) = id?.let { lib[it] }?.let { GaugeFonts.family(context, it) }
-        GaugeFontSet(resolve(look.valueFont) ?: FontFamily.Monospace, resolve(look.labelFont))
-    }
+    val value = com.obdmeter.ui.rememberFontFamily(look.valueFont?.let { lib[it] })
+    val label = com.obdmeter.ui.rememberFontFamily(look.labelFont?.let { lib[it] })
+    return remember(value, label) { GaugeFontSet(value ?: FontFamily.Monospace, label) }
 }
 
 /**
@@ -331,12 +329,7 @@ fun GaugeCard(
 }
 
 @Composable
-fun rememberGaugeImage(name: String?): ImageBitmap? {
-    val context = LocalContext.current
-    return produceState<ImageBitmap?>(null, name) {
-        value = name?.let { GaugeImages.load(context, it) }
-    }.value
-}
+fun rememberGaugeImage(name: String?): ImageBitmap? = com.obdmeter.ui.rememberGaugeImage(name)
 
 
 /**
@@ -361,7 +354,7 @@ private fun rememberDisplayValue(def: PidDef, value: Double?, smoothing: Float =
             } else {
                 ema = if (ema.isNaN()) x else ema + (x - ema) * alpha
                 val step = def.displayStep
-                shown = if (step > 0) Math.round(ema / step) * step else ema
+                shown = if (step > 0) com.obdmeter.util.jround(ema / step) * step else ema
             }
             delay(interval)
         }
@@ -436,7 +429,7 @@ fun AnalogGauge(
         val arcTopLeft = Offset(center.x - arcR, center.y - arcR)
         val arcSize = Size(arcR * 2, arcR * 2)
         // 端を丸くするときは、丸みの分だけ角度を内側に詰めて全体の範囲を変えない
-        val capInset = if (look.arcRoundCap && arcR > 0f) Math.toDegrees((stroke / 2 / arcR).toDouble()).toFloat()
+        val capInset = if (look.arcRoundCap && arcR > 0f) com.obdmeter.util.toDegrees((stroke / 2 / arcR).toDouble()).toFloat()
             .coerceAtMost(abs(look.sweep) / 4) else 0f
         // 反時計回りのときは振れ幅が負 (角度が減る向き)
         val dir = if (look.sweep < 0f) -1f else 1f
@@ -491,7 +484,7 @@ fun AnalogGauge(
                 arcTopLeft, arcSize, style = Stroke(stroke, cap = cap))
             // 弧の先の丸い点 (ピーク値を出すときは、点をピーク値の位置に置いて印にする)
             if (look.arcTipDot && peak == null) {
-                val ta = Math.toRadians((start + sweep * f).toDouble())
+                val ta = com.obdmeter.util.toRadians((start + sweep * f).toDouble())
                 val tp = Offset(center.x + arcR * cos(ta).toFloat(), center.y + arcR * sin(ta).toFloat())
                 drawCircle(look.arcTipColor, stroke * 0.32f, tp)
             }
@@ -502,7 +495,7 @@ fun AnalogGauge(
         val labelSize = (d * 0.07f * look.labelSize).toSp()
         val majors = scale.values(def.max)
         for ((i, t) in majors.withIndex()) {
-            val a = Math.toRadians((start + sweep * fraction(def, t)).toDouble())
+            val a = com.obdmeter.util.toRadians((start + sweep * fraction(def, t)).toDouble())
             if (look.showTicks) drawLine(look.tickColor,
                 Offset(center.x + (tickOuter - majorLen) * cos(a).toFloat(), center.y + (tickOuter - majorLen) * sin(a).toFloat()),
                 Offset(center.x + tickOuter * cos(a).toFloat(), center.y + tickOuter * sin(a).toFloat()),
@@ -518,7 +511,7 @@ fun AnalogGauge(
                 val next = majors[i + 1]
                 for (k in 1..look.minorDivisions) {
                     val tv = t + (next - t) * k / (look.minorDivisions + 1)
-                    val b = Math.toRadians((start + sweep * fraction(def, tv)).toDouble())
+                    val b = com.obdmeter.util.toRadians((start + sweep * fraction(def, tv)).toDouble())
                     drawLine(look.tickColor,
                         Offset(center.x + (tickOuter - minorLen) * cos(b).toFloat(), center.y + (tickOuter - minorLen) * sin(b).toFloat()),
                         Offset(center.x + tickOuter * cos(b).toFloat(), center.y + tickOuter * sin(b).toFloat()),
@@ -529,13 +522,13 @@ fun AnalogGauge(
 
         // 弧の先の丸い点を付けるときは、その点をピーク値の印にする (弧の上、ピーク値の位置)
         if (peak != null && look.arcTipDot && stroke > 0f) {
-            val pa = Math.toRadians((start + sweep * fraction(def, peak)).toDouble())
+            val pa = com.obdmeter.util.toRadians((start + sweep * fraction(def, peak)).toDouble())
             val pp = Offset(center.x + arcR * cos(pa).toFloat(), center.y + arcR * sin(pa).toFloat())
             drawCircle(look.peakColor, stroke * 0.32f, pp)
         }
         // ピーク値の印 (目盛りの外側から内側に向いた三角形)
         if (peak != null && !(look.arcTipDot && stroke > 0f)) {
-            val pa = Math.toRadians((start + sweep * fraction(def, peak)).toDouble())
+            val pa = com.obdmeter.util.toRadians((start + sweep * fraction(def, peak)).toDouble())
             val ca = cos(pa).toFloat()
             val sa = sin(pa).toFloat()
             val tip = gaugeR - stroke - d * 0.01f
@@ -592,7 +585,7 @@ fun AnalogGauge(
         // 針 (根元が太く先が細い形) と中心のノブ。数値などより手前に描く
         if (layer != GaugeLayer.BODY) {
         if (value != null && look.showNeedle) {
-            val a = Math.toRadians((start + sweep * f).toDouble())
+            val a = com.obdmeter.util.toRadians((start + sweep * f).toDouble())
             val ca = cos(a).toFloat()
             val sa = sin(a).toFloat()
             val len = tickOuter * look.needleLength
@@ -742,7 +735,7 @@ private fun DrawScope.drawBar(
     var lineLen = w
     if (!arc) {
         val angle = look.barAngle
-        val rad = Math.toRadians(angle.toDouble())
+        val rad = com.obdmeter.util.toRadians(angle.toDouble())
         val pivot = if (angle == 0f) Offset(w / 2, h - thick / 2 - h * 0.08f) else Offset(w / 2, h / 2)
         lineLen = if (angle == 0f) w else {
             val c = abs(cos(rad)).toFloat()
@@ -775,7 +768,7 @@ private fun DrawScope.drawBar(
         var minX = Float.MAX_VALUE; var maxX = -Float.MAX_VALUE; var minY = Float.MAX_VALUE; var maxY = -Float.MAX_VALUE
         var k = 0
         while (k <= 90) {
-            val a = Math.toRadians((start + sweep * k / 90f).toDouble())
+            val a = com.obdmeter.util.toRadians((start + sweep * k / 90f).toDouble())
             val x = cos(a).toFloat(); val y = sin(a).toFloat()
             minX = min(minX, x); maxX = max(maxX, x); minY = min(minY, y); maxY = max(maxY, y)
             k++
@@ -788,7 +781,7 @@ private fun DrawScope.drawBar(
         val cy = h / 2 - (minY + maxY) / 2 * r
         val rIn = r - thick / 2
         pointAt = { p, d ->
-            val a = Math.toRadians((start + sweep * p).toDouble())
+            val a = com.obdmeter.util.toRadians((start + sweep * p).toDouble())
             Offset(cx + cos(a).toFloat() * (rIn + d), cy + sin(a).toFloat() * (rIn + d))
         }
         bandPath = { p0, p1, fixed ->
@@ -1089,23 +1082,6 @@ internal fun DrawScope.drawPanel(
     }
 }
 
-/**
- * ぼかした影 ([path] を ([dx], [dy]) ずらして、[blur] px でぼかす)。針やメーター自体の影に使う
- */
-internal fun DrawScope.drawSoftShadow(path: Path, dx: Float, dy: Float, blur: Float, alpha: Float) {
-    if (alpha <= 0f) return
-    drawIntoCanvas { canvas ->
-        val paint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
-            color = android.graphics.Color.argb((alpha.coerceIn(0f, 1f) * 255).toInt(), 0, 0, 0)
-            if (blur > 0.5f) maskFilter = android.graphics.BlurMaskFilter(blur, android.graphics.BlurMaskFilter.Blur.NORMAL)
-        }
-        val ap = path.asAndroidPath()
-        canvas.nativeCanvas.save()
-        canvas.nativeCanvas.translate(dx, dy)
-        canvas.nativeCanvas.drawPath(ap, paint)
-        canvas.nativeCanvas.restore()
-    }
-}
 
 /**
  * 外周リング。

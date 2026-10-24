@@ -24,12 +24,12 @@ import kotlin.math.sqrt
  * 端末のセンサーの値 ([DeviceItems] の項目)。使っている項目のセンサーだけを動かす (電池の消耗を抑える)。
  * 値は [values] に 20 回/秒まで出す
  */
-class DeviceSensors(context: Context, private val scope: CoroutineScope) : SensorEventListener {
+class DeviceSensors(context: Context, private val scope: CoroutineScope) : SensorEventListener, com.obdmeter.DeviceSensorSource {
     private val app = context.applicationContext
     private val sm = app.getSystemService(Context.SENSOR_SERVICE) as SensorManager
 
     private val _values = MutableStateFlow<Map<String, Double>>(emptyMap())
-    val values: StateFlow<Map<String, Double>> = _values
+    override val values: StateFlow<Map<String, Double>> = _values
 
     private val latest = HashMap<String, Double>()
     private var active: Set<String> = emptySet()
@@ -63,7 +63,7 @@ class DeviceSensors(context: Context, private val scope: CoroutineScope) : Senso
 
     /** 使っている項目を伝える。空にすると全部止める */
     @Synchronized
-    fun setActive(keys: Set<String>) {
+    override fun setActive(keys: Set<String>) {
         val want = keys.filter { it.startsWith("DEV_") }.toSet()
         if (want == active) return
         active = want
