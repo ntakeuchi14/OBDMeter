@@ -9,22 +9,9 @@ import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import kotlinx.serialization.Serializable
 import java.io.File
 import java.security.MessageDigest
 import java.util.UUID
-
-/**
- * 取り込んだフォント 1 つ。アプリ内に保存し、どのメーターからでも [id] で参照する。
- * @param sha ファイル内容のハッシュ。同じフォントを二重に取り込まないために使う
- */
-@Serializable
-data class FontEntry(
-    val id: String,
-    val name: String,
-    val file: String,
-    val sha: String = "",
-)
 
 /**
  * フォントファイル (.ttf / .otf) の保存と読み込み。

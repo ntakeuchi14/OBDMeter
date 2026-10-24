@@ -1,5 +1,7 @@
 package com.obdmeter.core
 
+import com.obdmeter.util.format
+
 /**
  * プロトコルを使って、表示中の項目を 1 サイクル分読み出す。
  *
@@ -12,7 +14,7 @@ class ObdReader(
     private val protocol: ObdProtocol,
     private val logger: CommLogger = CommLogger.NONE,
     /** 現在時刻 (ミリ秒)。テストで差し替える */
-    private val clock: () -> Long = System::currentTimeMillis,
+    private val clock: () -> Long = { com.obdmeter.util.nowMs() },
 ) {
     /** 車両が対応している Mode 01 PID。取得できなかった場合は null (= 全部試す)。 */
     var supported: Set<Int>? = null

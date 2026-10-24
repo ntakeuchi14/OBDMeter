@@ -493,7 +493,7 @@ object Layout {
     val GRID_STEPS = listOf(1 to "1/4 マス", 2 to "1/2 マス", 4 to "1 マス", 8 to "2 マス")
 
     /** [v] を [step] の倍数に丸める */
-    fun snap(v: Int, step: Int): Int = if (step <= 1) v else Math.round(v.toDouble() / step).toInt() * step
+    fun snap(v: Int, step: Int): Int = if (step <= 1) v else kotlin.math.floor(v.toDouble() / step + 0.5).toInt() * step
 
     /** 幅の範囲 (ページの 2 倍まで) */
     val widthRange: IntRange get() = MIN_SIZE..COLS * 2

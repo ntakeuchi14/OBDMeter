@@ -78,7 +78,7 @@ class Expression private constructor(
                 "abs" -> kotlin.math.abs(v[0])
                 "min" -> v.min()
                 "max" -> v.max()
-                "round" -> Math.round(v[0]).toDouble()
+                "round" -> kotlin.math.floor(v[0] + 0.5)
                 "floor" -> kotlin.math.floor(v[0])
                 "signed" -> { val x = v[0].toInt() and 0xFF; (if (x >= 0x80) x - 0x100 else x).toDouble() }
                 "signed16" -> { val x = v[0].toInt() and 0xFFFF; (if (x >= 0x8000) x - 0x10000 else x).toDouble() }

@@ -11,7 +11,7 @@ import kotlin.math.sin
  * 走行パターン: 加速 → 巡航 → 減速 → 停車 を繰り返す。
  */
 class SimulatorProtocol(
-    private val clock: () -> Long = System::currentTimeMillis,
+    private val clock: () -> Long = { com.obdmeter.util.nowMs() },
     private val responseDelayMs: Long = 15,
 ) : ObdProtocol {
 
@@ -53,7 +53,7 @@ class SimulatorProtocol(
     }
 
     override fun readPid(pid: Int): IntArray? {
-        if (responseDelayMs > 0) Thread.sleep(responseDelayMs)
+        if (responseDelayMs > 0) com.obdmeter.util.sleepMs(responseDelayMs)
         val s = state()
         val t = (clock() - start) / 1000.0
         coolant = min(92.0, coolant + 0.05)
@@ -99,7 +99,7 @@ class SimulatorProtocol(
      * BMW の測定値 [id] の生の値。走行パターンに合わせた値を返す (主な項目)。その他は項目の範囲の中でゆっくり変える
      */
     private fun blockRaw(id: Int, size: Int, s: State, t: Double): Long {
-        fun phys(v: Double, mul: Double, add: Double = 0.0) = Math.round((v - add) / mul)
+        fun phys(v: Double, mul: Double, add: Double = 0.0) = kotlin.math.floor((v - add) / mul + 0.5).toLong()
         return when (id) {
             0x4807 -> phys(s.rpm, 1.0)                                  // 回転数
             0x581F -> phys(coolant, 0.75, -48.0)                         // 水温
@@ -120,7 +120,7 @@ class SimulatorProtocol(
                 val a = (runCatching { d.decode(one) }.getOrNull() ?: return 0) - v0
                 if (a == 0.0) return 0
                 val target = d.min + (d.max - d.min) * (0.5 + 0.15 * sin(t * 0.25 + id % 17))
-                Math.round((target - v0) / a)
+                kotlin.math.floor((target - v0) / a + 0.5).toLong()
             }
         }
     }
@@ -140,7 +140,7 @@ class SimulatorProtocol(
      */
     override fun query(request: PidRequest): IntArray? {
         if (request.mode == 0x01 && request.pid.size == 1) return readPid(request.pid[0])
-        if (responseDelayMs > 0) Thread.sleep(responseDelayMs)
+        if (responseDelayMs > 0) com.obdmeter.util.sleepMs(responseDelayMs)
         val t = (clock() - start) / 1000.0
         if (request.mode == 0x21 && request.setup.isNotEmpty()) {
             val def = request.setup.last()

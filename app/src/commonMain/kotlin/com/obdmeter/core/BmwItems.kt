@@ -1,5 +1,7 @@
 package com.obdmeter.core
 
+import com.obdmeter.util.format
+
 /**
  * BMW (MSD80/81, N54) 固有の項目。
  * - 測定値 (BMW_BLOCK): 測定値ブロック (2C F0 …) に登録して 21 F0 でまとめて読む

@@ -1,0 +1,43 @@
+name: Web Build
+
+on:
+  push:
+    branches: [ main, web ]
+  workflow_dispatch:
+
+permissions:
+  contents: write   # gh-pages ブランチへ公開するため
+
+jobs:
+  web:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: Build web app (WebAssembly)
+        run: |
+          chmod +x gradlew
+          set -o pipefail
+          ./gradlew --no-daemon :app:wasmJsBrowserDistribution 2>&1 | tee build.log
+
+      - name: Report compile errors
+        if: failure()
+        run: |
+          msg=$( (grep -E "^e: " build.log; grep -A6 "What went wrong" build.log) | sed -e "s#file://$PWD/##" | head -60 \
+            | sed -e 's/%/%25/g' | awk '{printf "%s%%0A", $0}')
+          echo "::error title=Build errors::${msg}"
+
+      - name: Publish to GitHub Pages (gh-pages branch)
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: app/build/dist/wasmJs/productionExecutable
+          force_orphan: true

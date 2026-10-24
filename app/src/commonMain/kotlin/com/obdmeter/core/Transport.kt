@@ -1,5 +1,7 @@
 package com.obdmeter.core
 
+import com.obdmeter.util.format
+
 /**
  * アダプターとのバイト列通信を抽象化したもの。
  * USB / Wi-Fi など物理層の違いはここに閉じ込め、プロトコル層は同期 (ブロッキング) で扱う。

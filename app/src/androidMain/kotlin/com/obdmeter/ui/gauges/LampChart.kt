@@ -645,7 +645,7 @@ internal fun ChartCsvButtons(history: HistoryStore, slot: String, keys: List<Str
         if (uri == null) return@rememberLauncherForActivityResult
         scope.launch {
             val msg = runCatching {
-                val n = context.contentResolver.openOutputStream(uri)?.use { history.exportCsv(slot, keys, it) }
+                val n = context.contentResolver.openOutputStream(uri)?.use { val (n, t) = history.exportCsvText(slot, keys); it.write(t.toByteArray(Charsets.UTF_8)); n }
                     ?: error("ファイルを開けませんでした")
                 "$n 件を書き出しました"
             }.getOrElse { "書き出しに失敗しました: ${it.message}" }
@@ -656,7 +656,7 @@ internal fun ChartCsvButtons(history: HistoryStore, slot: String, keys: List<Str
         if (uri == null) return@rememberLauncherForActivityResult
         scope.launch {
             val msg = runCatching {
-                val (ok, bad) = context.contentResolver.openInputStream(uri)?.use { history.importCsv(slot, it) }
+                val (ok, bad) = context.contentResolver.openInputStream(uri)?.use { history.importCsvText(slot, it.readBytes().toString(Charsets.UTF_8)) }
                     ?: error("ファイルを開けませんでした")
                 "$ok 件を読み込みました" + if (bad > 0) " (読めない行 $bad 件)" else ""
             }.getOrElse { "読み込みに失敗しました: ${it.message}" }
@@ -703,12 +703,12 @@ private suspend fun exportToDownloads(
         }
         val uri = context.contentResolver.insert(android.provider.MediaStore.Downloads.EXTERNAL_CONTENT_URI, values)
             ?: error("保存先を作れませんでした")
-        val n = context.contentResolver.openOutputStream(uri)?.use { history.exportCsv(slot, keys, it) } ?: error("ファイルを開けませんでした")
+        val n = context.contentResolver.openOutputStream(uri)?.use { val (n, t) = history.exportCsvText(slot, keys); it.write(t.toByteArray(Charsets.UTF_8)); n } ?: error("ファイルを開けませんでした")
         n to "Download/OBDMeter/$name"
     } else {
         val dir = context.getExternalFilesDir(android.os.Environment.DIRECTORY_DOWNLOADS) ?: context.filesDir
         val f = java.io.File(dir, name)
-        val n = f.outputStream().use { history.exportCsv(slot, keys, it) }
+        val n = f.outputStream().use { val (c, t) = history.exportCsvText(slot, keys); it.write(t.toByteArray(Charsets.UTF_8)); c }
         n to f.absolutePath
     }
 }

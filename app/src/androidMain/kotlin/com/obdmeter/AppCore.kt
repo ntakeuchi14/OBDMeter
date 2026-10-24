@@ -41,7 +41,7 @@ class AppCore private constructor(context: Context) {
     val log = LogBuffer()
     val session = ObdSession(app, scope, log)
     /** 折れ線グラフ用の値の記録 */
-    val history = HistoryStore(app, scope)
+    val history: com.obdmeter.data.HistoryStore = com.obdmeter.data.SqliteHistoryStore(app, scope)
     /** 折れ線グラフの項目の記録のしかた (間隔・変化したときだけか) */
     @Volatile private var recordRules: Map<ReadPlan.RecordTarget, ReadPlan.RecordRule> = emptyMap()
     /** 端末のセンサー (傾き・加速度など。テスト用の項目) */

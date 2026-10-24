@@ -52,7 +52,7 @@ object DeviceItems {
     fun testSignal(key: String, t: Long, periodMs: Long = 10_000L): Double? {
         val phase = (t % periodMs).toDouble() / periodMs
         return when (key) {
-            SINE -> 50.0 + 50.0 * kotlin.math.sin(phase * 2 * Math.PI)
+            SINE -> 50.0 + 50.0 * kotlin.math.sin(phase * 2 * kotlin.math.PI)
             SAW -> phase * 100.0
             else -> null
         }
@@ -64,9 +64,9 @@ object DeviceItems {
      * ([tiltFromGravity] と同じ向き)
      */
     fun orientation(r: FloatArray): Triple<Double, Double, Double> {
-        val azimuth = Math.toDegrees(kotlin.math.atan2(r[1].toDouble(), r[4].toDouble()))
-        val pitch = Math.toDegrees(kotlin.math.asin(r[7].toDouble().coerceIn(-1.0, 1.0)))
-        val roll = Math.toDegrees(kotlin.math.atan2((-r[6]).toDouble(), r[8].toDouble()))
+        val azimuth = deg(kotlin.math.atan2(r[1].toDouble(), r[4].toDouble()))
+        val pitch = deg(kotlin.math.asin(r[7].toDouble().coerceIn(-1.0, 1.0)))
+        val roll = deg(kotlin.math.atan2((-r[6]).toDouble(), r[8].toDouble()))
         return Triple(pitch, roll, (azimuth + 360.0) % 360.0)
     }
 
@@ -75,8 +75,10 @@ object DeviceItems {
      * 前後は画面の上側を持ち上げるとプラス、左右は右側を下げるとプラス
      */
     fun tiltFromGravity(x: Double, y: Double, z: Double): Pair<Double, Double> {
-        val pitch = Math.toDegrees(kotlin.math.atan2(y, kotlin.math.sqrt(x * x + z * z)))
-        val roll = Math.toDegrees(kotlin.math.atan2(-x, z))
+        val pitch = deg(kotlin.math.atan2(y, kotlin.math.sqrt(x * x + z * z)))
+        val roll = deg(kotlin.math.atan2(-x, z))
         return pitch to roll
     }
+
+    private fun deg(rad: Double): Double = rad * 180.0 / kotlin.math.PI
 }

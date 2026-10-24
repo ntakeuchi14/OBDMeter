@@ -21,15 +21,7 @@ import java.io.OutputStream
  * - グラフごとの保存期間 ([retentions]) を過ぎた記録と、無くなったグラフの記録は自動で消す
  * - CSV (項目キー, 年月日時分秒, 値) で書き出し・読み込みができる
  */
-class HistoryStore(context: Context, private val scope: CoroutineScope) {
-
-    companion object {
-        const val MIN_INTERVAL_SEC = 1
-        const val MAX_INTERVAL_SEC = 600
-        const val MAX_MONTHS = 24
-        const val MONTH_MS = 2_629_746_000L // 1 か月 (平均 30.44 日)
-        const val CSV_HEADER = HistoryCsv.HEADER
-    }
+class SqliteHistoryStore(context: Context, private val scope: CoroutineScope) : HistoryStore {
 
     private class Helper(context: Context) : SQLiteOpenHelper(context, "history.db", null, 4) {
         override fun onCreate(db: SQLiteDatabase) {
@@ -65,11 +57,11 @@ class HistoryStore(context: Context, private val scope: CoroutineScope) {
      * 今あるグラフと、それぞれの保存期間 (ミリ秒)。null = まだ分からない (起動直後は何も消さない)。
      * ここに無いグラフの記録は、片付けのときに消す
      */
-    @Volatile var retentions: Map<String, Long>? = null
+    @Volatile override var retentions: Map<String, Long>? = null
 
     private val _revision = MutableStateFlow(0L)
     /** 記録が増えるたびに変わる (グラフの読み直しに使う) */
-    val revision: StateFlow<Long> = _revision
+    override val revision: StateFlow<Long> = _revision
 
     init {
         scope.launch(Dispatchers.IO) {
@@ -83,7 +75,7 @@ class HistoryStore(context: Context, private val scope: CoroutineScope) {
     }
 
     /** 「変化したときだけ記録する」グラフの行 ([ChangeRecorder] が決めたもの) を書く */
-    suspend fun storeRows(rows: List<HistoryRow>) = withContext(Dispatchers.IO) {
+    override suspend fun storeRows(rows: List<HistoryRow>): Unit = withContext(Dispatchers.IO) {
         if (rows.isEmpty()) return@withContext
         runCatching {
             db.beginTransaction()
@@ -109,7 +101,7 @@ class HistoryStore(context: Context, private val scope: CoroutineScope) {
     /**
      * グラフ [slot] の項目 [key] の最後の行と、それが動かせる末尾の行 (1 つ前の行と同じ値で、途切れずに見ていた行) か
      */
-    suspend fun lastRow(slot: String, key: String): Pair<HistoryRow, Boolean>? = withContext(Dispatchers.IO) {
+    override suspend fun lastRow(slot: String, key: String): Pair<HistoryRow, Boolean>? = withContext(Dispatchers.IO) {
         runCatching {
             db.rawQuery(
                 "SELECT t, v, c FROM samples WHERE g = ? AND k = ? ORDER BY t DESC LIMIT 2", arrayOf(slot, key),
@@ -126,14 +118,14 @@ class HistoryStore(context: Context, private val scope: CoroutineScope) {
     private val cleared = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
 
     /** メーター [slot] の記録をすべて消す (リセット) */
-    suspend fun clear(slot: String) = withContext(Dispatchers.IO) {
+    override suspend fun clear(slot: String): Unit = withContext(Dispatchers.IO) {
         runCatching { db.delete("samples", "g = ?", arrayOf(slot)) }
         cleared += slot
         _revision.value++
     }
 
     /** [clear] で記録を消したメーター (受け取ったら空になる) */
-    fun takeCleared(): Set<String> {
+    override fun takeCleared(): Set<String> {
         if (cleared.isEmpty()) return emptySet()
         val out = HashSet(cleared)
         cleared.removeAll(out)
@@ -141,7 +133,7 @@ class HistoryStore(context: Context, private val scope: CoroutineScope) {
     }
 
     /** 変動監視の行を書く (時刻は丸めない: 1 秒に何度変わっても回数を数えられるように) */
-    suspend fun storeEvents(rows: List<HistoryRow>) = withContext(Dispatchers.IO) {
+    override suspend fun storeEvents(rows: List<HistoryRow>): Unit = withContext(Dispatchers.IO) {
         if (rows.isEmpty()) return@withContext
         runCatching {
             db.beginTransaction()
@@ -161,7 +153,7 @@ class HistoryStore(context: Context, private val scope: CoroutineScope) {
     }
 
     /** 変動監視の集計 ([Monitor.Stat])。[keys] の順に返す */
-    suspend fun monitorStats(slot: String, keys: List<String>, now: Long): List<Monitor.Stat> = withContext(Dispatchers.IO) {
+    override suspend fun monitorStats(slot: String, keys: List<String>, now: Long): List<Monitor.Stat> = withContext(Dispatchers.IO) {
         keys.map { k ->
             runCatching {
                 fun one(order: String): Pair<Long, Double>? =
@@ -183,7 +175,7 @@ class HistoryStore(context: Context, private val scope: CoroutineScope) {
     }
 
     /** 値を記録する ([rows] はグラフ → 項目キー → 値)。時刻は秒単位に丸める */
-    suspend fun store(rows: Map<String, Map<String, Double>>, time: Long) = withContext(Dispatchers.IO) {
+    override suspend fun store(rows: Map<String, Map<String, Double>>, time: Long): Unit = withContext(Dispatchers.IO) {
         if (rows.isEmpty()) return@withContext
         val t = time / 1000 * 1000
         runCatching {
@@ -208,7 +200,7 @@ class HistoryStore(context: Context, private val scope: CoroutineScope) {
      * [from]〜[to] の記録を読む。点が多いときは [maxPoints] 程度にまとめる
      * (区間ごとの最小と最大を残すので、山や谷は消えない)
      */
-    suspend fun load(slot: String, key: String, from: Long, to: Long, maxPoints: Int): List<Sample> = withContext(Dispatchers.IO) {
+    override suspend fun load(slot: String, key: String, from: Long, to: Long, maxPoints: Int): List<Sample> = withContext(Dispatchers.IO) {
         val out = ArrayList<Sample>()
         val bucket = ((to - from) / (maxPoints / 2).coerceAtLeast(1)).coerceAtLeast(1000L)
         runCatching {
@@ -231,7 +223,7 @@ class HistoryStore(context: Context, private val scope: CoroutineScope) {
     }
 
     /** 直前と直後の記録 (表示範囲の外とも線をつなぐため) */
-    suspend fun neighbors(slot: String, key: String, from: Long, to: Long): Pair<Sample?, Sample?> = withContext(Dispatchers.IO) {
+    override suspend fun neighbors(slot: String, key: String, from: Long, to: Long): Pair<Sample?, Sample?> = withContext(Dispatchers.IO) {
         fun one(sql: String, arg: Long): Sample? = runCatching {
             db.rawQuery(sql, arrayOf(slot, key, arg.toString())).use { c -> if (c.moveToFirst()) Sample(c.getLong(0), c.getFloat(1)) else null }
         }.getOrNull()
@@ -243,7 +235,7 @@ class HistoryStore(context: Context, private val scope: CoroutineScope) {
      * [from]〜[to] で、[keys] のどれかに記録がある時間帯 (開始, 終了) を古い順に返す。
      * 記録の間が [gapMs] より空いたところで区切る (グラフで記録の無い時間を詰めるため)
      */
-    suspend fun segments(slot: String, keys: Collection<String>, from: Long, to: Long, gapMs: Long): List<Pair<Long, Long>> =
+    override suspend fun segments(slot: String, keys: Collection<String>, from: Long, to: Long, gapMs: Long): List<Pair<Long, Long>> =
         withContext(Dispatchers.IO) {
             if (keys.isEmpty()) return@withContext emptyList()
             val bucket = (gapMs / 2).coerceAtLeast(1000L)
@@ -277,7 +269,7 @@ class HistoryStore(context: Context, private val scope: CoroutineScope) {
         }
 
     /** [keys] の記録の一番古い時刻 (無ければ null) */
-    suspend fun earliest(slot: String, keys: Collection<String>): Long? = withContext(Dispatchers.IO) {
+    override suspend fun earliest(slot: String, keys: Collection<String>): Long? = withContext(Dispatchers.IO) {
         if (keys.isEmpty()) return@withContext null
         runCatching {
             db.rawQuery(
@@ -292,7 +284,7 @@ class HistoryStore(context: Context, private val scope: CoroutineScope) {
         val fmt = HistoryCsv.dateFormat()
         var n = 0
         out.bufferedWriter(Charsets.UTF_8).use { w ->
-            w.write(CSV_HEADER); w.write("\n")
+            w.write(HistoryStore.CSV_HEADER); w.write("\n")
             if (keys.isNotEmpty()) {
                 db.rawQuery(
                     "SELECT k, t, v FROM samples WHERE g = ? AND k IN (${keys.joinToString(",") { "?" }}) ORDER BY k, t",
@@ -354,7 +346,7 @@ class HistoryStore(context: Context, private val scope: CoroutineScope) {
      * 以前の版で項目ごとに共有していた記録 (グラフ未定) を、その項目を使っているグラフそれぞれへ写して消す。
      * [slots] はグラフ → 使っている項目キー
      */
-    suspend fun adoptShared(slots: Map<String, Collection<String>>) = withContext(Dispatchers.IO) {
+    override suspend fun adoptShared(slots: Map<String, Collection<String>>): Unit = withContext(Dispatchers.IO) {
         runCatching {
             val has = db.rawQuery("SELECT 1 FROM samples WHERE g = '' LIMIT 1", null).use { it.moveToFirst() }
             if (!has) return@runCatching
@@ -381,11 +373,20 @@ class HistoryStore(context: Context, private val scope: CoroutineScope) {
         val slots = retentions ?: return
         for ((g, ms) in slots) {
             if (ms <= 0) continue // 変動監視: メーターを削除するまで残す
-            val keep = ms.coerceIn(3_600_000L, MAX_MONTHS * MONTH_MS)
+            val keep = ms.coerceIn(3_600_000L, HistoryStore.MAX_MONTHS * HistoryStore.MONTH_MS)
             db.delete("samples", "g = ? AND t < ?", arrayOf(g, (now - keep).toString()))
         }
         // 消したグラフ・折れ線グラフでなくなったメーターの記録 (グラフ未定の旧記録は [adoptShared] に任せる)
         if (slots.isEmpty()) db.delete("samples", "g <> ''", null)
         else db.delete("samples", "g <> '' AND g NOT IN (${slots.keys.joinToString(",") { "?" }})", slots.keys.toTypedArray())
     }
+
+    override suspend fun exportCsvText(slot: String, keys: Collection<String>): Pair<Int, String> {
+        val out = java.io.ByteArrayOutputStream()
+        val n = exportCsv(slot, keys, out)
+        return n to out.toString("UTF-8")
+    }
+
+    override suspend fun importCsvText(slot: String, text: String): Pair<Int, Int> =
+        importCsv(slot, text.byteInputStream(Charsets.UTF_8))
 }

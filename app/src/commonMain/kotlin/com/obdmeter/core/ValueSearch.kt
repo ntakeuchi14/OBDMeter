@@ -1,5 +1,7 @@
 package com.obdmeter.core
 
+import com.obdmeter.util.format
+
 /**
  * ECU の応答の中から、既知の値 (BimmerLink に出ている失火カウンタなど) を探す。
  * 項目の並び順 (気筒順か点火順か) は分からないので、順番は問わずに探す。
@@ -52,7 +54,7 @@ object ValueSearch {
                 if (n >= minMatch && (best == null || n > best!!.first)) {
                     val pos = offset + start * width
                     val shown = values.subList(start, minOf(values.size, start + want.size))
-                        .joinToString(",") { v -> if (v == Math.rint(v)) v.toLong().toString() else "%.2f".format(v) }
+                        .joinToString(",") { v -> if (v == kotlin.math.round(v)) v.toLong().toString() else "%.2f".format(v) }
                     best = n to "$label 位置 $pos から: $shown (一致 $n/${want.size})"
                 }
             }
@@ -76,7 +78,7 @@ object ValueSearch {
                         consider(raw.map { it.toDouble() }, offset, width, label, want)
                     }
                     if (width == 4) {
-                        val floats = raw.map { java.lang.Float.intBitsToFloat(it.toInt()).toDouble() }
+                        val floats = raw.map { Float.fromBits(it.toInt()).toDouble() }
                             .map { if (it.isNaN() || it.isInfinite()) -1e30 else it }
                         consider(floats, offset, width, "小数(float)$endian", targets.map { it.toDouble() })
                     }

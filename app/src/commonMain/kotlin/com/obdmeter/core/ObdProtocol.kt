@@ -1,5 +1,7 @@
 package com.obdmeter.core
 
+import com.obdmeter.util.format
+
 /**
  * OBD2 の Mode 01 (現在値) を読むためのプロトコル共通インターフェース。
  * 実装: [Elm327Protocol] (OBDLink SX/EX 等), [BmwFastProtocol] (K+DCAN ケーブル), [SimulatorProtocol]。
@@ -77,15 +79,15 @@ class ProtocolException(message: String) : Exception(message)
 internal fun Transport.readExact(n: Int, timeoutMs: Int): ByteArray? {
     val out = ByteArray(n)
     var got = 0
-    val deadline = System.currentTimeMillis() + timeoutMs
+    val deadline = com.obdmeter.util.nowMs() + timeoutMs
     while (got < n) {
-        val remaining = (deadline - System.currentTimeMillis()).toInt()
+        val remaining = (deadline - com.obdmeter.util.nowMs()).toInt()
         if (remaining <= 0) return null
         // 残りバイト数ぴったりのバッファで読むので、次のテレグラムを食い込まない
         val tmp = ByteArray(n - got)
         val r = read(tmp, minOf(remaining, 100))
         if (r <= 0) continue
-        System.arraycopy(tmp, 0, out, got, r)
+        tmp.copyInto(out, got, 0, r)
         got += r
     }
     return out

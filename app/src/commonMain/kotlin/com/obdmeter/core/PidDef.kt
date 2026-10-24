@@ -1,5 +1,7 @@
 package com.obdmeter.core
 
+import com.obdmeter.util.format
+
 /**
  * メーターに表示できる項目の定義。
  * - MODE01: OBD2 Mode 01 の PID を読んで [decode] で物理値に変換
