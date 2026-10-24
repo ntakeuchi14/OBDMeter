@@ -147,7 +147,10 @@ class WebSensors(private val scope: CoroutineScope) : DeviceSensorSource {
 
 /** Web 版の [AppPlatform] (保存はブラウザー、値はシミュレーター) */
 class WebPlatform : AppPlatform {
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+    private val scope = CoroutineScope(
+        SupervisorJob() + Dispatchers.Default +
+            kotlinx.coroutines.CoroutineExceptionHandler { _, e -> println("WebPlatform: " + e.stackTraceToString()) }
+    )
     override val repo: Repository = WebRepository()
     override val history: HistoryStore = MemoryHistoryStore(maxRowsPerSeries = 50_000)
     override val deviceSensors: DeviceSensorSource = WebSensors(scope)

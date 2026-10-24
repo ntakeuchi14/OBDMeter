@@ -33,7 +33,10 @@ import kotlin.concurrent.Volatile
  * 画面 (ViewModel) ではなくプロセスに 1 つ置く。
  */
 class AppCore(val platform: AppPlatform) {
-    val scope = CoroutineScope(SupervisorJob() + kotlinx.coroutines.Dispatchers.Default)
+    val scope = CoroutineScope(
+        SupervisorJob() + kotlinx.coroutines.Dispatchers.Default +
+            kotlinx.coroutines.CoroutineExceptionHandler { _, e -> println("AppCore: " + e.stackTraceToString()) }
+    )
     val repo: Repository = platform.repo
     val log = LogBuffer()
     val session = ObdSession(scope, log, platform)

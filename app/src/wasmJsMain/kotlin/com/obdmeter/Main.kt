@@ -42,10 +42,22 @@ private fun hideLoading(): Unit = js("{ var e = document.getElementById('loading
 
 @OptIn(ExperimentalComposeUiApi::class)
 fun main() {
+    try {
+        start()
+    } catch (e: Throwable) {
+        println("起動に失敗しました: " + e.stackTraceToString())
+        throw e
+    }
+}
+
+@OptIn(ExperimentalComposeUiApi::class)
+private fun start() {
     hideLoading()
+    println("OBD Meter Web: 起動")
     val platform = WebPlatform()
     WebUi.platform = platform
     val core = AppCore(platform)
+    println("OBD Meter Web: AppCore OK")
     ComposeViewport(document.body!!) {
         var fontsReady by remember { mutableStateOf(false) }
         val resolver = LocalFontFamilyResolver.current
@@ -57,6 +69,7 @@ fun main() {
                     resolver.preload(FontFamily(androidx.compose.ui.text.platform.Font(file, bytes)))
                 }
             }
+            println("OBD Meter Web: フォント OK")
             fontsReady = true
         }
         MaterialTheme(colorScheme = AppColors) {
@@ -69,7 +82,7 @@ fun main() {
                 }
             ) {
                 if (fontsReady) {
-                    val vm = remember { MainViewModel(core) }
+                    val vm = remember { println("OBD Meter Web: 画面"); MainViewModel(core) }
                     App(vm, onKeepScreenOn = {})
                 } else {
                     Text("読み込み中…", Modifier.align(Alignment.Center), color = GaugeColors.Text)
