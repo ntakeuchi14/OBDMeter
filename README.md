@@ -20,6 +20,17 @@ USB 接続の OBD アダプターから車両データを読み、アナログ /
 - **通信ログ画面**: 送受信の生データを表示・共有できる (実車でうまくいかないときの調査用)
 - 自動再接続、接続中の画面消灯防止
 
+## Web 版 (メーターのデザイン用)
+
+Android 版と同じソースから、ブラウザーで動く版 (WebAssembly) も作っています。
+Windows の Edge などで、メーターの配置・デザイン・ページの背景・フォント・画像を編集できます。
+
+- URL: https://ntakeuchi14.github.io/OBDMeter/
+- 値はシミュレーター (車には接続しません)。
+- 作ったページは **設定 → バックアップ → エクスポート** で zip をダウンロードし、Android 版の 設定 → バックアップ → インポート で読み込めます (逆向きもできます)。
+- ページ・設定はブラウザーに保存されます (画像・フォントも)。グラフの記録はページを閉じると消えます。
+- `main` / `web` に push すると [Web Build](../../actions/workflows/web.yml) がビルドし、`gh-pages` ブランチに公開します。
+
 ## ビルド方法
 
 1. Android Studio (Ladybug 以降推奨) で、このフォルダ (`OBDMeter`) を **Open** する
@@ -114,8 +125,14 @@ TX が送信、RX が受信、赤字がエラーです。よくあるパター�
 
 ## 構成
 
+Kotlin Multiplatform (Compose Multiplatform) で、Android と Web を 1 つの `app` モジュールから作ります。
+
+- `app/src/commonMain` … 共通 (通信プロトコル・PID・保存形式・画面)
+- `app/src/androidMain` … Android だけ (USB・DataStore・SQLite・フロート表示・センサー)
+- `app/src/wasmJsMain` … Web だけ (ブラウザーの保存領域・ファイルのダウンロード)
+
 ```
-app/src/main/java/com/obdmeter/
+app/src/commonMain/kotlin/com/obdmeter/
 ├─ core/       通信プロトコルと PID 定義 (Android 非依存・単体テスト済み)
 │  ├─ Transport.kt          物理層の抽象 (USB / 将来の Wi-Fi)
 │  ├─ Elm327Protocol.kt     OBDLink / ELM327 (AT コマンド)
