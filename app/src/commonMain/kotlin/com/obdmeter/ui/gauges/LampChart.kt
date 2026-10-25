@@ -200,7 +200,7 @@ internal fun TableGauge(series: List<ChartSeries>, look: GaugeLook, fonts: Gauge
                                     s.def.shortName,
                                     Modifier.weight(nameW).padding(end = 4.dp),
                                     textAlign = androidx.compose.ui.text.style.TextAlign.End,
-                                    color = look.nameColor, fontFamily = fonts.label,
+                                    color = look.nameColor, fontFamily = fonts.textLabel,
                                     fontSize = nameSize, maxLines = 1, overflow = TextOverflow.Ellipsis,
                                 )
                             }
@@ -237,7 +237,7 @@ internal fun TableGauge(series: List<ChartSeries>, look: GaugeLook, fonts: Gauge
                                 if (inlineName) Text(
                                     s.def.shortName,
                                     Modifier.align(Alignment.TopStart).padding(start = 4.dp, top = 1.dp),
-                                    color = look.nameColor, fontFamily = fonts.label,
+                                    color = look.nameColor, fontFamily = fonts.textLabel,
                                     fontSize = nameSize, maxLines = 1, softWrap = false,
                                     lineHeight = nameSize,
                                 )
@@ -250,7 +250,7 @@ internal fun TableGauge(series: List<ChartSeries>, look: GaugeLook, fonts: Gauge
                                                 if (look.ghostDigits) Text(
                                                     ghostText(s.def),
                                                     color = look.valueColor.copy(alpha = look.ghostAlpha),
-                                                    fontFamily = fonts.value, fontWeight = FontWeight.Bold,
+                                                    fontFamily = fonts.textValue, fontWeight = FontWeight.Bold,
                                                     fontSize = base * look.valueSize, maxLines = 1, softWrap = false,
                                                 )
                                                 Text(
@@ -268,7 +268,7 @@ internal fun TableGauge(series: List<ChartSeries>, look: GaugeLook, fonts: Gauge
                                         if (inlineUnit && s.def.unitText.isNotEmpty()) Text(
                                             " " + s.def.unitText,
                                             Modifier.padding(bottom = 1.dp),
-                                            color = look.unitColor, fontFamily = fonts.label,
+                                            color = look.unitColor, fontFamily = fonts.textLabel,
                                             fontSize = unitSize, maxLines = 1, softWrap = false,
                                         )
                                     }
@@ -279,7 +279,7 @@ internal fun TableGauge(series: List<ChartSeries>, look: GaugeLook, fonts: Gauge
                                     s.def.unitText,
                                     Modifier.weight(unitW).padding(start = 4.dp),
                                     textAlign = androidx.compose.ui.text.style.TextAlign.Start,
-                                    color = look.unitColor, fontFamily = fonts.label,
+                                    color = look.unitColor, fontFamily = fonts.textLabel,
                                     fontSize = unitSize, maxLines = 1, overflow = TextOverflow.Ellipsis,
                                 )
                             }
@@ -402,7 +402,7 @@ internal fun ChartGauge(
                     Spacer(Modifier.width((4 * ls).dp))
                     Text(
                         s.def.shortName + " ",
-                        color = look.labelColor, fontFamily = fonts.label,
+                        color = look.labelColor, fontFamily = fonts.textLabel,
                         fontSize = (11 * look.labelSize * ls).sp, maxLines = 1, overflow = TextOverflow.Ellipsis,
                     )
                     Text(

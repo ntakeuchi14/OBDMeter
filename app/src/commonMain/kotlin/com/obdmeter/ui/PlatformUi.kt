@@ -44,9 +44,13 @@ expect fun rememberShareText(): (subject: String, text: String) -> Unit
 @Composable
 expect fun rememberGaugeImage(name: String?): ImageBitmap?
 
-/** 取り込んだフォント。読めなければ null */
+/**
+ * 取り込んだフォント。読めなければ null。
+ * [forLineHeightText] は行の高さを指定した文字 (画面全体の既定の文字スタイルを使う Text) 用。
+ * Android はその場合だけ行の高さの決め方が変わるフォントがあるので、Web 版で同じにするのに使う
+ */
 @Composable
-expect fun rememberFontFamily(entry: FontEntry?): FontFamily?
+expect fun rememberFontFamily(entry: FontEntry?, forLineHeightText: Boolean = false): FontFamily?
 
 /** ぼかした影 ([path] を ([dx], [dy]) ずらして、[blur] px でぼかす)。針やメーター自体の影に使う */
 expect fun DrawScope.drawSoftShadow(path: Path, dx: Float, dy: Float, blur: Float, alpha: Float)

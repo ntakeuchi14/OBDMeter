@@ -207,14 +207,25 @@ data class GaugeLook(
 val LocalFontLibrary = staticCompositionLocalOf<Map<String, FontEntry>> { emptyMap() }
 
 /** 描画に使うフォント。value は数値、label は目盛りの数字・名前・単位 */
-class GaugeFontSet(val value: FontFamily, val label: FontFamily?)
+class GaugeFontSet(
+    val value: FontFamily,
+    val label: FontFamily?,
+    /** 行の高さを指定した文字 (Text で既定の文字スタイルのまま) に使うもの。Android では value / label と同じ */
+    val textValue: FontFamily = value,
+    val textLabel: FontFamily? = label,
+)
 
 @Composable
 fun rememberGaugeFonts(look: GaugeLook): GaugeFontSet {
     val lib = LocalFontLibrary.current
     val value = com.obdmeter.ui.rememberFontFamily(look.valueFont?.let { lib[it] })
     val label = com.obdmeter.ui.rememberFontFamily(look.labelFont?.let { lib[it] })
-    return remember(value, label) { GaugeFontSet(value ?: FontFamily.Monospace, label) }
+    val textValue = com.obdmeter.ui.rememberFontFamily(look.valueFont?.let { lib[it] }, forLineHeightText = true)
+    val textLabel = com.obdmeter.ui.rememberFontFamily(look.labelFont?.let { lib[it] }, forLineHeightText = true)
+    return remember(value, label, textValue, textLabel) {
+        val v = value ?: FontFamily.Monospace
+        GaugeFontSet(v, label, textValue ?: v, textLabel ?: label)
+    }
 }
 
 /**

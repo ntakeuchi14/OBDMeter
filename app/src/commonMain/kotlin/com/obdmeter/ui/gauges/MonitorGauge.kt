@@ -129,9 +129,9 @@ internal fun MonitorGauge(
                 val count = st.count(window)
                 Row(Modifier.fillMaxWidth().padding(top = 2.dp), verticalAlignment = Alignment.CenterVertically) {
                     Text("${rank + 1}", Modifier.width((base * 1.8f).dp), color = GaugeColors.SubText, fontSize = nameSize,
-                        fontFamily = fonts.label)
+                        fontFamily = fonts.textLabel)
                     Text(s.def.shortName, Modifier.weight(1f), color = look.labelColor, fontSize = nameSize,
-                        fontFamily = fonts.label, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        fontFamily = fonts.textLabel, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     Text(
                         "$count", Modifier.width((base * 3.5f).dp),
                         color = if (count > 0) look.accent else GaugeColors.SubText, fontSize = valueSize,
@@ -140,7 +140,7 @@ internal fun MonitorGauge(
                     )
                     Text(
                         s.def.format(cur) + if (look.showUnit && cur != null) " ${s.def.unitText}" else "",
-                        Modifier.weight(0.8f), color = look.valueColor, fontSize = valueSize, fontFamily = fonts.value,
+                        Modifier.weight(0.8f), color = look.valueColor, fontSize = valueSize, fontFamily = fonts.textValue,
                         textAlign = TextAlign.End, maxLines = 1,
                     )
                     Text(

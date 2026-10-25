@@ -98,7 +98,7 @@ actual fun rememberGaugeImage(name: String?): ImageBitmap? {
 }
 
 @Composable
-actual fun rememberFontFamily(entry: FontEntry?): FontFamily? {
+actual fun rememberFontFamily(entry: FontEntry?, forLineHeightText: Boolean): FontFamily? {
     val context = LocalContext.current
     return remember(entry?.id, entry?.file) { entry?.let { GaugeFonts.family(context, it) } }
 }
