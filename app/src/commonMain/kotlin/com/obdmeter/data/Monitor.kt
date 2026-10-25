@@ -55,7 +55,9 @@ object Monitor {
     }
 
     /**
-     * 記録する行を決める。前回記録した値 [last] (まだ記録が無ければ null) から変わったときだけ、時刻 [time] の値 [v] を記録する
+     * 記録する行を決める。前回記録した値 [last] (まだ記録が無ければ null) から変わったときだけ、時刻 [time] の値 [v] を記録する。
+     * [increaseOnly] なら、前回より大きくなったときだけ記録する (減った値は無視し、前回の値のまま比べ続ける)
      */
-    fun shouldRecord(v: Double, last: Double?): Boolean = !v.isNaN() && !v.isInfinite() && v != last
+    fun shouldRecord(v: Double, last: Double?, increaseOnly: Boolean = false): Boolean =
+        !v.isNaN() && !v.isInfinite() && v != last && !(increaseOnly && last != null && v < last)
 }

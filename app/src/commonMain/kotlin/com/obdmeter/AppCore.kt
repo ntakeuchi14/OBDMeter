@@ -222,7 +222,7 @@ class AppCore(val platform: AppPlatform) {
                     val v = read[t.key] ?: continue
                     if (rule.events) {
                         if (t !in eventLast) eventLast[t] = history.lastRow(t.slot, t.key)?.first?.v
-                        if (com.obdmeter.data.Monitor.shouldRecord(v, eventLast[t])) {
+                        if (com.obdmeter.data.Monitor.shouldRecord(v, eventLast[t], rule.increaseOnly)) {
                             eventRows += com.obdmeter.data.HistoryRow(t.slot, t.key, time, v, cont = false)
                             eventLast[t] = v
                         }

@@ -357,6 +357,11 @@ private fun ItemTab(
                     "先頭は上の「表示する項目」です。"
             )
             ItemRows(g, catalog, update, replace, onAddChartItem)
+            SwitchLine(
+                "増えたときだけ記録",
+                "生涯失火数など減らないはずの値用。値が減ったときは記録せず (一時的に古い値が読めても数えない)、前回の値を超えたときだけ記録します",
+                g.design.monitorIncreaseOnly,
+            ) { v -> update { it.copy(monitorIncreaseOnly = v) } }
         }
         GaugeStyle.CHART -> ChartItems(g, catalog, update, replace, onAddChartItem)
         else -> {}

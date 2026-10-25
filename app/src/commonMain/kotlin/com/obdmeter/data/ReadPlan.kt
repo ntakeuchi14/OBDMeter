@@ -41,6 +41,8 @@ object ReadPlan {
         val onChangeOnly: Boolean,
         /** 変動監視: 値が変わった時刻と値だけを記録する ([Monitor]) */
         val events: Boolean = false,
+        /** 変動監視: 増えたときだけ記録する */
+        val increaseOnly: Boolean = false,
     )
 
     /** 記録の単位: グラフ [slot] ([HistorySlot]) の項目 [key] */
@@ -71,7 +73,10 @@ object ReadPlan {
             if (g.style != GaugeStyle.MONITOR) continue
             val slot = HistorySlot.of(p.id, g.id)
             for (k in g.chartAllKeys) {
-                out[RecordTarget(slot, k)] = RecordRule(maxOf(pollIntervals[k] ?: 0L, CHANGE_MIN_MS), onChangeOnly = false, events = true)
+                out[RecordTarget(slot, k)] = RecordRule(
+                    maxOf(pollIntervals[k] ?: 0L, CHANGE_MIN_MS), onChangeOnly = false, events = true,
+                    increaseOnly = g.design.monitorIncreaseOnly,
+                )
             }
         }
         return out
