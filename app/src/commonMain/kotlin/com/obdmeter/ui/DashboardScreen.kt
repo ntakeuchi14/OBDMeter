@@ -652,7 +652,13 @@ private fun DashboardCanvas(
                                     onDragCancel = { groupResize = null },
                                 ) { change, amount ->
                                     change.consume()
-                                    groupResize = gid to ((groupResize?.second ?: Offset.Zero) + amount)
+                                    // 大きさの上限・下限を超えた分は貯めない (戻すとすぐ小さくなるように)
+                                    val o = (groupResize?.second ?: Offset.Zero) + amount
+                                    val mb = Layout.bounds(members)
+                                    groupResize = gid to Offset(
+                                        o.x.coerceIn((Layout.MIN_SIZE - mb[2]) * cellWPx, (Layout.widthRange.last - mb[2]) * cellWPx),
+                                        o.y.coerceIn((Layout.MIN_SIZE - mb[3]) * cellHPx, (Layout.heightRange.last - mb[3]) * cellHPx),
+                                    )
                                 }
                             },
                         contentAlignment = Alignment.BottomEnd,
@@ -829,6 +835,8 @@ private fun GaugeOnGrid(
                                         continue
                                     }
                                     val change = event.changes.firstOrNull { it.id == down.id } ?: break
+                                    // 中のボタンやサイズ変更のつまみが使った操作は、メーターの移動・タップにしない
+                                    if (!dragging && change.isConsumed) break
                                     if (!change.pressed) {
                                         if (dragging) {
                                             finished = true
@@ -919,7 +927,12 @@ private fun GaugeOnGrid(
                             onDragCancel = { resize = Offset.Zero },
                         ) { change, amount ->
                             change.consume()
-                            resize += amount
+                            // 大きさの上限・下限を超えた分は貯めない (超えたら枠は広がらず、戻すとすぐ小さくなる)
+                            val r = resize + amount
+                            resize = Offset(
+                                r.x.coerceIn((Layout.MIN_SIZE - g.w) * cellWPx, (Layout.widthRange.last - g.w) * cellWPx),
+                                r.y.coerceIn((Layout.MIN_SIZE - g.h) * cellHPx, (Layout.heightRange.last - g.h) * cellHPx),
+                            )
                         }
                     },
                 contentAlignment = Alignment.BottomEnd,

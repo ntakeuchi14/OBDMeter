@@ -497,9 +497,9 @@ object Layout {
     /** [v] を [step] の倍数に丸める */
     fun snap(v: Int, step: Int): Int = if (step <= 1) v else kotlin.math.floor(v.toDouble() / step + 0.5).toInt() * step
 
-    /** 幅の範囲 (ページの 2 倍まで) */
-    val widthRange: IntRange get() = MIN_SIZE..COLS * 2
-    val heightRange: IntRange get() = MIN_SIZE..ROWS * 2
+    /** 幅の範囲 (ページの 3 倍まで。はみ出して大きく表示できる) */
+    val widthRange: IntRange get() = MIN_SIZE..COLS * 3
+    val heightRange: IntRange get() = MIN_SIZE..ROWS * 3
     /** 幅 [w] のメーターを置ける横の位置 (ページの外にはみ出してよいが、つかめるよう 1 マスはページ内に残す) */
     fun xRange(w: Int): IntRange = (SCALE - w)..(COLS - SCALE)
     fun yRange(h: Int): IntRange = (SCALE - h)..(ROWS - SCALE)
@@ -568,8 +568,8 @@ object Layout {
         val b = bounds(gauges)
         val minW = kotlin.math.ceil(b[2] * MIN_SIZE.toDouble() / gauges.minOf { it.w }).toInt()
         val minH = kotlin.math.ceil(b[3] * MIN_SIZE.toDouble() / gauges.minOf { it.h }).toInt()
-        val nw = w.coerceIn(minOf(minW, b[2]), maxOf(COLS * 2, b[2]))
-        val nh = h.coerceIn(minOf(minH, b[3]), maxOf(ROWS * 2, b[3]))
+        val nw = w.coerceIn(minOf(minW, b[2]), maxOf(widthRange.last, b[2]))
+        val nh = h.coerceIn(minOf(minH, b[3]), maxOf(heightRange.last, b[3]))
         val sx = nw.toDouble() / b[2]
         val sy = nh.toDouble() / b[3]
         fun sc(v: Int, s: Double) = kotlin.math.round(v * s).toInt()

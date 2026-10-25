@@ -24,7 +24,7 @@ class LayoutTest {
     @Test
     fun clampsSize() {
         assertArrayEquals(intArrayOf(0, 0, Layout.MIN_SIZE, Layout.MIN_SIZE), Layout.clampPlacement(0, 0, 0, -3))
-        assertArrayEquals(intArrayOf(0, 0, Layout.COLS * 2, Layout.ROWS * 2), Layout.clampPlacement(0, 0, 9999, 9999))
+        assertArrayEquals(intArrayOf(0, 0, Layout.COLS * 3, Layout.ROWS * 3), Layout.clampPlacement(0, 0, 9999, 9999))
     }
 
     @Test
