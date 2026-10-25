@@ -2,12 +2,15 @@ package com.obdmeter.ui
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.ui.draw.clip
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -55,21 +58,48 @@ private fun fmtDensity(d: Float): String {
 
 /**
  * [spec] の大きさで画面を作り、使える領域に収まるよう縮小して中央に置く (拡大はしない)。
- * [spec] が null なら、そのまま全体に表示する
+ * [spec] が null なら、そのまま全体に表示する。
+ * [sideArrows] なら左右に矢印の場所を空け、[onArrow] があれば矢印を出す (-1 = 前のページ、+1 = 次のページ)
  */
 @Composable
-fun SizedScreen(spec: ScreenSpec?, content: @Composable () -> Unit) {
-    if (spec == null) {
-        Box(Modifier.fillMaxSize()) { content() }
-        return
+fun SizedScreen(
+    spec: ScreenSpec?,
+    sideArrows: Boolean = false,
+    onArrow: ((Int) -> Unit)? = null,
+    content: @Composable () -> Unit,
+) {
+    val gutter = if (sideArrows) 48.dp else 0.dp
+    Row(Modifier.fillMaxSize(), verticalAlignment = Alignment.CenterVertically) {
+        if (sideArrows) PageArrow(gutter, "‹", onArrow?.let { { it(-1) } })
+        BoxWithConstraints(Modifier.weight(1f).fillMaxHeight(), contentAlignment = Alignment.Center) {
+            if (spec == null) {
+                Box(Modifier.fillMaxSize().background(GaugeColors.Background)) { content() }
+                return@BoxWithConstraints
+            }
+            val outer = LocalDensity.current
+            val fit = minOf(constraints.maxWidth.toFloat() / spec.width, constraints.maxHeight.toFloat() / spec.height, 1f)
+            val wDp = with(outer) { (spec.width * fit).toDp() }
+            val hDp = with(outer) { (spec.height * fit).toDp() }
+            Box(Modifier.size(wDp, hDp).background(GaugeColors.Background).border(1.dp, Color(0xFF2A3038))) {
+                CompositionLocalProvider(LocalDensity provides Density(spec.density * fit, outer.fontScale)) { content() }
+            }
+        }
+        if (sideArrows) PageArrow(gutter, "›", onArrow?.let { { it(1) } })
     }
-    BoxWithConstraints(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-        val outer = LocalDensity.current
-        val fit = minOf(constraints.maxWidth.toFloat() / spec.width, constraints.maxHeight.toFloat() / spec.height, 1f)
-        val wDp = with(outer) { (spec.width * fit).toDp() }
-        val hDp = with(outer) { (spec.height * fit).toDp() }
-        Box(Modifier.size(wDp, hDp).background(GaugeColors.Background).border(1.dp, Color(0xFF2A3038))) {
-            CompositionLocalProvider(LocalDensity provides Density(spec.density * fit, outer.fontScale)) { content() }
+}
+
+/** 画面の外のページめくりの矢印 ([onClick] が null なら何も出さない) */
+@Composable
+private fun PageArrow(width: androidx.compose.ui.unit.Dp, label: String, onClick: (() -> Unit)?) {
+    Box(Modifier.width(width).fillMaxHeight(), contentAlignment = Alignment.Center) {
+        if (onClick != null) {
+            Box(
+                Modifier.size(width - 8.dp, 96.dp)
+                    .clip(androidx.compose.foundation.shape.RoundedCornerShape(8.dp))
+                    .background(Color(0xFF1A1F27))
+                    .clickable(onClick = onClick),
+                contentAlignment = Alignment.Center,
+            ) { Text(label, color = GaugeColors.Text, fontSize = 36.sp) }
         }
     }
 }

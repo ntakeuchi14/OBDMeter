@@ -67,11 +67,16 @@ fun App(vm: MainViewModel, onKeepScreenOn: (Boolean) -> Unit) {
     Box(
         Modifier
             .fillMaxSize()
-            .background(if (settings.screenSize.isBlank()) GaugeColors.Background else androidx.compose.ui.graphics.Color(0xFF05070A))
+            .background(if (settings.screenSize.isBlank() && !isWebApp) GaugeColors.Background else androidx.compose.ui.graphics.Color(0xFF05070A))
             .safeDrawingPadding()
     ) {
     // 設定の「画面サイズ」を指定していれば、その大きさで作って画面に収まるよう縮小する
-    SizedScreen(ScreenSpec.parse(settings.screenSize)) {
+    // Web 版は画面の外の左右にページめくりの矢印を置く (ダッシュボードを表示中だけ)
+    SizedScreen(
+        ScreenSpec.parse(settings.screenSize),
+        sideArrows = isWebApp,
+        onArrow = if (screen == Screen.DASHBOARD) vm::navigatePage else null,
+    ) {
         // 保存内容を読み終えるまでは何も出さない (既定の画面や古い画面が一瞬見えるのを防ぐ)
         if (!ready) return@SizedScreen
         when (screen) {

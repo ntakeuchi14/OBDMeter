@@ -446,6 +446,9 @@ class MainViewModel(val core: AppCore) : ViewModel() {
     /** ページ移動の要求 (-1 = 前、+1 = 次) */
     val pageNav: kotlinx.coroutines.flow.SharedFlow<Int> = _pageNav
 
+    /** ページを前後に切り替える (Web 版の画面の外の矢印) */
+    fun navigatePage(delta: Int) { if (delta != 0) _pageNav.tryEmit(delta) }
+
     /** キーやダイヤルの入力を受け取る。ページを切り替えたら true */
     fun onNavInput(delta: Int, what: String): Boolean {
         log.log(com.obdmeter.core.CommLogger.Direction.INFO, "入力: $what")
