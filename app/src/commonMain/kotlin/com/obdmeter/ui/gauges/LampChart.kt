@@ -43,6 +43,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.layout.layout
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
@@ -198,7 +199,7 @@ internal fun TableGauge(series: List<ChartSeries>, look: GaugeLook, fonts: Gauge
                             if (nameW > 0f) {
                                 Text(
                                     s.def.shortName,
-                                    Modifier.weight(nameW).padding(end = 4.dp),
+                                    Modifier.weight(nameW).padding(end = 4.dp).androidLineBox(nameSize),
                                     textAlign = androidx.compose.ui.text.style.TextAlign.End,
                                     color = look.nameColor, fontFamily = fonts.label,
                                     fontSize = nameSize, maxLines = 1, overflow = TextOverflow.Ellipsis,
@@ -236,7 +237,7 @@ internal fun TableGauge(series: List<ChartSeries>, look: GaugeLook, fonts: Gauge
                                 // 項目名を値の枠の左上に
                                 if (inlineName) Text(
                                     s.def.shortName,
-                                    Modifier.align(Alignment.TopStart).padding(start = 4.dp, top = 1.dp),
+                                    Modifier.align(Alignment.TopStart).padding(start = 4.dp, top = 1.dp).androidLineBox(nameSize, nameSize),
                                     color = look.nameColor, fontFamily = fonts.label,
                                     fontSize = nameSize, maxLines = 1, softWrap = false,
                                     lineHeight = nameSize,
@@ -249,12 +250,14 @@ internal fun TableGauge(series: List<ChartSeries>, look: GaugeLook, fonts: Gauge
                                             Box(contentAlignment = Alignment.CenterEnd) {
                                                 if (look.ghostDigits) Text(
                                                     ghostText(s.def),
+                                                    Modifier.androidLineBox(base * look.valueSize),
                                                     color = look.valueColor.copy(alpha = look.ghostAlpha),
                                                     fontFamily = fonts.value, fontWeight = FontWeight.Bold,
                                                     fontSize = base * look.valueSize, maxLines = 1, softWrap = false,
                                                 )
                                                 Text(
                                                     s.def.format(s.value),
+                                                    Modifier.androidLineBox(base * look.valueSize),
                                                     color = vColor,
                                                     fontFamily = fonts.value, fontWeight = FontWeight.Bold,
                                                     fontSize = base * look.valueSize, maxLines = 1, softWrap = false,
@@ -267,7 +270,7 @@ internal fun TableGauge(series: List<ChartSeries>, look: GaugeLook, fonts: Gauge
                                         // 単位を値のすぐ後ろに付ける
                                         if (inlineUnit && s.def.unitText.isNotEmpty()) Text(
                                             " " + s.def.unitText,
-                                            Modifier.padding(bottom = 1.dp),
+                                            Modifier.padding(bottom = 1.dp).androidLineBox(unitSize),
                                             color = look.unitColor, fontFamily = fonts.label,
                                             fontSize = unitSize, maxLines = 1, softWrap = false,
                                         )
@@ -277,7 +280,7 @@ internal fun TableGauge(series: List<ChartSeries>, look: GaugeLook, fonts: Gauge
                             if (unitW > 0f) {
                                 Text(
                                     s.def.unitText,
-                                    Modifier.weight(unitW).padding(start = 4.dp),
+                                    Modifier.weight(unitW).padding(start = 4.dp).androidLineBox(unitSize),
                                     textAlign = androidx.compose.ui.text.style.TextAlign.Start,
                                     color = look.unitColor, fontFamily = fonts.label,
                                     fontSize = unitSize, maxLines = 1, overflow = TextOverflow.Ellipsis,
@@ -675,4 +678,31 @@ internal fun CsvButton(text: String, onClick: () -> Unit) {
             .clickable(onClick = onClick)
             .padding(horizontal = 8.dp, vertical = 3.dp),
     ) { Text(text, fontSize = 11.sp, color = GaugeColors.Text) }
+}
+
+/**
+ * 文字の枠の高さを、Android と同じく行の高さ ([lineHeight]。指定が無ければ画面全体の既定の文字スタイルの値) にして、文字を上下中央に置く。
+ * Android は行の高さが文字より小さくても枠を行の高さにするが、Web 版は文字の高さの枠になるため、
+ * 枠の下端にそろえる単位などの位置が Android とずれていた (Android ではもともと同じ高さなので変わらない)
+ */
+@Composable
+internal fun Modifier.androidLineBox(
+    fontSize: androidx.compose.ui.unit.TextUnit,
+    lineHeight: androidx.compose.ui.unit.TextUnit = androidx.compose.material3.LocalTextStyle.current.lineHeight,
+): Modifier {
+    if (lineHeight == androidx.compose.ui.unit.TextUnit.Unspecified) return this
+    val density = androidx.compose.ui.platform.LocalDensity.current
+    val px = with(density) {
+        when {
+            lineHeight.isSp -> lineHeight.toPx()
+            lineHeight.isEm && fontSize.isSp -> lineHeight.value * fontSize.toPx()
+            else -> return this@androidLineBox
+        }
+    }
+    val h = kotlin.math.ceil(px).toInt().coerceAtLeast(1)
+    return this.layout { measurable, constraints ->
+        val p = measurable.measure(constraints.copy(minHeight = 0, maxHeight = androidx.compose.ui.unit.Constraints.Infinity))
+        val height = h.coerceIn(constraints.minHeight, constraints.maxHeight)
+        layout(p.width, height) { p.place(0, (height - p.height) / 2) }
+    }
 }
