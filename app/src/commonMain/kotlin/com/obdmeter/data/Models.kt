@@ -58,6 +58,8 @@ data class AppSettings(
     val keyPageNav: Boolean = true,
     /** レイアウト編集で、移動・大きさ変更を吸着させる間隔 ([Layout.GRID_STEPS]、単位) */
     val gridStep: Int = Layout.SCALE,
+    /** 再現する画面の大きさ "幅x高さx倍率" (空 = 端末・ウィンドウの大きさのまま) */
+    val screenSize: String = "",
     /** 項目ごとの取得周期 (項目キー → ミリ秒)。無い項目は毎回 (遅い項目は 8 回に 1 回) */
     val pollIntervalsMs: Map<String, Int> = emptyMap(),
     /** 最後に表示していたダッシュボードのページ (次の起動時にこのページから始める) */

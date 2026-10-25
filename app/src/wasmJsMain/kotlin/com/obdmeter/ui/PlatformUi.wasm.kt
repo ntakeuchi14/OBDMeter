@@ -103,7 +103,7 @@ actual fun rememberFontFamily(entry: FontEntry?): FontFamily? {
 private val families = HashMap<String, FontFamily>()
 
 private fun family(entry: FontEntry, bytes: ByteArray): FontFamily? = families[entry.file] ?: runCatching {
-    FontFamily(androidx.compose.ui.text.platform.Font(entry.file, bytes))
+    FontFamily(androidx.compose.ui.text.platform.Font(entry.file, androidLikeMetrics(bytes)))
 }.getOrNull()?.also { families[entry.file] = it }
 
 actual fun DrawScope.drawSoftShadow(path: Path, dx: Float, dy: Float, blur: Float, alpha: Float) {
@@ -125,65 +125,32 @@ actual fun DrawScope.drawSoftShadow(path: Path, dx: Float, dy: Float, blur: Floa
 @Composable
 actual fun rememberFloatPermission(): FloatPermissionState = remember { FloatPermissionState(false, {}, {}) }
 
-private val PRESETS = listOf(
-    Triple(1920, 720, 1f), Triple(1280, 480, 1f), Triple(1280, 720, 1f),
-    Triple(1920, 1080, 1.5f), Triple(1024, 600, 1f), Triple(2400, 1080, 2.625f),
-)
-
-private fun fmtDensity(d: Float): String {
-    val t = (kotlin.math.round(d * 1000) / 1000.0).toString()
-    return if (t.contains('.')) t.trimEnd('0').trimEnd('.') else t
-}
-
-@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
-actual fun ScreenSizeSection() {
-    val current by WebUi.screen.collectAsState()
-    var wText by androidx.compose.runtime.remember(current) { androidx.compose.runtime.mutableStateOf(current?.width?.toString() ?: "1920") }
-    var hText by androidx.compose.runtime.remember(current) { androidx.compose.runtime.mutableStateOf(current?.height?.toString() ?: "720") }
-    var dText by androidx.compose.runtime.remember(current) { androidx.compose.runtime.mutableStateOf(current?.density?.let { fmtDensity(it) } ?: "1") }
-    val sub = com.obdmeter.ui.gauges.GaugeColors.SubText
-    androidx.compose.material3.Text(
-        "編集する画面の大きさ (px) と倍率を指定します。ブラウザーのウィンドウより大きいときは、縮小して全体を表示します。" +
-            "Android 版の 設定 → 画面サイズ に、その端末の値が出ています。",
-        color = sub, fontSize = 12.sp,
-    )
-    androidx.compose.foundation.layout.FlowRow(Modifier.padding(vertical = 6.dp)) {
-        androidx.compose.material3.FilterChip(
-            current == null, { WebUi.setScreen(null) }, { androidx.compose.material3.Text("ウィンドウに合わせる") },
-            Modifier.padding(end = 6.dp),
-        )
-        for ((w, h, d) in PRESETS) {
-            val sel = current?.let { it.width == w && it.height == h && it.density == d } == true
-            androidx.compose.material3.FilterChip(
-                sel, { WebUi.setScreen(com.obdmeter.web.ScreenSize(w, h, d)) },
-                { androidx.compose.material3.Text("$w×$h" + if (d != 1f) " (×${fmtDensity(d)})" else "") },
-                Modifier.padding(end = 6.dp),
-            )
+actual fun deviceScreenInfo(): String? = null
+
+/**
+ * Android と同じ文字の高さ・位置にするため、フォントの OS/2 の USE_TYPO_METRICS を外す。
+ * (ブラウザー版の描画はこの印があると OS/2 の値で行の高さを決めるが、Android は hhea の値を使うため、
+ *  この印があって値が違うフォントでは、数値の上下の位置が Android とずれていた)
+ */
+private fun androidLikeMetrics(bytes: ByteArray): ByteArray {
+    fun u16(i: Int) = ((bytes[i].toInt() and 0xFF) shl 8) or (bytes[i + 1].toInt() and 0xFF)
+    fun u32(i: Int) = (u16(i) shl 16) or u16(i + 2)
+    return runCatching {
+        val numTables = u16(4)
+        for (t in 0 until numTables) {
+            val rec = 12 + t * 16
+            if (bytes.decodeToString(rec, rec + 4) == "OS/2") {
+                val sel = u32(rec + 8) + 62
+                val v = u16(sel)
+                if (v and 0x80 == 0) return bytes
+                val out = bytes.copyOf()
+                val nv = v and 0x80.inv()
+                out[sel] = (nv shr 8).toByte()
+                out[sel + 1] = nv.toByte()
+                return out
+            }
         }
-    }
-    androidx.compose.foundation.layout.Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
-        val num = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Number)
-        androidx.compose.material3.OutlinedTextField(wText, { wText = it.filter(Char::isDigit).take(4) }, Modifier.width(110.dp),
-            label = { androidx.compose.material3.Text("幅 px") }, singleLine = true, keyboardOptions = num)
-        androidx.compose.material3.Text(" × ")
-        androidx.compose.material3.OutlinedTextField(hText, { hText = it.filter(Char::isDigit).take(4) }, Modifier.width(110.dp),
-            label = { androidx.compose.material3.Text("高さ px") }, singleLine = true, keyboardOptions = num)
-        androidx.compose.foundation.layout.Spacer(Modifier.width(8.dp))
-        androidx.compose.material3.OutlinedTextField(dText, { dText = it.filter { c -> c.isDigit() || c == '.' }.take(5) }, Modifier.width(100.dp),
-            label = { androidx.compose.material3.Text("倍率") }, singleLine = true, keyboardOptions = num)
-        androidx.compose.foundation.layout.Spacer(Modifier.width(8.dp))
-        val w = wText.toIntOrNull()
-        val h = hText.toIntOrNull()
-        val d = dText.toFloatOrNull()
-        val ok = w != null && h != null && d != null && w in 100..8000 && h in 100..8000 && d in 0.5f..4f
-        androidx.compose.material3.FilledTonalButton(enabled = ok, onClick = { WebUi.setScreen(com.obdmeter.web.ScreenSize(w!!, h!!, d!!)) }) {
-            androidx.compose.material3.Text("適用")
-        }
-    }
-    androidx.compose.material3.Text(
-        "倍率は Android の画面密度 (1 dp が何 px か) です。大きくすると文字やボタンが大きくなります。" +
-            "1920×720 の車載ナビは 1〜1.5 くらいが多いです。",
-        color = sub, fontSize = 12.sp, modifier = Modifier.padding(top = 4.dp),
-    )
+        bytes
+    }.getOrDefault(bytes)
 }

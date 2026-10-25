@@ -166,7 +166,7 @@ fun SettingsScreen(vm: MainViewModel, onBack: () -> Unit, onOpenCustomPids: () -
             BackupSection(vm)
 
             Section("画面サイズ")
-            ScreenSizeSection()
+            ScreenSizeSection(vm)
 
             Section("その他")
             if (!isWebApp) SwitchRow(

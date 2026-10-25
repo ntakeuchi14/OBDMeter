@@ -105,7 +105,7 @@ private fun start() {
             ) {
                 if (fontsReady) {
                     val vm = remember { println("OBD Meter Web: 画面"); MainViewModel(core) }
-                    SizedScreen { App(vm, onKeepScreenOn = {}) }
+                    App(vm, onKeepScreenOn = {})
                 }
                 Toast(Modifier.align(Alignment.BottomCenter))
             }
@@ -130,35 +130,5 @@ private fun Toast(modifier: Modifier) {
             color = Color.White,
             fontSize = 14.sp,
         )
-    }
-}
-
-/**
- * 設定の「画面サイズ」の大きさで画面を作り、ウィンドウに収まるように縮小して中央に置く。
- * 指定が無ければウィンドウいっぱいに表示する
- */
-@Composable
-private fun SizedScreen(content: @Composable () -> Unit) {
-    val size by WebUi.screen.collectAsState()
-    val s = size
-    androidx.compose.foundation.layout.BoxWithConstraints(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-        if (s == null) {
-            Box(Modifier.fillMaxSize().background(GaugeColors.Background)) { content() }
-            return@BoxWithConstraints
-        }
-        val outer = androidx.compose.ui.platform.LocalDensity.current
-        // ウィンドウ (実際のピクセル) に収まる倍率。拡大はしない
-        val fit = minOf(constraints.maxWidth.toFloat() / s.width, constraints.maxHeight.toFloat() / s.height, 1f)
-        val wDp = with(outer) { (s.width * fit).toDp() }
-        val hDp = with(outer) { (s.height * fit).toDp() }
-        Box(
-            Modifier.size(wDp, hDp).background(GaugeColors.Background)
-                .border(1.dp, Color(0xFF2A3038))
-        ) {
-            androidx.compose.runtime.CompositionLocalProvider(
-                androidx.compose.ui.platform.LocalDensity provides
-                    androidx.compose.ui.unit.Density(s.density * fit, outer.fontScale),
-            ) { content() }
-        }
     }
 }

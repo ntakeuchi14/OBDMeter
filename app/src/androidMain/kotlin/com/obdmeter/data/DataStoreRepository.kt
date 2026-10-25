@@ -44,6 +44,7 @@ class DataStoreRepository(private val context: Context) : Repository {
         val LAST_PAGE = longPreferencesKey("last_page")
         val KEY_PAGE_NAV = booleanPreferencesKey("key_page_nav")
         val GRID_STEP = intPreferencesKey("grid_step")
+        val SCREEN_SIZE = stringPreferencesKey("screen_size")
         val DASHBOARDS = stringPreferencesKey("dashboards_json")
         val CUSTOM_PIDS = stringPreferencesKey("custom_pids_json")
         val FONTS = stringPreferencesKey("fonts_json")
@@ -107,6 +108,7 @@ class DataStoreRepository(private val context: Context) : Repository {
             s.lastPageId?.let { p[Keys.LAST_PAGE] = it } ?: p.remove(Keys.LAST_PAGE)
             p[Keys.KEY_PAGE_NAV] = s.keyPageNav
             p[Keys.GRID_STEP] = s.gridStep
+            p[Keys.SCREEN_SIZE] = s.screenSize
             p[Keys.POLL_INTERVALS] = json.encodeToString(s.pollIntervalsMs)
         }
     }
@@ -144,6 +146,7 @@ class DataStoreRepository(private val context: Context) : Repository {
             lastPageId = this[Keys.LAST_PAGE],
             keyPageNav = this[Keys.KEY_PAGE_NAV] ?: d.keyPageNav,
             gridStep = this[Keys.GRID_STEP] ?: d.gridStep,
+            screenSize = this[Keys.SCREEN_SIZE] ?: d.screenSize,
             pollIntervalsMs = this[Keys.POLL_INTERVALS]
                 ?.let { runCatching { json.decodeFromString<Map<String, Int>>(it) }.getOrNull() }
                 ?: d.pollIntervalsMs,

@@ -67,11 +67,13 @@ fun App(vm: MainViewModel, onKeepScreenOn: (Boolean) -> Unit) {
     Box(
         Modifier
             .fillMaxSize()
-            .background(GaugeColors.Background)
+            .background(if (settings.screenSize.isBlank()) GaugeColors.Background else androidx.compose.ui.graphics.Color(0xFF05070A))
             .safeDrawingPadding()
     ) {
+    // 設定の「画面サイズ」を指定していれば、その大きさで作って画面に収まるよう縮小する
+    SizedScreen(ScreenSpec.parse(settings.screenSize)) {
         // 保存内容を読み終えるまでは何も出さない (既定の画面や古い画面が一瞬見えるのを防ぐ)
-        if (!ready) return@Box
+        if (!ready) return@SizedScreen
         when (screen) {
             Screen.DASHBOARD -> DashboardScreen(
                 vm,
@@ -95,6 +97,7 @@ fun App(vm: MainViewModel, onKeepScreenOn: (Boolean) -> Unit) {
             Screen.LOG -> LogScreen(vm, onBack = back)
             Screen.CUSTOM_PIDS -> CustomPidScreen(vm, startNew = customStartNew, onBack = back)
         }
+    }
     }
     }
 }

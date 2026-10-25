@@ -172,17 +172,12 @@ actual fun rememberFloatPermission(): FloatPermissionState {
 }
 
 @Composable
-actual fun ScreenSizeSection() {
+actual fun deviceScreenInfo(): String? {
     val context = LocalContext.current
     val m = context.resources.displayMetrics
-    val density = m.density
-    // アプリの画面の大きさ (横向きで使うので長辺を横にする)
-    val (w, h) = maxOf(m.widthPixels, m.heightPixels) to minOf(m.widthPixels, m.heightPixels)
-    androidx.compose.material3.Text("この画面: $w × $h px、倍率 ${"%.2f".format(density).trimEnd('0').trimEnd('.')} (${m.densityDpi} dpi)")
-    androidx.compose.material3.Text(
-        "Web 版 (メーターのデザイン用) の 設定 → 画面サイズ にこの値を入れると、この端末と同じ見え方で編集できます。" +
-            "(システムバーのぶん、実際に使える高さは少し小さくなります)",
-        color = com.obdmeter.ui.gauges.GaugeColors.SubText,
-        fontSize = androidx.compose.ui.unit.TextUnit(12f, androidx.compose.ui.unit.TextUnitType.Sp),
-    )
+    // 横向きで使うので長辺を横にする
+    val w = maxOf(m.widthPixels, m.heightPixels)
+    val h = minOf(m.widthPixels, m.heightPixels)
+    val d = (kotlin.math.round(m.density * 1000) / 1000.0).toString().trimEnd('0').trimEnd('.')
+    return "この端末の画面: $w × $h px、倍率 $d (${m.densityDpi} dpi)"
 }
