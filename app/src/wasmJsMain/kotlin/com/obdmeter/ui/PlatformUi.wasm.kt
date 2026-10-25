@@ -130,8 +130,9 @@ actual fun deviceScreenInfo(): String? = null
 
 /**
  * Android と同じ文字の高さ・位置にするため、フォントの行の高さの値を直す。
- * 下端 (descender) を正の値で書いてしまっているフォント (Digital-7 など) は、Android では下向きの長さとして扱われるが、
- * ブラウザー版の描画では上向きになって行が低くなり、数値の上下の位置が Android とずれていた
+ * - 下端 (descender) を正の値で書いてしまっているフォント (Digital-7 など) は、Android では下向きの長さとして扱われるが、
+ *   ブラウザー版の描画では上向きになって行が低くなっていた
+ * - OS/2 の USE_TYPO_METRICS があるフォントは、ブラウザー版だけ OS/2 の値を使っていた (Android は hhea)
  */
 private fun androidLikeMetrics(bytes: ByteArray): ByteArray {
     fun u16(b: ByteArray, i: Int) = ((b[i].toInt() and 0xFF) shl 8) or (b[i + 1].toInt() and 0xFF)
@@ -155,7 +156,17 @@ private fun androidLikeMetrics(bytes: ByteArray): ByteArray {
             val off = u32(bytes, rec + 8)
             when (tag) {
                 "hhea" -> fixNegative(off + 6)   // descender
-                "OS/2" -> fixNegative(off + 70)  // sTypoDescender
+                "OS/2" -> {
+                    fixNegative(off + 70)  // sTypoDescender
+                    // USE_TYPO_METRICS: Android は見ずに hhea の値で行の高さを決めるので、外して同じにする
+                    val sel = u16(out ?: bytes, off + 62)
+                    if (sel and 0x80 != 0) {
+                        val o = out ?: bytes.copyOf().also { out = it }
+                        val n = sel and 0x80.inv()
+                        o[off + 62] = (n shr 8).toByte()
+                        o[off + 63] = n.toByte()
+                    }
+                }
             }
         }
         out ?: bytes
