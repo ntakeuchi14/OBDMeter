@@ -620,8 +620,10 @@ private fun DashboardCanvas(
                     val oy = with(density) { (b[1] * cellHPx).toDp() }
                     val ow = with(density) { (b[2] * cellWPx).toDp() }
                     val oh = with(density) { (b[3] * cellHPx).toDp() }
+                    val pageW = with(density) { (Layout.COLS * cellWPx).toDp() }
+                    val pageH = with(density) { (Layout.ROWS * cellHPx).toDp() }
                     // 点線の囲みはメーターの後ろに描く (メーターの操作の邪魔をしない)
-                    Canvas(Modifier.zIndex(-1f).offset(ox, oy).size(ow, oh)) {
+                    Canvas(Modifier.zIndex(-1f).offset(ox, oy).wrapContentSize(Alignment.TopStart, unbounded = true).size(ow, oh)) {
                         drawRoundRect(
                             if (active) GaugeColors.Warn else GaugeColors.Peak,
                             cornerRadius = androidx.compose.ui.geometry.CornerRadius(6.dp.toPx()),
@@ -633,7 +635,8 @@ private fun DashboardCanvas(
                     }
                     // 右上: グループの印 (▲▼ ボタンと重ならないよう、囲みの上の辺に載せる)
                     Box(
-                        Modifier.zIndex(NEEDLE_Z + 1f).offset(ox, oy).size(ow, 0.dp).wrapContentSize(Alignment.TopEnd, unbounded = true)
+                        Modifier.zIndex(NEEDLE_Z + 1f).offset(ox, oy).wrapContentSize(Alignment.TopStart, unbounded = true)
+                            .size(minOf(ow, pageW - ox), 0.dp).wrapContentSize(Alignment.TopEnd, unbounded = true)
                     ) {
                         Box(
                             Modifier.offset(x = (-44).dp, y = (-9).dp).clip(RoundedCornerShape(11.dp))
@@ -644,7 +647,8 @@ private fun DashboardCanvas(
                     Box(
                         Modifier
                             .zIndex(NEEDLE_Z + 1f)
-                            .offset(ox + ow - 40.dp, oy + oh - 40.dp)
+                            // ページの外にはみ出していても、つまみはページ内の見える角に置く
+                            .offset(minOf(ox + ow, pageW) - 40.dp, minOf(oy + oh, pageH) - 40.dp)
                             .size(40.dp)
                             .pointerInput(gid) {
                                 detectDragGestures(
@@ -784,6 +788,9 @@ private fun GaugeOnGrid(
     val r = preview()
     val density = LocalDensity.current
     val dragging = move != Offset.Zero || resize != Offset.Zero || override != null
+    // メーターのうちページ内に見えている部分の右端・下端 (メーターの中の座標。▲▼ とつまみをここに置く)
+    val visRight = with(density) { ((minOf(r[0] + r[2], Layout.COLS) - maxOf(r[0], 0)).coerceAtLeast(1) * cellWPx + (maxOf(r[0], 0) - r[0]) * cellWPx).toDp() } - 6.dp
+    val visBottom = with(density) { ((minOf(r[1] + r[3], Layout.ROWS) - r[1]) * cellHPx).toDp() } - 6.dp
 
     // 手前の層 (アナログの針)。同じ位置・大きさで、ほかのメーターより上に重ねる
     overlay?.let { o ->
@@ -791,7 +798,9 @@ private fun GaugeOnGrid(
             Modifier
                 .zIndex(NEEDLE_Z)
                 .offset(with(density) { (r[0] * cellWPx).toDp() }, with(density) { (r[1] * cellHPx).toDp() })
-                .size(with(density) { (r[2] * cellWPx).toDp() }, with(density) { (r[3] * cellHPx).toDp() })
+                // ページより大きいメーターも、その大きさのまま置く (size だけだとページの大きさに縮められてしまう)
+            .wrapContentSize(Alignment.TopStart, unbounded = true)
+            .size(with(density) { (r[2] * cellWPx).toDp() }, with(density) { (r[3] * cellHPx).toDp() })
                 .padding(3.dp)
         ) { o() }
     }
@@ -800,6 +809,8 @@ private fun GaugeOnGrid(
         Modifier
             .zIndex(zOrder)
             .offset(with(density) { (r[0] * cellWPx).toDp() }, with(density) { (r[1] * cellHPx).toDp() })
+            // ページより大きいメーターも、その大きさのまま置く (size だけだとページの大きさに縮められてしまう)
+            .wrapContentSize(Alignment.TopStart, unbounded = true)
             .size(with(density) { (r[2] * cellWPx).toDp() }, with(density) { (r[3] * cellHPx).toDp() })
             .padding(3.dp)
             .then(
@@ -898,7 +909,7 @@ private fun GaugeOnGrid(
         }
         if (editing && !selecting) {
             // 重なり順 (右上): ▲ 最前面 / ▼ 最背面
-            Row(Modifier.align(Alignment.TopEnd).padding(4.dp), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+            Row(Modifier.align(Alignment.TopStart).offset(visRight - 72.dp, 0.dp).padding(4.dp), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                 listOf("▲" to Int.MAX_VALUE, "▼" to Int.MIN_VALUE).forEach { (label, delta) ->
                     Box(
                         Modifier.size(30.dp).clip(RoundedCornerShape(8.dp))
@@ -914,7 +925,8 @@ private fun GaugeOnGrid(
             // サイズ変更のつまみ (右下)
             Box(
                 Modifier
-                    .align(Alignment.BottomEnd)
+                    .align(Alignment.TopStart)
+                    .offset(visRight - 36.dp, visBottom - 36.dp)
                     .size(36.dp)
                     .pointerInput(gauge.id) {
                         detectDragGestures(
