@@ -791,6 +791,7 @@ private fun GaugeOnGrid(
     // メーターのうちページ内に見えている部分の右端・下端 (メーターの中の座標。▲▼ とつまみをここに置く)
     val visRight = with(density) { ((minOf(r[0] + r[2], Layout.COLS) - maxOf(r[0], 0)).coerceAtLeast(1) * cellWPx + (maxOf(r[0], 0) - r[0]) * cellWPx).toDp() } - 6.dp
     val visBottom = with(density) { ((minOf(r[1] + r[3], Layout.ROWS) - r[1]) * cellHPx).toDp() } - 6.dp
+    val visTop = with(density) { (maxOf(0, -r[1]) * cellHPx).toDp() }
 
     // 手前の層 (アナログの針)。同じ位置・大きさで、ほかのメーターより上に重ねる
     overlay?.let { o ->
@@ -909,7 +910,7 @@ private fun GaugeOnGrid(
         }
         if (editing && !selecting) {
             // 重なり順 (右上): ▲ 最前面 / ▼ 最背面
-            Row(Modifier.align(Alignment.TopStart).offset(visRight - 72.dp, 0.dp).padding(4.dp), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+            Row(Modifier.align(Alignment.TopStart).offset(visRight - 72.dp, visTop).padding(4.dp), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                 listOf("▲" to Int.MAX_VALUE, "▼" to Int.MIN_VALUE).forEach { (label, delta) ->
                     Box(
                         Modifier.size(30.dp).clip(RoundedCornerShape(8.dp))
