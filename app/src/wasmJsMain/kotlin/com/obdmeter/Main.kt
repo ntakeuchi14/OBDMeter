@@ -84,6 +84,15 @@ private fun start() {
         val resolver = LocalFontFamilyResolver.current
         LaunchedEffect(Unit) {
             // 日本語のフォント (Web では端末のフォントを使えないので、サイトに置いたものを読み込んでおく)
+            // 先に読み込んだものから使う: 英数字・記号は Android と同じ Roboto、日本語は Noto Sans JP
+            val roboto = listOf(
+                "fonts/Roboto-Regular.ttf" to androidx.compose.ui.text.font.FontWeight.Normal,
+                "fonts/Roboto-Medium.ttf" to androidx.compose.ui.text.font.FontWeight.Medium,
+                "fonts/Roboto-Bold.ttf" to androidx.compose.ui.text.font.FontWeight.Bold,
+            ).mapNotNull { (file, weight) ->
+                fetchBinary(file)?.let { androidx.compose.ui.text.platform.Font(file, it, weight) }
+            }
+            if (roboto.isNotEmpty()) runCatching { resolver.preload(FontFamily(roboto)) }
             for (file in listOf("fonts/NotoSansJP-Regular.otf", "fonts/NotoSansMono-Regular.ttf")) {
                 val bytes = fetchBinary(file) ?: continue
                 runCatching {

@@ -130,8 +130,8 @@ actual fun deviceScreenInfo(): String? = null
 
 /**
  * Android と同じ文字の高さ・位置にするため、フォントの行の高さの値を直す。
- * - 下端 (descender) を正の値で書いてしまっているフォント (Digital-7 など) は、Android では下向きの長さとして扱われるが、
- *   ブラウザー版の描画では上向きになって行が低くなっていた
+ * - 下端 (descender) を正の値で書いてしまっているフォント (Digital-7 など) は、ブラウザー版では行が低くなっていた。
+ *   Android の表示と比べると OS/2 の win の値と一致したので、その値に置き換える
  * - OS/2 の USE_TYPO_METRICS があるフォントは、ブラウザー版だけ OS/2 の値を使っていた (Android は hhea)
  */
 private fun androidLikeMetrics(bytes: ByteArray): ByteArray {
@@ -139,36 +139,28 @@ private fun androidLikeMetrics(bytes: ByteArray): ByteArray {
     fun s16(b: ByteArray, i: Int) = u16(b, i).toShort().toInt()
     fun u32(b: ByteArray, i: Int) = (u16(b, i) shl 16) or u16(b, i + 2)
     return runCatching {
-        var out: ByteArray? = null
-        fun fixNegative(pos: Int) {
-            val v = s16(out ?: bytes, pos)
-            if (v > 0) {
-                val o = out ?: bytes.copyOf().also { out = it }
-                val n = -v
-                o[pos] = (n shr 8).toByte()
-                o[pos + 1] = n.toByte()
-            }
-        }
-        val numTables = u16(bytes, 4)
-        for (t in 0 until numTables) {
+        val out = bytes.copyOf()
+        var changed = false
+        fun put16(pos: Int, v: Int) { out[pos] = (v shr 8).toByte(); out[pos + 1] = v.toByte(); changed = true }
+        val tables = HashMap<String, Int>()
+        for (t in 0 until u16(bytes, 4)) {
             val rec = 12 + t * 16
-            val tag = bytes.decodeToString(rec, rec + 4)
-            val off = u32(bytes, rec + 8)
-            when (tag) {
-                "hhea" -> fixNegative(off + 6)   // descender
-                "OS/2" -> {
-                    fixNegative(off + 70)  // sTypoDescender
-                    // USE_TYPO_METRICS: Android は見ずに hhea の値で行の高さを決めるので、外して同じにする
-                    val sel = u16(out ?: bytes, off + 62)
-                    if (sel and 0x80 != 0) {
-                        val o = out ?: bytes.copyOf().also { out = it }
-                        val n = sel and 0x80.inv()
-                        o[off + 62] = (n shr 8).toByte()
-                        o[off + 63] = n.toByte()
-                    }
-                }
-            }
+            tables[bytes.decodeToString(rec, rec + 4)] = u32(bytes, rec + 8)
         }
-        out ?: bytes
+        val hhea = tables["hhea"]
+        val os2 = tables["OS/2"]
+        if (os2 != null) {
+            // USE_TYPO_METRICS: Android は見ずに hhea の値で行の高さを決めるので、外して同じにする
+            val sel = u16(bytes, os2 + 62)
+            if (sel and 0x80 != 0) put16(os2 + 62, sel and 0x80.inv())
+        }
+        if (hhea != null && s16(bytes, hhea + 6) > 0) {
+            // 下端が正 (壊れた値): Android と同じく OS/2 の win の値を使う
+            if (os2 != null) {
+                put16(hhea + 4, u16(bytes, os2 + 74))         // ascender = usWinAscent
+                put16(hhea + 6, -u16(bytes, os2 + 76))        // descender = -usWinDescent
+            } else put16(hhea + 6, -s16(bytes, hhea + 6))
+        }
+        if (changed) out else bytes
     }.getOrDefault(bytes)
 }
