@@ -129,28 +129,35 @@ actual fun rememberFloatPermission(): FloatPermissionState = remember { FloatPer
 actual fun deviceScreenInfo(): String? = null
 
 /**
- * Android と同じ文字の高さ・位置にするため、フォントの OS/2 の USE_TYPO_METRICS を外す。
- * (ブラウザー版の描画はこの印があると OS/2 の値で行の高さを決めるが、Android は hhea の値を使うため、
- *  この印があって値が違うフォントでは、数値の上下の位置が Android とずれていた)
+ * Android と同じ文字の高さ・位置にするため、フォントの行の高さの値を直す。
+ * 下端 (descender) を正の値で書いてしまっているフォント (Digital-7 など) は、Android では下向きの長さとして扱われるが、
+ * ブラウザー版の描画では上向きになって行が低くなり、数値の上下の位置が Android とずれていた
  */
 private fun androidLikeMetrics(bytes: ByteArray): ByteArray {
-    fun u16(i: Int) = ((bytes[i].toInt() and 0xFF) shl 8) or (bytes[i + 1].toInt() and 0xFF)
-    fun u32(i: Int) = (u16(i) shl 16) or u16(i + 2)
+    fun u16(b: ByteArray, i: Int) = ((b[i].toInt() and 0xFF) shl 8) or (b[i + 1].toInt() and 0xFF)
+    fun s16(b: ByteArray, i: Int) = u16(b, i).toShort().toInt()
+    fun u32(b: ByteArray, i: Int) = (u16(b, i) shl 16) or u16(b, i + 2)
     return runCatching {
-        val numTables = u16(4)
-        for (t in 0 until numTables) {
-            val rec = 12 + t * 16
-            if (bytes.decodeToString(rec, rec + 4) == "OS/2") {
-                val sel = u32(rec + 8) + 62
-                val v = u16(sel)
-                if (v and 0x80 == 0) return bytes
-                val out = bytes.copyOf()
-                val nv = v and 0x80.inv()
-                out[sel] = (nv shr 8).toByte()
-                out[sel + 1] = nv.toByte()
-                return out
+        var out: ByteArray? = null
+        fun fixNegative(pos: Int) {
+            val v = s16(out ?: bytes, pos)
+            if (v > 0) {
+                val o = out ?: bytes.copyOf().also { out = it }
+                val n = -v
+                o[pos] = (n shr 8).toByte()
+                o[pos + 1] = n.toByte()
             }
         }
-        bytes
+        val numTables = u16(bytes, 4)
+        for (t in 0 until numTables) {
+            val rec = 12 + t * 16
+            val tag = bytes.decodeToString(rec, rec + 4)
+            val off = u32(bytes, rec + 8)
+            when (tag) {
+                "hhea" -> fixNegative(off + 6)   // descender
+                "OS/2" -> fixNegative(off + 70)  // sTypoDescender
+            }
+        }
+        out ?: bytes
     }.getOrDefault(bytes)
 }
