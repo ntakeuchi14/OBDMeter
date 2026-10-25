@@ -130,9 +130,8 @@ actual fun deviceScreenInfo(): String? = null
 
 /**
  * Android と同じ文字の高さ・位置にするため、フォントの行の高さの値を直す。
- * - 下端 (descender) を正の値で書いてしまっているフォント (Digital-7 など) は、ブラウザー版では行が低くなっていた。
- *   Android の表示と比べると OS/2 の win の値と一致したので、その値に置き換える
- * - OS/2 の USE_TYPO_METRICS があるフォントは、ブラウザー版だけ OS/2 の値を使っていた (Android は hhea)
+ * 下端 (descender) を正の値で書いてしまっているフォント (Digital-7 など) は、Android では下端 0 として扱われる
+ * (Android の表示と比べて確認) が、ブラウザー版では行が低くなり、数値・単位・MAX の上下の位置がずれていた
  */
 private fun androidLikeMetrics(bytes: ByteArray): ByteArray {
     fun u16(b: ByteArray, i: Int) = ((b[i].toInt() and 0xFF) shl 8) or (b[i + 1].toInt() and 0xFF)
@@ -141,26 +140,16 @@ private fun androidLikeMetrics(bytes: ByteArray): ByteArray {
     return runCatching {
         val out = bytes.copyOf()
         var changed = false
-        fun put16(pos: Int, v: Int) { out[pos] = (v shr 8).toByte(); out[pos + 1] = v.toByte(); changed = true }
         val tables = HashMap<String, Int>()
         for (t in 0 until u16(bytes, 4)) {
             val rec = 12 + t * 16
             tables[bytes.decodeToString(rec, rec + 4)] = u32(bytes, rec + 8)
         }
-        val hhea = tables["hhea"]
-        val os2 = tables["OS/2"]
-        if (os2 != null) {
-            // USE_TYPO_METRICS: Android は見ずに hhea の値で行の高さを決めるので、外して同じにする
-            val sel = u16(bytes, os2 + 62)
-            if (sel and 0x80 != 0) put16(os2 + 62, sel and 0x80.inv())
+        fun zeroIfPositive(pos: Int) {
+            if (s16(bytes, pos) > 0) { out[pos] = 0; out[pos + 1] = 0; changed = true }
         }
-        if (hhea != null && s16(bytes, hhea + 6) > 0) {
-            // 下端が正 (壊れた値): Android と同じく OS/2 の win の値を使う
-            if (os2 != null) {
-                put16(hhea + 4, u16(bytes, os2 + 74))         // ascender = usWinAscent
-                put16(hhea + 6, -u16(bytes, os2 + 76))        // descender = -usWinDescent
-            } else put16(hhea + 6, -s16(bytes, hhea + 6))
-        }
+        tables["hhea"]?.let { zeroIfPositive(it + 6) }   // descender
+        tables["OS/2"]?.let { zeroIfPositive(it + 70) }  // sTypoDescender
         if (changed) out else bytes
     }.getOrDefault(bytes)
 }
