@@ -90,24 +90,21 @@ actual fun rememberGaugeImage(name: String?): ImageBitmap? {
 }
 
 @Composable
-actual fun rememberFontFamily(entry: FontEntry?, forLineHeightText: Boolean): FontFamily? {
+actual fun rememberFontFamily(entry: FontEntry?): FontFamily? {
     val platform = WebUi.platform
     return produceState<FontFamily?>(
-        entry?.let { e -> platform.fontData[e.file]?.let { family(e, it, forLineHeightText) } },
-        entry?.id, entry?.file, forLineHeightText,
+        entry?.let { e -> platform.fontData[e.file]?.let { family(e, it) } },
+        entry?.id, entry?.file,
     ) {
-        value = entry?.let { e -> platform.loadFont(e)?.let { family(e, it, forLineHeightText) } }
+        value = entry?.let { e -> platform.loadFont(e)?.let { family(e, it) } }
     }.value
 }
 
 private val families = HashMap<String, FontFamily>()
 
-private fun family(entry: FontEntry, bytes: ByteArray, lineHeightText: Boolean): FontFamily? {
-    val key = entry.file + if (lineHeightText) "#lh" else ""
-    return families[key] ?: runCatching {
-        FontFamily(androidx.compose.ui.text.platform.Font(key, androidLikeMetrics(bytes, lineHeightText)))
-    }.getOrNull()?.also { families[key] = it }
-}
+private fun family(entry: FontEntry, bytes: ByteArray): FontFamily? = families[entry.file] ?: runCatching {
+    FontFamily(androidx.compose.ui.text.platform.Font(entry.file, androidLikeMetrics(bytes)))
+}.getOrNull()?.also { families[entry.file] = it }
 
 actual fun DrawScope.drawSoftShadow(path: Path, dx: Float, dy: Float, blur: Float, alpha: Float) {
     if (alpha <= 0f) return
@@ -137,7 +134,7 @@ actual fun deviceScreenInfo(): String? = null
  *   Android の表示と比べると OS/2 の win の値と一致したので、その値に置き換える
  * - OS/2 の USE_TYPO_METRICS があるフォントは、ブラウザー版だけ OS/2 の値を使っていた (Android は hhea)
  */
-private fun androidLikeMetrics(bytes: ByteArray, lineHeightText: Boolean): ByteArray {
+private fun androidLikeMetrics(bytes: ByteArray): ByteArray {
     fun u16(b: ByteArray, i: Int) = ((b[i].toInt() and 0xFF) shl 8) or (b[i + 1].toInt() and 0xFF)
     fun s16(b: ByteArray, i: Int) = u16(b, i).toShort().toInt()
     fun u32(b: ByteArray, i: Int) = (u16(b, i) shl 16) or u16(b, i + 2)
@@ -158,10 +155,8 @@ private fun androidLikeMetrics(bytes: ByteArray, lineHeightText: Boolean): ByteA
             if (sel and 0x80 != 0) put16(os2 + 62, sel and 0x80.inv())
         }
         if (hhea != null && s16(bytes, hhea + 6) > 0) {
-            // 下端が正 (壊れた値): Android の表示と比べると、行の高さを指定した文字は下端 0 (上端は hhea のまま)、
-            // それ以外は OS/2 の win の値と一致した
-            if (lineHeightText) put16(hhea + 6, 0)
-            else if (os2 != null) {
+            // 下端が正 (壊れた値): Android と同じく OS/2 の win の値を使う
+            if (os2 != null) {
                 put16(hhea + 4, u16(bytes, os2 + 74))         // ascender = usWinAscent
                 put16(hhea + 6, -u16(bytes, os2 + 76))        // descender = -usWinDescent
             } else put16(hhea + 6, -s16(bytes, hhea + 6))
