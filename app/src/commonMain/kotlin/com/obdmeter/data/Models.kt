@@ -173,6 +173,9 @@ data class GaugeDesign(
     /** これまでの最大値の位置に印を付ける (メーターを長押しでリセット) */
     val showPeak: Boolean = false,
     val peakColor: Long? = null,
+    /** バー: 最大値の印の太さ・長さ (1 = 標準) */
+    val peakMarkWidth: Float = 1f,
+    val peakMarkLength: Float = 1f,
     /** 最大値を数字でも表示する */
     val showPeakValue: Boolean = false,
     /** 最大値の文字の色 (null = 印の色と同じ) */

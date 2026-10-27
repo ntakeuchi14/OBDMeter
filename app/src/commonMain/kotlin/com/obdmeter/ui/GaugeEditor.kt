@@ -835,6 +835,10 @@ private fun PeakSection(g: GaugeConfig, update: ((GaugeDesign) -> GaugeDesign) -
         if (g.style != GaugeStyle.DIGITAL) {
             SwitchLine("最大値を数字でも表示", null, d.showPeakValue) { v -> update { it.copy(showPeakValue = v) } }
             ColorLine("印の色", d.peakColor, GaugeColors.Peak) { c -> update { it.copy(peakColor = c) } }
+            if (g.style == GaugeStyle.BAR) {
+                SliderLine("印の太さ", d.peakMarkWidth * 100, 20f..600f, "%.0f%%") { v -> update { it.copy(peakMarkWidth = snap(v, 5f) / 100f) } }
+                SliderLine("印の長さ", d.peakMarkLength * 100, 20f..600f, "%.0f%%") { v -> update { it.copy(peakMarkLength = snap(v, 5f) / 100f) } }
+            }
         }
         if (d.showPeakValue || g.style == GaugeStyle.DIGITAL) {
             val default = d.peakColor?.let { Color(it) } ?: GaugeColors.Peak

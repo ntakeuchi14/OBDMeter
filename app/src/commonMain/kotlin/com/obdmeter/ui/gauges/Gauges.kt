@@ -184,6 +184,8 @@ data class GaugeLook(
     val chartColors: List<Color?> = emptyList(),
     val showPeak: Boolean = false,
     val peakColor: Color = GaugeColors.Peak,
+    val peakMarkWidth: Float = 1f,
+    val peakMarkLength: Float = 1f,
     val showPeakValue: Boolean = false,
     val peakTextColor: Color = GaugeColors.Peak,
     val peakTextSize: Float = 1f,
@@ -910,9 +912,12 @@ private fun DrawScope.drawBar(
         // 印はその位置のバーの太さに合わせる (先細りの細いところでは短く・細く)
         val h = max(th(pp), 2f)
         val o = if (taper > 0f) 0f else (thick - baseThick) / 2
-        val a = pointAt(pp, o - h * 0.35f)
-        val b = pointAt(pp, o + h * 1.35f)
-        drawLine(look.peakColor, a, b, max(2f, h * 0.25f))
+        // 太さ・長さの設定は、バーの中心を基準に伸び縮みさせる (標準はバーの上下に少しはみ出す長さ)
+        val center = o + h * 0.5f
+        val half = h * 0.85f * look.peakMarkLength
+        val a = pointAt(pp, center - half)
+        val b = pointAt(pp, center + half)
+        drawLine(look.peakColor, a, b, max(1f, max(2f, h * 0.25f) * look.peakMarkWidth))
         if (look.showPeakValue) {
             val t = tm.measure("MAX " + def.format(peak),
                 TextStyle(color = look.peakTextColor, fontSize = (unit * 0.12f * look.peakTextSize).toSp(), fontFamily = fonts.value))

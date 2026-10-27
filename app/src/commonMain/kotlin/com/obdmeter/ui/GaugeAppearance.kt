@@ -151,6 +151,8 @@ fun GaugeDesign.toLook(def: PidDef, style: GaugeStyle): GaugeLook {
         chartColors = chartColors.map { c -> c?.let { Color(it) } },
         showPeak = showPeak,
         peakColor = peakColor.color(GaugeColors.Peak),
+        peakMarkWidth = peakMarkWidth.coerceIn(0.2f, 6f),
+        peakMarkLength = peakMarkLength.coerceIn(0.2f, 6f),
         showPeakValue = showPeakValue,
         peakTextColor = peakTextColor.color(peakColor.color(GaugeColors.Peak)),
         peakTextSize = peakTextSize.coerceIn(0.3f, 4f),
