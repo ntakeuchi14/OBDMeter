@@ -43,8 +43,12 @@ data class PidDef(
 
     val isCustom: Boolean get() = kind == Kind.CUSTOM
 
-    fun format(value: Double?): String =
-        if (value == null) blankText() else "%.${decimals}f".format(value)
+    fun format(value: Double?): String {
+        if (value == null) return blankText()
+        val t = "%.${decimals}f".format(value)
+        // -0.04 を小数 1 桁にすると "-0.0" になるので、0 に丸まったときはマイナスを付けない
+        return if (t.startsWith("-") && t.drop(1).all { it == '0' || it == '.' }) t.drop(1) else t
+    }
 
     /**
      * 表示の最大の桁の形 (例: 0〜9 → "0"、-40〜150 → "000"、10〜16 小数 1 桁 → "00.0")。
