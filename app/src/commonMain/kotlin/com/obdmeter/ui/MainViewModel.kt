@@ -18,6 +18,7 @@ import com.obdmeter.data.ImportMode
 import com.obdmeter.data.Layout
 import com.obdmeter.data.LoadedBackup
 import com.obdmeter.data.imageNames
+import com.obdmeter.data.withoutUnusedImages
 import com.obdmeter.session.ConnectionState
 import com.obdmeter.session.ObdSession
 import com.obdmeter.util.DateFmt
@@ -65,7 +66,11 @@ class MainViewModel(val core: AppCore) : ViewModel() {
         }
         // どのメーターからも使われなくなった背景画像を消す
         viewModelScope.launch {
-            val used = repo.dashboards.first().flatMap { it.imageNames() }.toSet()
+            // 今の表示形式で表示していない画像は使っていない扱いにして、設定からも外す
+            val pages = repo.dashboards.first()
+            val cleaned = pages.map { it.withoutUnusedImages() }
+            if (cleaned.indices.any { cleaned[it] !== pages[it] }) repo.saveDashboards(cleaned)
+            val used = cleaned.flatMap { it.imageNames() }.toSet()
             runCatching { platform.cleanupImages(used) }
         }
     }
@@ -98,7 +103,7 @@ class MainViewModel(val core: AppCore) : ViewModel() {
                 val manifest = BackupManifest(
                     appVersion = platform.appVersion,
                     exportedAt = DateFmt("yyyy-MM-dd HH:mm").format(nowMs()),
-                    dashboards = repo.dashboards.first(),
+                    dashboards = repo.dashboards.first().map { it.withoutUnusedImages() },
                     customPids = repo.customPids.first(),
                     fonts = repo.fonts.first(),
                     pollIntervalsMs = repo.settings.first().pollIntervalsMs,

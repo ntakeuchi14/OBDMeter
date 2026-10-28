@@ -29,6 +29,22 @@ class BackupTest {
     }
 
     @Test
+    fun imagesNotShownByCurrentStyleAreUnused() {
+        val table = designed.copy(id = 2, style = GaugeStyle.TABLE,
+            design = designed.design.copy(backgroundImage = "bg_old.png", tableValueImage = "bg_cell.png"))
+        val chart = designed.copy(id = 3, style = GaugeStyle.CHART,
+            design = designed.design.copy(backgroundImage = "bg_old2.png"))
+        val p = page(1, "メイン", designed, table, chart)
+        assertEquals(setOf("bg_abc.png", "bg_cell.png"), BackupLogic.referencedImages(listOf(p)))
+        val cleaned = p.withoutUnusedImages()
+        assertEquals("bg_abc.png", cleaned.gauges[0].design.backgroundImage)
+        assertNull(cleaned.gauges[1].design.backgroundImage)
+        assertEquals("bg_cell.png", cleaned.gauges[1].design.tableValueImage)
+        assertNull(cleaned.gauges[2].design.backgroundImage)
+        assertTrue(page(2, "x", designed).let { it.withoutUnusedImages() === it })
+    }
+
+    @Test
     fun rejectsOtherFiles() {
         for (text in listOf("{}", """{"format":"other"}""", "not json", """{"format":"obdmeter-backup","version":99}""")) {
             try {

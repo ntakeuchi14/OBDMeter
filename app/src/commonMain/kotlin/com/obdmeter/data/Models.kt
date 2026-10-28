@@ -427,10 +427,32 @@ data class FloatPlacement(val x: Int, val y: Int, val widthDp: Int)
 val GaugeDesign.historyRetentionMs: Long
     get() = if (historyHours > 0) historyHours * 3_600_000L else historyMonths.coerceIn(1, 24) * 2_629_746_000L
 
-fun GaugeDesign.imageNames(): List<String> = listOfNotNull(backgroundImage, tableValueImage)
+/** 今の表示形式で背景画像を描くか */
+val GaugeStyle.drawsBackgroundImage: Boolean
+    get() = this == GaugeStyle.ANALOG || this == GaugeStyle.BAR || this == GaugeStyle.DIGITAL || this == GaugeStyle.LAMP
+
+/** メーターが今の表示形式で実際に表示している画像の名前 (ほかの形式用に残っている設定は含めない) */
+fun GaugeConfig.imageNames(): List<String> = listOfNotNull(
+    design.backgroundImage.takeIf { style.drawsBackgroundImage },
+    design.tableValueImage.takeIf { style == GaugeStyle.TABLE },
+)
+
+/** 今の表示形式で使わない画像の設定を外したもの */
+fun GaugeConfig.withoutUnusedImages(): GaugeConfig {
+    val bg = design.backgroundImage.takeIf { style.drawsBackgroundImage }
+    val tv = design.tableValueImage.takeIf { style == GaugeStyle.TABLE }
+    return if (bg == design.backgroundImage && tv == design.tableValueImage) this
+    else copy(design = design.copy(backgroundImage = bg, tableValueImage = tv))
+}
 
 /** ページとメーターが使っている画像の名前 */
-fun Dashboard.imageNames(): List<String> = gauges.flatMap { it.design.imageNames() } + listOfNotNull(background.image)
+fun Dashboard.imageNames(): List<String> = gauges.flatMap { it.imageNames() } + listOfNotNull(background.image)
+
+/** 表示に使っていない画像の設定を外したページ */
+fun Dashboard.withoutUnusedImages(): Dashboard {
+    val g = gauges.map { it.withoutUnusedImages() }
+    return if (g.indices.all { g[it] === gauges[it] }) this else copy(gauges = g)
+}
 
 /** ページの背景の柄 */
 enum class BgPattern(val label: String) {
