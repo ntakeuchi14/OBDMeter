@@ -234,7 +234,8 @@ class AppCore(val platform: AppPlatform) {
                 val slotEvents = HashMap<String, MutableList<Pair<String, Double>>>()
                 for ((t, rule) in due) {
                     // 表示していない項目を記録のために読むときは、変化だけの記録でも 1 秒に 1 回まで
-                    val ms = if (t.key in need && !t.key.startsWith("DEV_")) maxOf(rule.intervalMs, ReadPlan.CHANGE_SAMPLE_MIN_MS) else rule.intervalMs
+                    // 前後の値を残す変動監視も、選んだ項目を毎回読むので 1 秒に 1 回まで (1 カウント = 約 1 秒)
+                    val ms = if ((t.key in need && !t.key.startsWith("DEV_")) || t.slot in capSlots) maxOf(rule.intervalMs, ReadPlan.CHANGE_SAMPLE_MIN_MS) else rule.intervalMs
                     nextDue[t] = now + ms
                     val v = read[t.key] ?: continue
                     if (rule.events) {
