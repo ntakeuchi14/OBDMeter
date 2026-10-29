@@ -44,6 +44,8 @@ class AppCore(val platform: AppPlatform) {
     val history: HistoryStore = platform.history
     /** 折れ線グラフの項目の記録のしかた (間隔・変化したときだけか) */
     @Volatile private var recordRules: Map<ReadPlan.RecordTarget, ReadPlan.RecordRule> = emptyMap()
+    /** 変動監視で、変動したときに前後の値を残す項目 (メーター → 項目キー) */
+    @Volatile private var captureKeys: Map<String, List<String>> = emptyMap()
     /** 端末のセンサー (傾き・加速度など。テスト用の項目) */
     val deviceSensors: DeviceSensorSource = platform.deviceSensors
 
@@ -165,6 +167,7 @@ class AppCore(val platform: AppPlatform) {
                     history.adoptShared(ReadPlan.chartKeys(pages))
                 }
                 recordRules = ReadPlan.recordRules(pages, shownPage, poll)
+                captureKeys = ReadPlan.captureKeys(pages)
                 history.retentions = ReadPlan.retentions(pages)
                 recordingDeviceKeys.value = recordRules.keys.mapNotNullTo(HashSet()) { t -> t.key.takeIf { it.startsWith("DEV_") } }
             }
@@ -185,11 +188,18 @@ class AppCore(val platform: AppPlatform) {
             val changes = com.obdmeter.data.ChangeRecorder()
             // 変動監視: 最後に記録した値 (記録の最後の行から始める)
             val eventLast = HashMap<ReadPlan.RecordTarget, Double?>()
+            // 変動監視: 変動したときの前後の値
+            val capture = com.obdmeter.data.MonitorCapture { k, v -> catalog.value.get(k)?.format(v) ?: v.toString() }
+            suspend fun saveCaptures(files: List<com.obdmeter.data.MonitorCapture.File>) {
+                for (f in files) runCatching { history.saveCapture(f.slot, f.name, f.text) }
+            }
             var wasConnected = false
             while (true) {
                 delay(ReadPlan.CHANGE_MIN_MS)
                 val connected = session.state.value is ConnectionState.Connected
                 if (connected && !wasConnected) nextDue.keys.removeAll { !it.key.startsWith("DEV_") }
+                // 通信が切れたら、読み終わっていない前後の値はそこまでの分で書き出す
+                if (!connected && wasConnected) saveCaptures(capture.flush())
                 wasConnected = connected
                 val now = com.obdmeter.util.nowMs()
                 val rules = recordRules
@@ -197,13 +207,19 @@ class AppCore(val platform: AppPlatform) {
                 for (slot in history.takeCleared()) {
                     eventLast.keys.removeAll { it.slot == slot }
                     changes.forget(slot)
+                    capture.forget(slot)
                 }
                 // 記録しなくなった項目 (表示中だけのグラフのページを離れた など) は、最後に見た時刻まで書いて終える
                 history.storeRows(changes.retain(rules.keys))
                 val due = rules.filter { (t, _) -> (nextDue[t] ?: 0L) <= now && (connected || t.key.startsWith("DEV_")) }
+                val caps = captureKeys
+                capture.retain(caps.keys)
                 if (due.isEmpty()) continue
                 // 同じ項目を複数のグラフで記録するときも、読むのは 1 回
                 val dueKeys = due.keys.mapTo(HashSet()) { it.key }
+                // 前後の値を残す変動監視は、監視の読み出しのたびに選んだ項目も読む (表示中で読んでいる項目はその値を使う)
+                val capSlots = due.keys.mapNotNullTo(HashSet()) { t -> t.slot.takeIf { connected && it in caps } }
+                for (slot in capSlots) dueKeys += caps.getValue(slot)
                 // 表示中のメーターで読んでいる項目 (と端末のセンサー) は、その最新の値を使う
                 val live = values.value
                 val activeKeys = session.activePids.mapTo(HashSet()) { it.key } + deviceSensors.values.value.keys
@@ -215,6 +231,7 @@ class AppCore(val platform: AppPlatform) {
                 val rows = HashMap<String, HashMap<String, Double>>()
                 val changeRows = ArrayList<com.obdmeter.data.HistoryRow>()
                 val eventRows = ArrayList<com.obdmeter.data.HistoryRow>()
+                val slotEvents = HashMap<String, MutableList<Pair<String, Double>>>()
                 for ((t, rule) in due) {
                     // 表示していない項目を記録のために読むときは、変化だけの記録でも 1 秒に 1 回まで
                     val ms = if (t.key in need && !t.key.startsWith("DEV_")) maxOf(rule.intervalMs, ReadPlan.CHANGE_SAMPLE_MIN_MS) else rule.intervalMs
@@ -224,6 +241,8 @@ class AppCore(val platform: AppPlatform) {
                         if (t !in eventLast) eventLast[t] = history.lastRow(t.slot, t.key)?.first?.v
                         if (com.obdmeter.data.Monitor.shouldRecord(v, eventLast[t], rule.increaseOnly)) {
                             eventRows += com.obdmeter.data.HistoryRow(t.slot, t.key, time, v, cont = false)
+                            // 初回の計測 (前回の値が無い) は変動ではない
+                            if (eventLast[t] != null) slotEvents.getOrPut(t.slot) { ArrayList() } += t.key to v
                             eventLast[t] = v
                         }
                     } else if (rule.onChangeOnly) {
@@ -236,6 +255,14 @@ class AppCore(val platform: AppPlatform) {
                 history.store(rows, time)
                 history.storeRows(changeRows)
                 history.storeEvents(eventRows)
+                for (slot in capSlots) {
+                    val keys = caps.getValue(slot)
+                    val monitored = due.keys.filter { it.slot == slot }.map { it.key }
+                    val snap = com.obdmeter.data.MonitorCapture.Snapshot(
+                        time, (keys + monitored).mapNotNull { k -> read[k]?.let { k to it } }.toMap(),
+                    )
+                    saveCaptures(capture.observe(slot, snap, slotEvents[slot].orEmpty(), keys))
+                }
             }
         }
     }

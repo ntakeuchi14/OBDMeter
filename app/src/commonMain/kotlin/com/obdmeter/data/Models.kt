@@ -319,6 +319,11 @@ data class GaugeDesign(
     val monitorWindowMs: Long = 86_400_000L,
     /** 変動監視: 値が増えたときだけ記録する (生涯失火数など、減らないはずの値で、一時的に古い値が読めても数えない) */
     val monitorIncreaseOnly: Boolean = false,
+    /**
+     * 変動監視: 変動を検知したときに前後の値をファイルに残す項目 (空 = 残さない)。
+     * 設定すると、監視の読み出しのたびにこれらの項目も読み、検知の前後 [com.obdmeter.data.MonitorCapture.COUNT] 回分を書き出す
+     */
+    val monitorCaptureKeys: List<String> = emptyList(),
     /** 折れ線グラフの凡例の位置 */
     val legendPosition: LegendPosition = LegendPosition.TOP,
     /** 折れ線グラフの凡例の寄せ方 (上・下に置くとき) */

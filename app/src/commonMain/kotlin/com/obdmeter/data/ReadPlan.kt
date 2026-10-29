@@ -82,6 +82,13 @@ object ReadPlan {
         return out
     }
 
+    /** 変動監視で、変動したときに前後の値を残す項目 (メーター → 項目キー)。設定していないメーターは含めない */
+    fun captureKeys(pages: List<Dashboard>): Map<String, List<String>> =
+        pages.flatMap { p ->
+            p.gauges.filter { it.style == GaugeStyle.MONITOR && it.design.monitorCaptureKeys.isNotEmpty() }
+                .map { HistorySlot.of(p.id, it.id) to it.design.monitorCaptureKeys.distinct().take(MonitorCapture.MAX_KEYS) }
+        }.toMap()
+
     /** 記録の保存期間 (ミリ秒、グラフ・変動監視ごと)。0 = 消さない (変動監視) */
     fun retentions(pages: List<Dashboard>): Map<String, Long> =
         charts(pages).associate { (p, g) -> HistorySlot.of(p.id, g.id) to g.design.historyRetentionMs } +

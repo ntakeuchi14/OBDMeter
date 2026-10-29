@@ -107,15 +107,23 @@ fun ItemPickerDialog(
     onPick: (PidDef) -> Unit,
     onCreateCustom: () -> Unit,
     onDismiss: () -> Unit,
+    title: String = "表示する項目",
+    /** 複数選ぶとき: 選んである項目 (印を付ける。選んでも閉じない) */
+    selected: Set<String>? = null,
+    /** 項目ごとに車からの読み方 (まとめ読み・個別読み) を出す */
+    showReadKind: Boolean = false,
 ) {
     var query by remember { mutableStateOf("") }
+    @Composable
+    fun Pick(d: PidDef, unsupported: Boolean) =
+        PickerRow(d, unsupported, selected?.contains(d.key), if (showReadKind) com.obdmeter.core.Pids.readKind(d, catalog::get).label else null) { onPick(d) }
     fun matches(d: PidDef) = query.isBlank() ||
         d.name.contains(query, ignoreCase = true) || d.shortName.contains(query, ignoreCase = true) ||
         d.unit.contains(query, ignoreCase = true)
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("表示する項目") },
+        title = { Text(title) },
         text = {
             Column {
                 OutlinedTextField(
@@ -129,7 +137,7 @@ fun ItemPickerDialog(
                 LazyColumn(Modifier.heightIn(max = 440.dp)) {
                     item { SectionHeader("カスタム PID") }
                     items(catalog.custom.filter(::matches), key = { it.key }) { d ->
-                        PickerRow(d, unsupported = false) { onPick(d) }
+                        Pick(d, unsupported = false)
                     }
                     item {
                         TextButton(onClick = onCreateCustom) {
@@ -141,15 +149,15 @@ fun ItemPickerDialog(
                     val (bmw, std) = car.partition(com.obdmeter.core.Pids::isBmwSpecific)
                     if (bmw.isNotEmpty()) {
                         item { SectionHeader("BMW 固有の項目") }
-                        items(bmw, key = { it.key }) { d -> PickerRow(d, isUnsupported(d, supported)) { onPick(d) } }
+                        items(bmw, key = { it.key }) { d -> Pick(d, isUnsupported(d, supported)) }
                     }
                     item { SectionHeader("標準の項目") }
                     items(std, key = { it.key }) { d ->
-                        PickerRow(d, isUnsupported(d, supported)) { onPick(d) }
+                        Pick(d, isUnsupported(d, supported))
                     }
                     if (device.isNotEmpty()) {
                         item { SectionHeader("端末のセンサー (車につながなくても動く・反応の確認用)") }
-                        items(device, key = { it.key }) { d -> PickerRow(d, false) { onPick(d) } }
+                        items(device, key = { it.key }) { d -> Pick(d, false) }
                     }
                 }
             }
@@ -165,11 +173,16 @@ private fun SectionHeader(text: String) {
 }
 
 @Composable
-private fun PickerRow(d: PidDef, unsupported: Boolean, onClick: () -> Unit) {
+private fun PickerRow(d: PidDef, unsupported: Boolean, checked: Boolean? = null, readKind: String? = null, onClick: () -> Unit) {
     Column(Modifier.fillMaxWidth().clickable(onClick = onClick).padding(vertical = 8.dp)) {
-        Text(d.name, color = if (unsupported) GaugeColors.SubText else GaugeColors.Text)
         Text(
-            "${d.sourceLabel()}  ${d.unit}" + if (unsupported) "  ・この車両は非対応" else "",
+            (if (checked == true) "✓ " else "") + d.name,
+            color = if (checked == true) GaugeColors.Accent else if (unsupported) GaugeColors.SubText else GaugeColors.Text,
+            fontWeight = if (checked == true) FontWeight.Bold else null,
+        )
+        Text(
+            (readKind?.let { "[$it]  " } ?: "") +
+                "${d.sourceLabel()}  ${d.unit}" + if (unsupported) "  ・この車両は非対応" else "",
             color = GaugeColors.SubText, fontSize = 12.sp,
         )
     }

@@ -23,7 +23,7 @@ import java.io.OutputStream
  */
 class SqliteHistoryStore(context: Context, private val scope: CoroutineScope) : HistoryStore {
 
-    private class Helper(context: Context) : SQLiteOpenHelper(context, "history.db", null, 4) {
+    private class Helper(context: Context) : SQLiteOpenHelper(context, "history.db", null, 5) {
         override fun onCreate(db: SQLiteDatabase) {
             // 同じグラフ・同じ項目・同じ時刻の記録は 1 つだけ (読み込みで重ねても増えない)
             // c = 1: 1 つ前の行から途切れずに値を見ていた (変化したときだけ記録するグラフで、間は同じ値が続いていた)
@@ -31,10 +31,21 @@ class SqliteHistoryStore(context: Context, private val scope: CoroutineScope) : 
                 "CREATE TABLE samples (g TEXT NOT NULL, k TEXT NOT NULL, t INTEGER NOT NULL, v REAL NOT NULL, " +
                     "c INTEGER NOT NULL DEFAULT 0, PRIMARY KEY (g, k, t)) WITHOUT ROWID"
             )
+            createCaptures(db)
+        }
+        /** 変動監視の、変動したときの前後の値のファイル (メーター g・名前 name・内容 body・保存した時刻 t) */
+        fun createCaptures(db: SQLiteDatabase) {
+            db.execSQL(
+                "CREATE TABLE IF NOT EXISTS captures (g TEXT NOT NULL, name TEXT NOT NULL, t INTEGER NOT NULL, " +
+                    "body TEXT NOT NULL, PRIMARY KEY (g, name))"
+            )
         }
         override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
-            if (oldVersion == 3) {
+            if (oldVersion == 4) {
+                createCaptures(db)
+            } else if (oldVersion == 3) {
                 db.execSQL("ALTER TABLE samples ADD COLUMN c INTEGER NOT NULL DEFAULT 0")
+                createCaptures(db)
             } else if (oldVersion == 2) {
                 // 項目ごとに共有していた記録は、いったんグラフ未定 ("") として残し、
                 // 起動後にその項目を使っているグラフへ振り分ける ([adoptShared])
@@ -120,6 +131,7 @@ class SqliteHistoryStore(context: Context, private val scope: CoroutineScope) : 
     /** メーター [slot] の記録をすべて消す (リセット) */
     override suspend fun clear(slot: String): Unit = withContext(Dispatchers.IO) {
         runCatching { db.delete("samples", "g = ?", arrayOf(slot)) }
+        runCatching { db.delete("captures", "g = ?", arrayOf(slot)) }
         cleared += slot
         _revision.value++
     }
@@ -379,6 +391,34 @@ class SqliteHistoryStore(context: Context, private val scope: CoroutineScope) : 
         // 消したグラフ・折れ線グラフでなくなったメーターの記録 (グラフ未定の旧記録は [adoptShared] に任せる)
         if (slots.isEmpty()) db.delete("samples", "g <> ''", null)
         else db.delete("samples", "g <> '' AND g NOT IN (${slots.keys.joinToString(",") { "?" }})", slots.keys.toTypedArray())
+        // 消したメーターの、変動時の前後の値のファイル
+        if (slots.isEmpty()) db.delete("captures", null, null)
+        else db.delete("captures", "g NOT IN (${slots.keys.joinToString(",") { "?" }})", slots.keys.toTypedArray())
+    }
+
+    override suspend fun saveCapture(slot: String, name: String, text: String): Unit = withContext(Dispatchers.IO) {
+        runCatching {
+            val cv = ContentValues()
+            cv.put("g", slot); cv.put("name", name); cv.put("t", System.currentTimeMillis()); cv.put("body", text)
+            db.insertWithOnConflict("captures", null, cv, SQLiteDatabase.CONFLICT_REPLACE)
+        }
+        _revision.value++
+    }
+
+    override suspend fun captureNames(slot: String): List<String> = withContext(Dispatchers.IO) {
+        runCatching {
+            db.rawQuery("SELECT name FROM captures WHERE g = ? ORDER BY t, name", arrayOf(slot)).use { c ->
+                buildList { while (c.moveToNext()) add(c.getString(0)) }
+            }
+        }.getOrDefault(emptyList())
+    }
+
+    override suspend fun captures(slot: String): List<Pair<String, String>> = withContext(Dispatchers.IO) {
+        runCatching {
+            db.rawQuery("SELECT name, body FROM captures WHERE g = ? ORDER BY t, name", arrayOf(slot)).use { c ->
+                buildList { while (c.moveToNext()) add(c.getString(0) to c.getString(1)) }
+            }
+        }.getOrDefault(emptyList())
     }
 
     override suspend fun exportCsvText(slot: String, keys: Collection<String>): Pair<Int, String> {

@@ -129,6 +129,7 @@ fun GaugeSettingsDialog(
     var showPicker by remember { mutableStateOf(false) }
     var showFallbackPicker by remember { mutableStateOf(false) }
     var showChartPicker by remember { mutableStateOf(false) }
+    var showCapturePicker by remember { mutableStateOf(false) }
     /** フォント選択ダイアログの対象 ("value" / "label")。null = 閉じる */
     var fontPickerFor by remember { mutableStateOf<String?>(null) }
     var confirmDelete by remember { mutableStateOf(false) }
@@ -203,7 +204,7 @@ fun GaugeSettingsDialog(
                         Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = 16.dp)) {
                             when (currentTab) {
                                 EditorTab.ITEM, EditorTab.ITEM_AXIS -> ItemTab(draft, catalog, ::update, { draft = it }, { showPicker = true },
-                                    { showFallbackPicker = true }, { showChartPicker = true })
+                                    { showFallbackPicker = true }, { showChartPicker = true }, { showCapturePicker = true })
                                 EditorTab.SCALE -> ScaleTab(draft, ::update)
                                 EditorTab.BAR -> BarTab(draft, def, ::update)
                                 EditorTab.LAMP -> LampTab(draft, ::update, onPickFont)
@@ -278,6 +279,23 @@ fun GaugeSettingsDialog(
                 onDismiss = { showChartPicker = false },
             )
         }
+        if (showCapturePicker) {
+            ItemPickerDialog(
+                catalog = catalog,
+                supported = supported,
+                onPick = { picked ->
+                    val keys = draft.design.monitorCaptureKeys
+                    val next = if (picked.key in keys) keys - picked.key
+                        else if (keys.size < com.obdmeter.data.MonitorCapture.MAX_KEYS) keys + picked.key else keys
+                    draft = draft.copy(design = draft.design.copy(monitorCaptureKeys = next))
+                },
+                onCreateCustom = { showCapturePicker = false; close(); onCreateCustomPid() },
+                onDismiss = { showCapturePicker = false },
+                title = "変動時に記録する項目 (${draft.design.monitorCaptureKeys.size}/${com.obdmeter.data.MonitorCapture.MAX_KEYS})",
+                selected = draft.design.monitorCaptureKeys.toSet(),
+                showReadKind = true,
+            )
+        }
         if (showPicker) {
             ItemPickerDialog(
                 catalog = catalog,
@@ -324,6 +342,7 @@ private fun ItemTab(
     onChangeItem: () -> Unit,
     onPickFallback: () -> Unit,
     onAddChartItem: () -> Unit,
+    onAddCaptureItem: () -> Unit,
 ) {
     val base = catalog.get(g.pidKey)
     val d = g.design
@@ -362,6 +381,7 @@ private fun ItemTab(
                 "生涯失火数など減らないはずの値用。値が減ったときは記録せず (一時的に古い値が読めても数えない)、前回の値を超えたときだけ記録します",
                 g.design.monitorIncreaseOnly,
             ) { v -> update { it.copy(monitorIncreaseOnly = v) } }
+            CaptureItems(g, catalog, update, onAddCaptureItem)
         }
         GaugeStyle.CHART -> ChartItems(g, catalog, update, replace, onAddChartItem)
         else -> {}
@@ -1252,6 +1272,53 @@ private fun TableLayoutSettings(
         }
     }
     Hint("背景画像は値の部分いっぱいに伸ばして表示します (背景色の上に重ねます)。")
+}
+
+/** 変動監視: 変動したときに前後の値を残す項目 */
+@Composable
+private fun CaptureItems(
+    g: GaugeConfig,
+    catalog: PidCatalog,
+    update: ((GaugeDesign) -> GaugeDesign) -> Unit,
+    onAdd: () -> Unit,
+) {
+    val keys = g.design.monitorCaptureKeys
+    val n = com.obdmeter.data.MonitorCapture.COUNT
+    Head("変動時に記録する項目")
+    Hint(
+        "選ぶと、監視の読み出しのたびにこれらの項目も読み、変動を検知したときの前 $n 回・後 $n 回の値を CSV に残します" +
+            " (ファイル名: 項目-検知した日時-そのときの値.csv)。上の「ZIP」でまとめて保存、「リセット」で消えます。" +
+            "選ばなければ今までどおりです。\n" +
+            "[まとめ読み] は何項目でも 1 回で読めるので、ほかのメーターへの影響はほとんどありません。" +
+            "[個別読み] は 1 項目ずつ読むため、多いとほかのメーターの更新が少し遅くなります。"
+    )
+    val kinds = keys.mapNotNull { catalog.get(it) }.groupingBy { com.obdmeter.core.Pids.readKind(it, catalog::get) }.eachCount()
+    if (keys.isNotEmpty()) {
+        Text(
+            "${keys.size} 項目 (まとめ読み ${kinds[com.obdmeter.core.Pids.ReadKind.BLOCK] ?: 0}・個別読み ${kinds[com.obdmeter.core.Pids.ReadKind.SINGLE] ?: 0})",
+            fontSize = 13.sp, color = GaugeColors.SubText, modifier = Modifier.padding(top = 4.dp),
+        )
+    }
+    keys.forEach { key ->
+        val def = catalog.get(key)
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f).padding(vertical = 4.dp)) {
+                Text(def?.name ?: "(見つかりません: $key)", fontSize = 14.sp)
+                if (def != null) Text(
+                    "[${com.obdmeter.core.Pids.readKind(def, catalog::get).label}]  ${def.sourceLabel()}",
+                    fontSize = 12.sp, color = GaugeColors.SubText,
+                )
+            }
+            TextButton(onClick = { update { it.copy(monitorCaptureKeys = it.monitorCaptureKeys - key) } }) { Text("外す") }
+        }
+    }
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        OutlinedButton(onClick = onAdd) { Text(if (keys.isEmpty()) "項目を選ぶ" else "項目を追加・外す") }
+        if (keys.isNotEmpty()) {
+            Spacer(Modifier.width(8.dp))
+            TextButton(onClick = { update { it.copy(monitorCaptureKeys = emptyList()) } }) { Text("すべて外す") }
+        }
+    }
 }
 
 /** 並べる項目の一覧 (名前の書き換え・並べ替え・外す・追加)。値テーブルと変動監視で使う */

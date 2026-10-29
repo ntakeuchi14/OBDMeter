@@ -57,8 +57,8 @@ internal fun MonitorGauge(
             title = { Text("記録をリセット") },
             text = {
                 Text(
-                    "このメーターの変動の記録 (全項目の回数・変化時刻・初回の計測値) をすべて消して、次の計測からやり直します。" +
-                        "元に戻せません。必要なら先に「書出」で CSV に保存してください。"
+                    "このメーターの変動の記録 (全項目の回数・変化時刻・初回の計測値) と、変動時の前後の値のファイルをすべて消して、次の計測からやり直します。" +
+                        "元に戻せません。必要なら先に「書出」で CSV、「ZIP」で前後の値のファイルを保存してください。"
                 )
             },
             confirmButton = {
@@ -81,6 +81,10 @@ internal fun MonitorGauge(
     LaunchedEffect(tickMs) { while (true) { delay(tickMs); tick++ } }
     val stats by produceState(emptyList<Monitor.Stat>(), keys, revision, tick, slot) {
         if (history != null && slot != null) value = history.monitorStats(slot, keys, com.obdmeter.util.nowMs())
+    }
+    // 変動時の前後の値のファイルの数 (アプリの画面のときだけ)
+    val captureCount by produceState(0, revision, slot, interactive) {
+        if (interactive && history != null && slot != null) value = history.captureNames(slot).size
     }
     val byKey = stats.associateBy { it.key }
     val ordered = Monitor.rank(keys.map { k -> byKey[k] ?: Monitor.Stat(k, null, null, null, emptyList()) }, window)
@@ -111,6 +115,10 @@ internal fun MonitorGauge(
             if (interactive && history != null && slot != null) {
                 ChartCsvButtons(history, slot, keys)
                 androidx.compose.foundation.layout.Spacer(Modifier.width(4.dp))
+                if (captureCount > 0) {
+                    CaptureZipButton(history, slot, captureCount)
+                    androidx.compose.foundation.layout.Spacer(Modifier.width(4.dp))
+                }
                 CsvButton("リセット") { confirmReset = true }
             }
             }
@@ -151,5 +159,31 @@ internal fun MonitorGauge(
                 }
             }
         }
+    }
+}
+
+/** 変動時の前後の値のファイルを、まとめて 1 つの ZIP で保存する */
+@Composable
+private fun CaptureZipButton(history: com.obdmeter.data.HistoryStore, slot: String, count: Int) {
+    val toast = com.obdmeter.ui.rememberToast()
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
+    val saver = com.obdmeter.ui.rememberFileSaver("application/zip") { target ->
+        scope.launch {
+            val msg = runCatching {
+                val files = history.captures(slot)
+                if (files.isEmpty()) return@runCatching "保存するファイルがありません"
+                // Excel で文字化けしないよう、先頭に BOM を付ける
+                val zip = com.obdmeter.util.Zip.write(files.map { (name, text) ->
+                    com.obdmeter.util.Zip.Entry(name, "\uFEFF$text".encodeToByteArray())
+                })
+                val where = target.write(zip)
+                "${files.size} 件を ZIP に" + (where?.let { "まとめて $it に保存しました" } ?: "まとめて保存しました")
+            }.getOrElse { "保存に失敗しました: ${it.message}" }
+            toast(msg)
+        }
+    }
+    CsvButton("ZIP ($count)") {
+        val stamp = com.obdmeter.util.DateFmt("yyyyMMdd_HHmm").format(com.obdmeter.util.nowMs())
+        saver("obdmeter_monitor_$stamp.zip")
     }
 }

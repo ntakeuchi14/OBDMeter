@@ -27,8 +27,17 @@ interface HistoryStore {
     /** メーター [slot] の項目 [key] の最後の行と、それが動かせる末尾の行か */
     suspend fun lastRow(slot: String, key: String): Pair<HistoryRow, Boolean>?
 
-    /** メーター [slot] の記録をすべて消す (リセット) */
+    /** メーター [slot] の記録をすべて消す (リセット。変動時の前後の値のファイルも消す) */
     suspend fun clear(slot: String)
+
+    /** 変動監視: 変動したときの前後の値のファイル ([MonitorCapture]) を保存する */
+    suspend fun saveCapture(slot: String, name: String, text: String)
+
+    /** 変動監視: 保存してある前後の値のファイルの名前 (古い順) */
+    suspend fun captureNames(slot: String): List<String>
+
+    /** 変動監視: 保存してある前後の値のファイル (名前, 内容。古い順) */
+    suspend fun captures(slot: String): List<Pair<String, String>>
 
     /** [clear] で記録を消したメーター (受け取ったら空になる) */
     fun takeCleared(): Set<String>

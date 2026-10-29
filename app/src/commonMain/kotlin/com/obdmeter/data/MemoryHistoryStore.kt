@@ -90,8 +90,22 @@ class MemoryHistoryStore(
         return last to tail
     }
 
+    /** 変動時の前後の値のファイル (メーター → 名前 → 内容。入れた順) */
+    private val captureFiles = HashMap<String, LinkedHashMap<String, String>>()
+
+    override suspend fun saveCapture(slot: String, name: String, text: String) {
+        captureFiles.getOrPut(slot) { LinkedHashMap() }[name] = text
+        _revision.value++
+    }
+
+    override suspend fun captureNames(slot: String): List<String> = captureFiles[slot]?.keys?.toList().orEmpty()
+
+    override suspend fun captures(slot: String): List<Pair<String, String>> =
+        captureFiles[slot]?.entries?.map { it.key to it.value }.orEmpty()
+
     override suspend fun clear(slot: String) {
         data.remove(slot)
+        captureFiles.remove(slot)
         cleared += slot
         _revision.value++
     }
@@ -257,5 +271,6 @@ class MemoryHistoryStore(
             }
         }
         data.keys.retainAll { it == "" || it in slots.keys }
+        captureFiles.keys.retainAll { it in slots.keys }
     }
 }

@@ -7,6 +7,24 @@ object Pids {
     /** BMW 固有の項目か ([BmwItems.isBmwSpecific]) */
     fun isBmwSpecific(d: PidDef): Boolean = BmwItems.isBmwSpecific(d)
 
+    /** 車からの読み方。[BLOCK] = DME の測定値ブロックでまとめて 1 回で読める、[SINGLE] = 1 項目ずつ読む、[DEVICE] = 車から読まない */
+    enum class ReadKind(val label: String) { BLOCK("まとめ読み"), SINGLE("個別読み"), DEVICE("端末") }
+
+    fun readKind(d: PidDef, lookup: (String) -> PidDef? = ::get): ReadKind = when (d.kind) {
+        PidDef.Kind.BMW_BLOCK -> ReadKind.BLOCK
+        PidDef.Kind.DEVICE -> ReadKind.DEVICE
+        PidDef.Kind.DERIVED -> {
+            val deps = d.deps.mapNotNull(lookup).map { readKind(it, lookup) }
+            when {
+                deps.any { it == ReadKind.SINGLE } -> ReadKind.SINGLE
+                deps.any { it == ReadKind.BLOCK } -> ReadKind.BLOCK
+                deps.isEmpty() -> ReadKind.SINGLE
+                else -> ReadKind.DEVICE
+            }
+        }
+        else -> ReadKind.SINGLE
+    }
+
     private fun a(d: IntArray) = d[0].toDouble()
 
     /**
