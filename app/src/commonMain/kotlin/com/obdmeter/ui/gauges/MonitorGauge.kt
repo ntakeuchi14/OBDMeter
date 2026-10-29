@@ -115,7 +115,7 @@ internal fun MonitorGauge(
             if (interactive && history != null && slot != null) {
                 ChartCsvButtons(history, slot, keys)
                 androidx.compose.foundation.layout.Spacer(Modifier.width(4.dp))
-                if (captureCount > 0) {
+                if (captureCount > 0 || look.monitorCapture) {
                     CaptureZipButton(history, slot, captureCount)
                     androidx.compose.foundation.layout.Spacer(Modifier.width(4.dp))
                 }
@@ -171,7 +171,7 @@ private fun CaptureZipButton(history: com.obdmeter.data.HistoryStore, slot: Stri
         scope.launch {
             val msg = runCatching {
                 val files = history.captures(slot)
-                if (files.isEmpty()) return@runCatching "保存するファイルがありません"
+                if (files.isEmpty()) return@runCatching "まだ変動時の記録がありません"
                 // Excel で文字化けしないよう、先頭に BOM を付ける
                 val zip = com.obdmeter.util.Zip.write(files.map { (name, text) ->
                     com.obdmeter.util.Zip.Entry(name, "\uFEFF$text".encodeToByteArray())
@@ -183,6 +183,7 @@ private fun CaptureZipButton(history: com.obdmeter.data.HistoryStore, slot: Stri
         }
     }
     CsvButton("ZIP ($count)") {
+        if (count == 0) { toast("まだ変動時の記録がありません (変動を検知して、その後 ${com.obdmeter.data.MonitorCapture.COUNT} 回読むと記録されます)"); return@CsvButton }
         val stamp = com.obdmeter.util.DateFmt("yyyyMMdd_HHmm").format(com.obdmeter.util.nowMs())
         saver("obdmeter_monitor_$stamp.zip")
     }
