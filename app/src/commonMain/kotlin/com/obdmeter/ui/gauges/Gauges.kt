@@ -425,6 +425,8 @@ fun AnalogGauge(
         val outer = d / 2
         // 針の回転の中心 (目盛り・弧もここを中心に描く)。文字盤・リング・名前・数値はメーターの中心のまま
         val pc = Offset(center.x + d * look.pivotX, center.y + d * look.pivotY)
+        val shifted = look.pivotX != 0f || look.pivotY != 0f
+        val innerCircle by lazy { Path().apply { addOval(androidx.compose.ui.geometry.Rect(center, outer - ringWidthFor(look, d))) } }
 
         val ringWidth = ringWidthFor(look, d)
         // 目盛り・弧の基準半径
@@ -464,6 +466,9 @@ fun AnalogGauge(
 
         // 外周リング
         if (ringWidth > 0f) drawRing(look, center, outer, ringWidth)
+        // 針の中心をずらしたときは、目盛り・弧をリングの内側で切る
+        val clipScale = shifted
+        if (clipScale) { drawContext.canvas.save(); drawContext.canvas.clipPath(innerCircle) }
 
         if (look.showTrack && stroke > 0f) {
             drawArc(look.trackColor ?: GaugeColors.Track, start, sweep, false, arcTopLeft, arcSize, style = Stroke(stroke, cap = cap))
@@ -552,6 +557,8 @@ fun AnalogGauge(
             drawPath(path, look.peakColor)
         }
 
+        if (clipScale) drawContext.canvas.restore()
+
         // 名前・数値・単位 (目盛りを大きく外へ出しても、文字の位置は従来の範囲 (外周の 120%) までで決める)
         val textR = min(gaugeR, (outer - ringWidth - d * 0.01f) * 1.2f)
         if (look.showName) {
@@ -596,6 +603,7 @@ fun AnalogGauge(
 
         // 針 (根元が太く先が細い形) と中心のノブ。数値などより手前に描く
         if (layer != GaugeLayer.BODY) {
+        if (shifted) { drawContext.canvas.save(); drawContext.canvas.clipPath(innerCircle) }
         if (value != null && look.showNeedle) {
             val a = com.obdmeter.util.toRadians((start + sweep * f).toDouble())
             val ca = cos(a).toFloat()
@@ -633,6 +641,7 @@ fun AnalogGauge(
             )
             drawCircle(Color(0xFF20242B), kr * 0.4f, pc)
         }
+        if (shifted) drawContext.canvas.restore()
         // ガラスの反射 (針より手前)
         if (look.glassStrength > 0f) drawGlass(center, outer - ringWidth, look.glassStrength, look.glassAngle)
 
@@ -1209,13 +1218,14 @@ internal fun DrawScope.drawRecess(center: Offset, r: Float, depth: Float) {
         // 縁全体を少し暗く (穴の奥の暗さ)
         drawCircle(
             Brush.radialGradient(
-                0f to Color.Transparent, 0.78f to Color.Transparent, 1f to Color.Black.copy(alpha = 0.55f * k),
+                0f to Color.Transparent, 0.6f to Color.Transparent, 0.9f to Color.Black.copy(alpha = 0.15f * k),
+                1f to Color.Black.copy(alpha = 0.45f * k),
                 center = center, radius = r,
             ),
             r, center,
         )
         // 上の縁から落ちる影: 下へずらした円の外側を重ねて塗る (ずらし量を変えて重ね、境目をぼかす)
-        val steps = 8
+        val steps = 16
         val maxShift = r * 0.16f * (0.4f + k)
         for (i in 1..steps) {
             val sh = maxShift * i / steps
@@ -1224,7 +1234,7 @@ internal fun DrawScope.drawRecess(center: Offset, r: Float, depth: Float) {
                 addRect(androidx.compose.ui.geometry.Rect(center, r * 2f))
                 addOval(androidx.compose.ui.geometry.Rect(Offset(center.x + sh * 0.25f, center.y + sh), r))
             }
-            drawPath(hole, Color.Black.copy(alpha = 0.10f * k))
+            drawPath(hole, Color.Black.copy(alpha = 0.05f * k))
         }
     }
     // 下の縁に当たる光 (細い弧。真下が一番明るい)
@@ -1261,20 +1271,21 @@ internal fun DrawScope.drawGlass(center: Offset, r: Float, strength: Float, angl
             ),
             r, center,
         )
-        // 光の側の縁に沿った三日月形の映り込み
-        val shift = r * 0.22f
-        val crescent = Path().apply {
-            fillType = androidx.compose.ui.graphics.PathFillType.EvenOdd
-            addOval(androidx.compose.ui.geometry.Rect(center, r))
-            addOval(androidx.compose.ui.geometry.Rect(Offset(center.x - lx * shift, center.y - ly * shift), r * 1.02f))
-        }
-        drawPath(
-            crescent,
-            Brush.linearGradient(
-                listOf(Color.White.copy(alpha = 0.55f * k), Color.White.copy(alpha = 0.12f * k), Color.Transparent),
-                start = Offset(center.x + lx * r, center.y + ly * r), end = Offset(center.x, center.y),
-            ),
+        // 光の側の縁に沿った三日月形の映り込み (幅を変えて重ね、内側の境目をぼかす)
+        val brush = Brush.linearGradient(
+            listOf(Color.White.copy(alpha = 0.07f * k), Color.White.copy(alpha = 0.02f * k), Color.Transparent),
+            start = Offset(center.x + lx * r, center.y + ly * r), end = Offset(center.x, center.y),
         )
+        val steps = 10
+        for (i in 1..steps) {
+            val shift = r * 0.30f * i / steps
+            val crescent = Path().apply {
+                fillType = androidx.compose.ui.graphics.PathFillType.EvenOdd
+                addOval(androidx.compose.ui.geometry.Rect(center, r))
+                addOval(androidx.compose.ui.geometry.Rect(Offset(center.x - lx * shift, center.y - ly * shift), r * 1.02f))
+            }
+            drawPath(crescent, brush)
+        }
         // 斜めに横切る帯 (光の向きに垂直。中心より光の側)
         val bandC = Offset(center.x + lx * r * 0.18f, center.y + ly * r * 0.18f)
         val bw = r * 0.35f
