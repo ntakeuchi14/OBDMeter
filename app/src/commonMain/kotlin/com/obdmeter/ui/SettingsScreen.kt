@@ -522,8 +522,24 @@ private fun PollIntervalSection(vm: MainViewModel, s: AppSettings) {
             "「毎回」は表示中は毎サイクル読みます。設定はその項目を使うすべてのメーター・グラフに共通です。",
         color = GaugeColors.SubText, fontSize = 12.sp,
     )
+    // 変動時の前後の値を残す変動監視: 監視する項目と、一緒に読む項目
+    val captureMonitors = remember(dashboards) {
+        dashboards.flatMap { it.gauges }.filter { it.style == com.obdmeter.data.GaugeStyle.MONITOR && it.design.monitorCaptureKeys.isNotEmpty() }
+    }
+    val monitoredKeys = remember(captureMonitors) { captureMonitors.flatMap { it.chartAllKeys }.toSet() }
+    val captureKeys = remember(captureMonitors) { captureMonitors.flatMap { it.design.monitorCaptureKeys }.toSet() }
     val keys = remember(dashboards) {
-        dashboards.flatMap { it.gauges }.flatMap { g -> com.obdmeter.data.ReadPlan.gaugeKeys(g) + listOfNotNull(g.fallbackKey) }.distinct()
+        dashboards.flatMap { it.gauges }.flatMap { g ->
+            com.obdmeter.data.ReadPlan.gaugeKeys(g) + listOfNotNull(g.fallbackKey) +
+                (if (g.style == com.obdmeter.data.GaugeStyle.MONITOR) g.design.monitorCaptureKeys else emptyList())
+        }.distinct()
+    }
+    if (captureMonitors.isNotEmpty()) {
+        Text(
+            "変動時の記録: 「変動時に記録する項目」は、ここの周期ではなく監視の読み出しと一緒に約 1 秒ごとに読みます " +
+                "(1 カウント = 監視する項目の周期。1 秒未満は 1 秒)。前後の値の間隔を変えたいときは、監視する項目の周期を変えてください。",
+            color = GaugeColors.SubText, fontSize = 12.sp, modifier = Modifier.padding(top = 4.dp),
+        )
     }
     val changed = s.pollIntervalsMs.count { it.value > 0 }
     TextButton(onClick = { open = !open }) {
@@ -553,6 +569,14 @@ private fun PollIntervalSection(vm: MainViewModel, s: AppSettings) {
         Column(Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
             Text(def?.name ?: key, fontSize = 14.sp)
             if (def?.slow == true && cur == 0) Text("既定では 8 サイクルに 1 回読みます", color = GaugeColors.SubText, fontSize = 11.sp)
+            if (key in monitoredKeys) Text(
+                "変動時の記録の 1 カウントの間隔にもなります (今は約 ${maxOf(cur, 1000) / 1000} 秒)",
+                color = GaugeColors.Accent, fontSize = 11.sp,
+            )
+            if (key in captureKeys && key !in monitoredKeys) Text(
+                "変動時の記録では、この周期ではなく監視の読み出しと一緒に読みます (表示用の周期だけ変わります)",
+                color = GaugeColors.Accent, fontSize = 11.sp,
+            )
             Row(Modifier.horizontalScroll(rememberScrollState())) {
                 options.forEach { (ms, label) ->
                     FilterChip(cur == ms, {
