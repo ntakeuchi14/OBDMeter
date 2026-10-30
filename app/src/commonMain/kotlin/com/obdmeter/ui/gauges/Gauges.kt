@@ -117,6 +117,7 @@ data class GaugeLook(
     val recessDepth: Float = 0f,
     val glassStrength: Float = 0f,
     val glassAngle: Float = -40f,
+    val glassSize: Float? = null,
     val ringThickness: Float = 1f,
     val ringDepth: Float = 0.6f,
     val ringInner: Float = 0.4f,
@@ -654,7 +655,7 @@ fun AnalogGauge(
         }
         if (shifted) drawContext.canvas.restore()
         // ガラスの反射 (針より手前)
-        if (look.glassStrength > 0f) drawGlass(center, outer - ringWidth, look.glassStrength, look.glassAngle)
+        if (look.glassStrength > 0f) drawGlass(center, look.glassSize?.let { outer * it } ?: (outer - ringWidth), look.glassStrength, look.glassAngle)
 
         }
     }

@@ -861,7 +861,15 @@ private fun RecessGlassSection(d: GaugeDesign, update: ((GaugeDesign) -> GaugeDe
         SliderLine("光の来る向き (12 時 = 0°)", d.glassAngle, -180f..180f, "%.0f°") { v ->
             update { it.copy(glassAngle = snap(v, 5f)) }
         }
-        Hint("光の来る側の縁に沿った映り込みと、斜めに横切るうっすらした帯を、針より手前に描きます。")
+        val ringFrac = 1f - com.obdmeter.data.ScaleFit.ringWidth(d) * 2f
+        SliderLine("ガラスの大きさ (外周 = 100%)", (d.glassSize ?: ringFrac) * 100, 30f..100f, "%.0f%%") { v ->
+            update { it.copy(glassSize = snap(v, 1f) / 100f) }
+        }
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            TextButton(onClick = { update { it.copy(glassSize = 1f) } }) { Text("リングの上まで覆う") }
+            if (d.glassSize != null) TextButton(onClick = { update { it.copy(glassSize = null) } }) { Text("リングの内側に戻す") }
+        }
+        Hint("光の来る側の縁に沿った映り込みと、斜めに横切るうっすらした帯を、針より手前に描きます。100% にすると外周リングの上までガラスで覆います。")
     }
 }
 

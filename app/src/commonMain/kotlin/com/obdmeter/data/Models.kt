@@ -182,6 +182,8 @@ data class GaugeDesign(
     val glassStrength: Float = 0f,
     /** アナログ: ガラスに映る光の来る向き (12 時 = 0°、時計回り) */
     val glassAngle: Float = -40f,
+    /** アナログ: ガラスの大きさ (メーターの外周 = 1)。null = 外周リングの内側 (1 にするとリングの上まで覆う) */
+    val glassSize: Float? = null,
 
     // ---- ピーク値 ----
     /** これまでの最大値の位置に印を付ける (メーターを長押しでリセット) */

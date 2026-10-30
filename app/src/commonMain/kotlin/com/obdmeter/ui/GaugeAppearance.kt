@@ -89,6 +89,7 @@ fun GaugeDesign.toLook(def: PidDef, style: GaugeStyle): GaugeLook {
         recessDepth = recessDepth.coerceIn(0f, 1f),
         glassStrength = glassStrength.coerceIn(0f, 1f),
         glassAngle = glassAngle,
+        glassSize = glassSize?.coerceIn(0.3f, 1f),
         ringThickness = ringThickness.coerceIn(0.2f, 4f),
         ringDepth = ringDepth.coerceIn(0f, 1f),
         ringInner = ringInner.coerceIn(0f, 0.8f),
