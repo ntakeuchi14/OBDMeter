@@ -113,6 +113,7 @@ data class GaugeLook(
     val knobSize: Float = 1f,
     val pivotX: Float = 0f,
     val pivotY: Float = 0f,
+    val scaleRoundness: Float = 1f,
     val recessDepth: Float = 0f,
     val glassStrength: Float = 0f,
     val glassAngle: Float = -40f,
@@ -426,6 +427,8 @@ fun AnalogGauge(
         // 針の回転の中心 (目盛り・弧もここを中心に描く)。文字盤・リング・名前・数値はメーターの中心のまま
         val pc = Offset(center.x + d * look.pivotX, center.y + d * look.pivotY)
         val shifted = look.pivotX != 0f || look.pivotY != 0f
+        // 目盛りの縦横比 (縦の半径 / 横の半径。1 = 真円)。目盛り・弧は楕円の上に並べる (角度は楕円の媒介変数)
+        val q = look.scaleRoundness
         val innerCircle by lazy { Path().apply { addOval(androidx.compose.ui.geometry.Rect(center, outer - ringWidthFor(look, d))) } }
 
         val ringWidth = ringWidthFor(look, d)
@@ -437,8 +440,8 @@ fun AnalogGauge(
         // 目盛りの外側に弧の場所を空けるのは、弧か背景の弧を描くときだけ
         val stroke = if (arcHidden && !look.showTrack) 0f else rawStroke
         val arcR = gaugeR - stroke / 2
-        val arcTopLeft = Offset(pc.x - arcR, pc.y - arcR)
-        val arcSize = Size(arcR * 2, arcR * 2)
+        val arcTopLeft = Offset(pc.x - arcR, pc.y - arcR * q)
+        val arcSize = Size(arcR * 2, arcR * 2 * q)
         // 端を丸くするときは、丸みの分だけ角度を内側に詰めて全体の範囲を変えない
         val capInset = if (look.arcRoundCap && arcR > 0f) com.obdmeter.util.toDegrees((stroke / 2 / arcR).toDouble()).toFloat()
             .coerceAtMost(abs(look.sweep) / 4) else 0f
@@ -484,7 +487,7 @@ fun AnalogGauge(
                     // 目盛りの範囲内の外側寄せに帯で描く (目盛りは上から重ねて描く)
                     val zr = tickOuter - zoneInsideW / 2
                     drawArc(look.redZoneColor, start + sweep * s, sweep * (e - s), false,
-                        Offset(pc.x - zr, pc.y - zr), Size(zr * 2, zr * 2),
+                        Offset(pc.x - zr, pc.y - zr * q), Size(zr * 2, zr * 2 * q),
                         style = Stroke(zoneInsideW, cap = StrokeCap.Butt))
                 } else {
                     drawArc(look.redZoneColor, start + sweep * s, sweep * (e - s), false, arcTopLeft, arcSize,
@@ -499,7 +502,7 @@ fun AnalogGauge(
             // 弧の先の丸い点 (ピーク値を出すときは、点をピーク値の位置に置いて印にする)
             if (look.arcTipDot && peak == null) {
                 val ta = com.obdmeter.util.toRadians((start + sweep * f).toDouble())
-                val tp = Offset(pc.x + arcR * cos(ta).toFloat(), pc.y + arcR * sin(ta).toFloat())
+                val tp = Offset(pc.x + arcR * cos(ta).toFloat(), pc.y + q * arcR * sin(ta).toFloat())
                 drawCircle(look.arcTipColor, stroke * 0.32f, tp)
             }
         }
@@ -511,13 +514,13 @@ fun AnalogGauge(
         for ((i, t) in majors.withIndex()) {
             val a = com.obdmeter.util.toRadians((start + sweep * fraction(def, t)).toDouble())
             if (look.showTicks) drawLine(look.tickColor,
-                Offset(pc.x + (tickOuter - majorLen) * cos(a).toFloat(), pc.y + (tickOuter - majorLen) * sin(a).toFloat()),
-                Offset(pc.x + tickOuter * cos(a).toFloat(), pc.y + tickOuter * sin(a).toFloat()),
+                Offset(pc.x + (tickOuter - majorLen) * cos(a).toFloat(), pc.y + q * (tickOuter - majorLen) * sin(a).toFloat()),
+                Offset(pc.x + tickOuter * cos(a).toFloat(), pc.y + q * tickOuter * sin(a).toFloat()),
                 strokeWidth = d * 0.012f)
             if (look.showLabels) {
                 val labelR = tickOuter - majorLen - d * 0.06f * look.labelSize
                 drawCenteredText(tm, scale.label(t),
-                    Offset(pc.x + labelR * cos(a).toFloat(), pc.y + labelR * sin(a).toFloat()),
+                    Offset(pc.x + labelR * cos(a).toFloat(), pc.y + q * labelR * sin(a).toFloat()),
                     TextStyle(color = look.labelColor, fontFamily = fonts.label, fontSize = labelSize))
             }
             // 小目盛り
@@ -527,8 +530,8 @@ fun AnalogGauge(
                     val tv = t + (next - t) * k / (look.minorDivisions + 1)
                     val b = com.obdmeter.util.toRadians((start + sweep * fraction(def, tv)).toDouble())
                     drawLine(look.tickColor,
-                        Offset(pc.x + (tickOuter - minorLen) * cos(b).toFloat(), pc.y + (tickOuter - minorLen) * sin(b).toFloat()),
-                        Offset(pc.x + tickOuter * cos(b).toFloat(), pc.y + tickOuter * sin(b).toFloat()),
+                        Offset(pc.x + (tickOuter - minorLen) * cos(b).toFloat(), pc.y + q * (tickOuter - minorLen) * sin(b).toFloat()),
+                        Offset(pc.x + tickOuter * cos(b).toFloat(), pc.y + q * tickOuter * sin(b).toFloat()),
                         strokeWidth = d * 0.006f)
                 }
             }
@@ -537,16 +540,20 @@ fun AnalogGauge(
         // 弧の先の丸い点を付けるときは、その点をピーク値の印にする (弧の上、ピーク値の位置)
         if (peak != null && look.arcTipDot && stroke > 0f) {
             val pa = com.obdmeter.util.toRadians((start + sweep * fraction(def, peak)).toDouble())
-            val pp = Offset(pc.x + arcR * cos(pa).toFloat(), pc.y + arcR * sin(pa).toFloat())
+            val pp = Offset(pc.x + arcR * cos(pa).toFloat(), pc.y + q * arcR * sin(pa).toFloat())
             drawCircle(look.peakColor, stroke * 0.32f, pp)
         }
         // ピーク値の印 (目盛りの外側から内側に向いた三角形)
         if (peak != null && !(look.arcTipDot && stroke > 0f)) {
             val pa = com.obdmeter.util.toRadians((start + sweep * fraction(def, peak)).toDouble())
-            val ca = cos(pa).toFloat()
-            val sa = sin(pa).toFloat()
-            val tip = gaugeR - stroke - d * 0.01f
-            val base = gaugeR + d * 0.005f
+            // 楕円の上の点の向き
+            val ux = cos(pa).toFloat()
+            val uy = q * sin(pa).toFloat()
+            val un = kotlin.math.sqrt(ux * ux + uy * uy).coerceAtLeast(1e-6f)
+            val ca = ux / un
+            val sa = uy / un
+            val tip = (gaugeR - stroke - d * 0.01f) * un
+            val base = (gaugeR + d * 0.005f) * un
             val half = d * 0.022f
             val path = Path().apply {
                 moveTo(pc.x + tip * ca, pc.y + tip * sa)
@@ -606,10 +613,14 @@ fun AnalogGauge(
         if (shifted) { drawContext.canvas.save(); drawContext.canvas.clipPath(innerCircle) }
         if (value != null && look.showNeedle) {
             val a = com.obdmeter.util.toRadians((start + sweep * f).toDouble())
-            val ca = cos(a).toFloat()
-            val sa = sin(a).toFloat()
-            val len = tickOuter * look.needleLength
-            val tail = len * look.needleTail
+            // 楕円の目盛りのときは、針は目盛りの点の向きに向け、長さも目盛りまでに合わせる
+            val ux = cos(a).toFloat()
+            val uy = q * sin(a).toFloat()
+            val un = kotlin.math.sqrt(ux * ux + uy * uy).coerceAtLeast(1e-6f)
+            val ca = ux / un
+            val sa = uy / un
+            val len = tickOuter * look.needleLength * un
+            val tail = tickOuter * look.needleLength * look.needleTail
             val baseW = d * 0.016f * look.needleWidth
             val tipW = baseW * 0.35f
             val color = if (warn) GaugeColors.Warn else look.needleColor

@@ -85,6 +85,7 @@ fun GaugeDesign.toLook(def: PidDef, style: GaugeStyle): GaugeLook {
         knobSize = knobSize.coerceIn(0f, 4f),
         pivotX = pivotX.coerceIn(-0.5f, 0.5f),
         pivotY = pivotY.coerceIn(-0.5f, 0.5f),
+        scaleRoundness = scaleRoundness.coerceIn(0.3f, 1.5f),
         recessDepth = recessDepth.coerceIn(0f, 1f),
         glassStrength = glassStrength.coerceIn(0f, 1f),
         glassAngle = glassAngle,

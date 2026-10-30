@@ -563,6 +563,23 @@ private fun ScaleTab(g: GaugeConfig, update: ((GaugeDesign) -> GaugeDesign) -> U
     SliderLine("目盛りの位置 (外周 = 100%)", d.tickRadius * 100, 40f..200f, "%.0f%%") { v ->
         update { it.copy(tickRadius = snap(v, 1f) / 100f) }
     }
+    SliderLine("目盛りの縦横比 (真円 = 100%)", d.scaleRoundness * 100, 30f..150f, "%.0f%%") { v ->
+        update { it.copy(scaleRoundness = snap(v, 1f) / 100f) }
+    }
+    Hint("100% より小さくすると横長、大きくすると縦長の楕円に目盛りを並べます。針の中心をずらしたときに、目盛りを文字盤に収めるのに使います。")
+    val fitToast = rememberToast()
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        OutlinedButton(onClick = {
+            val r = com.obdmeter.data.ScaleFit.fit(d)
+            if (r == null) fitToast("針の中心が文字盤の端に寄りすぎていて、収められません")
+            else update { it.copy(tickRadius = (r.first * 100).roundToInt() / 100f, scaleRoundness = (r.second * 100).roundToInt() / 100f) }
+        }) { Text("見切れないように合わせる") }
+        if (d.scaleRoundness != 1f) {
+            Spacer(Modifier.width(8.dp))
+            TextButton(onClick = { update { it.copy(scaleRoundness = 1f) } }) { Text("真円に戻す") }
+        }
+    }
+    Hint("今の針の中心・開始〜終了角度で、目盛りが外周リングの内側に収まり、なるべく大きくなる「目盛りの位置」と「縦横比」を自動で設定します (数字は目盛りの内側に出ます)。")
     SwitchLine("目盛りの数字を表示", null, d.showLabels) { v -> update { it.copy(showLabels = v) } }
     if (d.showLabels) {
         SliderLine("数字の大きさ", d.labelSize * 100, 40f..250f, "%.0f%%") { v -> update { it.copy(labelSize = snap(v, 5f) / 100f) } }

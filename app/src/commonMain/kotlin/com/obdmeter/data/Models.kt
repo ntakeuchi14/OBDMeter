@@ -174,6 +174,8 @@ data class GaugeDesign(
      */
     val pivotX: Float = 0f,
     val pivotY: Float = 0f,
+    /** アナログ: 目盛りの縦横比 (縦の半径 / 横の半径。1 = 真円、小さいほど横長の楕円) */
+    val scaleRoundness: Float = 1f,
     /** アナログ: 背景からのくぼみの強さ (0 = なし〜1)。縁から内側に影を落とし、下の縁を明るくする */
     val recessDepth: Float = 0f,
     /** アナログ: ガラスの反射の強さ (0 = なし〜1) */
