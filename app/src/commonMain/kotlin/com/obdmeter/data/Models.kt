@@ -168,6 +168,18 @@ data class GaugeDesign(
     val knobColor: Long? = null,
     /** ノブの大きさ (1.0 = 標準、0 = なし) */
     val knobSize: Float = 1f,
+    /**
+     * 針の回転の中心の位置 (メーターの中心からのずれ。メーターの直径に対する比率、右・下が +)。
+     * 目盛り・弧も一緒にここを中心に描く (文字盤・リング・名前・数値はメーターの中心のまま)
+     */
+    val pivotX: Float = 0f,
+    val pivotY: Float = 0f,
+    /** アナログ: 背景からのくぼみの強さ (0 = なし〜1)。縁から内側に影を落とし、下の縁を明るくする */
+    val recessDepth: Float = 0f,
+    /** アナログ: ガラスの反射の強さ (0 = なし〜1) */
+    val glassStrength: Float = 0f,
+    /** アナログ: ガラスに映る光の来る向き (12 時 = 0°、時計回り) */
+    val glassAngle: Float = -40f,
 
     // ---- ピーク値 ----
     /** これまでの最大値の位置に印を付ける (メーターを長押しでリセット) */

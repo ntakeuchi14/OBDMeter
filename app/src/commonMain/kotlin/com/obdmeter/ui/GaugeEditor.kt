@@ -560,7 +560,7 @@ private fun ScaleTab(g: GaugeConfig, update: ((GaugeDesign) -> GaugeDesign) -> U
     SliderLine("小目盛り (主目盛りの間)", d.minorDivisions.toFloat(), 0f..9f, "%.0f") { v ->
         update { it.copy(minorDivisions = v.roundToInt()) }
     }
-    SliderLine("目盛りの位置 (外周 = 100%)", d.tickRadius * 100, 40f..110f, "%.0f%%") { v ->
+    SliderLine("目盛りの位置 (外周 = 100%)", d.tickRadius * 100, 40f..200f, "%.0f%%") { v ->
         update { it.copy(tickRadius = snap(v, 1f) / 100f) }
     }
     SwitchLine("目盛りの数字を表示", null, d.showLabels) { v -> update { it.copy(showLabels = v) } }
@@ -592,6 +592,17 @@ private fun ScaleTab(g: GaugeConfig, update: ((GaugeDesign) -> GaugeDesign) -> U
         SliderLine("針の長さ", d.needleLength * 100, 30f..130f, "%.0f%%") { v -> update { it.copy(needleLength = snap(v, 5f) / 100f) } }
         SliderLine("針の太さ", d.needleWidth * 100, 20f..400f, "%.0f%%") { v -> update { it.copy(needleWidth = snap(v, 5f) / 100f) } }
         SliderLine("反対側の尾の長さ", d.needleTail * 100, 0f..60f, "%.0f%%") { v -> update { it.copy(needleTail = snap(v, 1f) / 100f) } }
+
+        Head("針の中心の位置")
+        Hint(
+            "針の回転の中心を、メーターの中心からずらします (目盛り・弧も一緒に動きます)。" +
+                "端に寄せて開始・終了角度を 90° くらいにし、目盛りの位置を大きくすると、旧車の追加メーターのような扇形の目盛りになります。"
+        )
+        SliderLine("横 (右が +)", d.pivotX * 100, -50f..50f, "%.0f%%") { v -> update { it.copy(pivotX = snap(v, 1f) / 100f) } }
+        SliderLine("縦 (下が +)", d.pivotY * 100, -50f..50f, "%.0f%%") { v -> update { it.copy(pivotY = snap(v, 1f) / 100f) } }
+        if (d.pivotX != 0f || d.pivotY != 0f) {
+            TextButton(onClick = { update { it.copy(pivotX = 0f, pivotY = 0f) } }) { Text("中心に戻す") }
+        }
 
         Head("中心のノブ")
         ColorLine("ノブの色 (既定 = 針と同じ)", d.knobColor, d.needleColor?.let { Color(it) } ?: GaugeColors.Text) { c ->
@@ -751,6 +762,7 @@ private fun LookTab(g: GaugeConfig, update: ((GaugeDesign) -> GaugeDesign) -> Un
     GlowSection(g, update)
     FaceSection(d, update)
     if (EditorTabs.usesRing(g.style)) RingSection(d, update)
+    if (g.style == GaugeStyle.ANALOG) RecessGlassSection(d, update)
 
     Head("値の動き")
     SliderLine("なめらかさ", d.smoothing * 100, 0f..100f, "%.0f%%") { v -> update { it.copy(smoothing = snap(v, 5f) / 100f) } }
@@ -815,6 +827,25 @@ private fun PanelSection(d: GaugeDesign, update: ((GaugeDesign) -> GaugeDesign) 
         update { it.copy(panelGloss = v) }
     }
     Hint("「埋め込み」は計器の液晶窓のように、上の縁から内側へ短い影を落とし、ふちを細く暗くして、表示部が文字盤の奥に沈んでいるように見せます。")
+}
+
+/** アナログ: 背景からのくぼみとガラスの反射 */
+@Composable
+private fun RecessGlassSection(d: GaugeDesign, update: ((GaugeDesign) -> GaugeDesign) -> Unit) {
+    Head("くぼみ・ガラス")
+    SliderLine("背景からのくぼみ (0 = なし)", d.recessDepth * 100, 0f..100f, "%.0f%%") { v ->
+        update { it.copy(recessDepth = snap(v, 5f) / 100f) }
+    }
+    Hint("メーターの縁から内側へ影を落とし、下の縁を細く明るくして、メーターが背景の穴に沈んでいるように見せます。")
+    SliderLine("ガラスの反射 (0 = なし)", d.glassStrength * 100, 0f..100f, "%.0f%%") { v ->
+        update { it.copy(glassStrength = snap(v, 5f) / 100f) }
+    }
+    if (d.glassStrength > 0f) {
+        SliderLine("光の来る向き (12 時 = 0°)", d.glassAngle, -180f..180f, "%.0f°") { v ->
+            update { it.copy(glassAngle = snap(v, 5f)) }
+        }
+        Hint("光の来る側の縁に沿った映り込みと、斜めに横切るうっすらした帯を、針より手前に描きます。")
+    }
 }
 
 @Composable
@@ -1121,7 +1152,7 @@ private fun ImageTab(g: GaugeConfig, update: ((GaugeDesign) -> GaugeDesign) -> U
             Head("画像に合わせる")
             if (analog) {
                 Hint("目盛りが画像の枠と重なる場合は「目盛りの位置」を、数値を画像の表示窓に入れたい場合は「数値の縦位置・横位置」を調整してください。")
-                SliderLine("目盛りの位置 (外周 = 100%)", d.tickRadius * 100, 40f..110f, "%.0f%%") { v ->
+                SliderLine("目盛りの位置 (外周 = 100%)", d.tickRadius * 100, 40f..200f, "%.0f%%") { v ->
                     update { it.copy(tickRadius = snap(v, 1f) / 100f) }
                 }
             }

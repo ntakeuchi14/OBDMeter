@@ -111,6 +111,11 @@ data class GaugeLook(
     val needleTail: Float = 0.12f,
     val knobColor: Color? = null,
     val knobSize: Float = 1f,
+    val pivotX: Float = 0f,
+    val pivotY: Float = 0f,
+    val recessDepth: Float = 0f,
+    val glassStrength: Float = 0f,
+    val glassAngle: Float = -40f,
     val ringThickness: Float = 1f,
     val ringDepth: Float = 0.6f,
     val ringInner: Float = 0.4f,
@@ -418,6 +423,8 @@ fun AnalogGauge(
         val d = min(size.width, size.height)
         val center = Offset(size.width / 2, size.height / 2)
         val outer = d / 2
+        // 針の回転の中心 (目盛り・弧もここを中心に描く)。文字盤・リング・名前・数値はメーターの中心のまま
+        val pc = Offset(center.x + d * look.pivotX, center.y + d * look.pivotY)
 
         val ringWidth = ringWidthFor(look, d)
         // 目盛り・弧の基準半径
@@ -428,7 +435,7 @@ fun AnalogGauge(
         // 目盛りの外側に弧の場所を空けるのは、弧か背景の弧を描くときだけ
         val stroke = if (arcHidden && !look.showTrack) 0f else rawStroke
         val arcR = gaugeR - stroke / 2
-        val arcTopLeft = Offset(center.x - arcR, center.y - arcR)
+        val arcTopLeft = Offset(pc.x - arcR, pc.y - arcR)
         val arcSize = Size(arcR * 2, arcR * 2)
         // 端を丸くするときは、丸みの分だけ角度を内側に詰めて全体の範囲を変えない
         val capInset = if (look.arcRoundCap && arcR > 0f) com.obdmeter.util.toDegrees((stroke / 2 / arcR).toDouble()).toFloat()
@@ -472,7 +479,7 @@ fun AnalogGauge(
                     // 目盛りの範囲内の外側寄せに帯で描く (目盛りは上から重ねて描く)
                     val zr = tickOuter - zoneInsideW / 2
                     drawArc(look.redZoneColor, start + sweep * s, sweep * (e - s), false,
-                        Offset(center.x - zr, center.y - zr), Size(zr * 2, zr * 2),
+                        Offset(pc.x - zr, pc.y - zr), Size(zr * 2, zr * 2),
                         style = Stroke(zoneInsideW, cap = StrokeCap.Butt))
                 } else {
                     drawArc(look.redZoneColor, start + sweep * s, sweep * (e - s), false, arcTopLeft, arcSize,
@@ -487,7 +494,7 @@ fun AnalogGauge(
             // 弧の先の丸い点 (ピーク値を出すときは、点をピーク値の位置に置いて印にする)
             if (look.arcTipDot && peak == null) {
                 val ta = com.obdmeter.util.toRadians((start + sweep * f).toDouble())
-                val tp = Offset(center.x + arcR * cos(ta).toFloat(), center.y + arcR * sin(ta).toFloat())
+                val tp = Offset(pc.x + arcR * cos(ta).toFloat(), pc.y + arcR * sin(ta).toFloat())
                 drawCircle(look.arcTipColor, stroke * 0.32f, tp)
             }
         }
@@ -499,13 +506,13 @@ fun AnalogGauge(
         for ((i, t) in majors.withIndex()) {
             val a = com.obdmeter.util.toRadians((start + sweep * fraction(def, t)).toDouble())
             if (look.showTicks) drawLine(look.tickColor,
-                Offset(center.x + (tickOuter - majorLen) * cos(a).toFloat(), center.y + (tickOuter - majorLen) * sin(a).toFloat()),
-                Offset(center.x + tickOuter * cos(a).toFloat(), center.y + tickOuter * sin(a).toFloat()),
+                Offset(pc.x + (tickOuter - majorLen) * cos(a).toFloat(), pc.y + (tickOuter - majorLen) * sin(a).toFloat()),
+                Offset(pc.x + tickOuter * cos(a).toFloat(), pc.y + tickOuter * sin(a).toFloat()),
                 strokeWidth = d * 0.012f)
             if (look.showLabels) {
                 val labelR = tickOuter - majorLen - d * 0.06f * look.labelSize
                 drawCenteredText(tm, scale.label(t),
-                    Offset(center.x + labelR * cos(a).toFloat(), center.y + labelR * sin(a).toFloat()),
+                    Offset(pc.x + labelR * cos(a).toFloat(), pc.y + labelR * sin(a).toFloat()),
                     TextStyle(color = look.labelColor, fontFamily = fonts.label, fontSize = labelSize))
             }
             // 小目盛り
@@ -515,8 +522,8 @@ fun AnalogGauge(
                     val tv = t + (next - t) * k / (look.minorDivisions + 1)
                     val b = com.obdmeter.util.toRadians((start + sweep * fraction(def, tv)).toDouble())
                     drawLine(look.tickColor,
-                        Offset(center.x + (tickOuter - minorLen) * cos(b).toFloat(), center.y + (tickOuter - minorLen) * sin(b).toFloat()),
-                        Offset(center.x + tickOuter * cos(b).toFloat(), center.y + tickOuter * sin(b).toFloat()),
+                        Offset(pc.x + (tickOuter - minorLen) * cos(b).toFloat(), pc.y + (tickOuter - minorLen) * sin(b).toFloat()),
+                        Offset(pc.x + tickOuter * cos(b).toFloat(), pc.y + tickOuter * sin(b).toFloat()),
                         strokeWidth = d * 0.006f)
                 }
             }
@@ -525,7 +532,7 @@ fun AnalogGauge(
         // 弧の先の丸い点を付けるときは、その点をピーク値の印にする (弧の上、ピーク値の位置)
         if (peak != null && look.arcTipDot && stroke > 0f) {
             val pa = com.obdmeter.util.toRadians((start + sweep * fraction(def, peak)).toDouble())
-            val pp = Offset(center.x + arcR * cos(pa).toFloat(), center.y + arcR * sin(pa).toFloat())
+            val pp = Offset(pc.x + arcR * cos(pa).toFloat(), pc.y + arcR * sin(pa).toFloat())
             drawCircle(look.peakColor, stroke * 0.32f, pp)
         }
         // ピーク値の印 (目盛りの外側から内側に向いた三角形)
@@ -537,22 +544,23 @@ fun AnalogGauge(
             val base = gaugeR + d * 0.005f
             val half = d * 0.022f
             val path = Path().apply {
-                moveTo(center.x + tip * ca, center.y + tip * sa)
-                lineTo(center.x + base * ca - half * sa, center.y + base * sa + half * ca)
-                lineTo(center.x + base * ca + half * sa, center.y + base * sa - half * ca)
+                moveTo(pc.x + tip * ca, pc.y + tip * sa)
+                lineTo(pc.x + base * ca - half * sa, pc.y + base * sa + half * ca)
+                lineTo(pc.x + base * ca + half * sa, pc.y + base * sa - half * ca)
                 close()
             }
             drawPath(path, look.peakColor)
         }
 
-        // 名前・数値・単位
+        // 名前・数値・単位 (目盛りを大きく外へ出しても、文字の位置は従来の範囲 (外周の 120%) までで決める)
+        val textR = min(gaugeR, (outer - ringWidth - d * 0.01f) * 1.2f)
         if (look.showName) {
             drawCenteredText(tm, def.shortName,
-                Offset(center.x + d * look.nameOffsetX, center.y - gaugeR * 0.38f + d * look.nameOffsetY),
+                Offset(center.x + d * look.nameOffsetX, center.y - textR * 0.38f + d * look.nameOffsetY),
                 TextStyle(color = look.nameColor, fontFamily = fonts.label, fontSize = (d * 0.07f * look.tableNameSize).toSp(), fontWeight = FontWeight.Medium))
         }
-        val valueY = center.y + gaugeR * look.valuePosition
-        val valueX = center.x + gaugeR * look.valueOffsetX
+        val valueY = center.y + textR * look.valuePosition
+        val valueX = center.x + textR * look.valueOffsetX
         if (look.showValue) {
             val valueText = if (unsupported) "非対応" else def.format(value)
             val vColor = if (warn) GaugeColors.Warn else look.valueColor
@@ -582,6 +590,8 @@ fun AnalogGauge(
                 Offset(valueX + d * look.peakTextX, valueY + d * 0.17f * max(look.valueSize, 0.6f) + d * look.peakTextY),
                 TextStyle(color = look.peakTextColor, fontSize = (d * 0.05f * look.peakTextSize).toSp(), fontFamily = fonts.value))
         }
+        // 背景からのくぼみ (縁から内側へ落ちる影と、下の縁の光)
+        if (look.recessDepth > 0f) drawRecess(center, outer, look.recessDepth)
         }
 
         // 針 (根元が太く先が細い形) と中心のノブ。数値などより手前に描く
@@ -597,10 +607,10 @@ fun AnalogGauge(
             val color = if (warn) GaugeColors.Warn else look.needleColor
             val needle = Path().apply {
                 // 尾の端 → 根元 → 先端 → 根元 → 尾の端 (針の向きに垂直な方向へ幅を取る)
-                moveTo(center.x - tail * ca - baseW * sa, center.y - tail * sa + baseW * ca)
-                lineTo(center.x + len * ca - tipW * sa, center.y + len * sa + tipW * ca)
-                lineTo(center.x + len * ca + tipW * sa, center.y + len * sa - tipW * ca)
-                lineTo(center.x - tail * ca + baseW * sa, center.y - tail * sa - baseW * ca)
+                moveTo(pc.x - tail * ca - baseW * sa, pc.y - tail * sa + baseW * ca)
+                lineTo(pc.x + len * ca - tipW * sa, pc.y + len * sa + tipW * ca)
+                lineTo(pc.x + len * ca + tipW * sa, pc.y + len * sa - tipW * ca)
+                lineTo(pc.x - tail * ca + baseW * sa, pc.y - tail * sa - baseW * ca)
                 close()
             }
             // 針の影 (文字盤から少し浮いているように、右下へずらしてぼかす)
@@ -609,20 +619,22 @@ fun AnalogGauge(
         }
         if (look.showNeedle && look.knobSize > 0f) {
             val kr = d * 0.035f * look.knobSize
-            if (look.needleShadow) drawSoftShadow(Path().apply { addOval(androidx.compose.ui.geometry.Rect(center, kr)) },
+            if (look.needleShadow) drawSoftShadow(Path().apply { addOval(androidx.compose.ui.geometry.Rect(pc, kr)) },
                 d * 0.01f, d * 0.016f, d * 0.012f, 0.45f * look.shadowStrength)
             val kc = look.knobColor ?: look.needleColor
-            drawCircle(kc, kr, center)
+            drawCircle(kc, kr, pc)
             // ノブの立体感 (左上が明るく右下が暗い)
             drawCircle(
                 Brush.linearGradient(
                     listOf(Color.White.copy(alpha = 0.35f), Color.Transparent, Color.Black.copy(alpha = 0.35f)),
-                    start = Offset(center.x - kr, center.y - kr), end = Offset(center.x + kr, center.y + kr),
+                    start = Offset(pc.x - kr, pc.y - kr), end = Offset(pc.x + kr, pc.y + kr),
                 ),
-                kr, center,
+                kr, pc,
             )
-            drawCircle(Color(0xFF20242B), kr * 0.4f, center)
+            drawCircle(Color(0xFF20242B), kr * 0.4f, pc)
         }
+        // ガラスの反射 (針より手前)
+        if (look.glassStrength > 0f) drawGlass(center, outer - ringWidth, look.glassStrength, look.glassAngle)
 
         }
     }
@@ -1183,3 +1195,95 @@ internal fun DrawScope.drawRing(look: GaugeLook, center: Offset, outer: Float, w
  */
 internal val com.obdmeter.core.PidDef.unitText: String
     get() = unit.replace("℃", "°C").replace("℉", "°F")
+
+
+/**
+ * 背景からのくぼみ。半径 [r] の円の縁から内側へ影を落とし (上が濃く、光は上から)、下の縁を細く明るくして、
+ * メーターがダッシュボードの穴に沈んでいるように見せる。[depth] = 強さ (0〜1)
+ */
+internal fun DrawScope.drawRecess(center: Offset, r: Float, depth: Float) {
+    if (r <= 0f) return
+    val k = depth.coerceIn(0f, 1f)
+    val circle = Path().apply { addOval(androidx.compose.ui.geometry.Rect(center, r)) }
+    clipPath(circle) {
+        // 縁全体を少し暗く (穴の奥の暗さ)
+        drawCircle(
+            Brush.radialGradient(
+                0f to Color.Transparent, 0.78f to Color.Transparent, 1f to Color.Black.copy(alpha = 0.55f * k),
+                center = center, radius = r,
+            ),
+            r, center,
+        )
+        // 上の縁から落ちる影: 下へずらした円の外側を重ねて塗る (ずらし量を変えて重ね、境目をぼかす)
+        val steps = 8
+        val maxShift = r * 0.16f * (0.4f + k)
+        for (i in 1..steps) {
+            val sh = maxShift * i / steps
+            val hole = Path().apply {
+                fillType = androidx.compose.ui.graphics.PathFillType.EvenOdd
+                addRect(androidx.compose.ui.geometry.Rect(center, r * 2f))
+                addOval(androidx.compose.ui.geometry.Rect(Offset(center.x + sh * 0.25f, center.y + sh), r))
+            }
+            drawPath(hole, Color.Black.copy(alpha = 0.10f * k))
+        }
+    }
+    // 下の縁に当たる光 (細い弧。真下が一番明るい)
+    val w = maxOf(1f, r * 0.018f)
+    val rr = r - w / 2
+    drawArc(
+        Brush.sweepGradient(
+            0f to Color.Transparent, 0.12f to Color.Transparent, 0.25f to Color.White.copy(alpha = 0.45f * k),
+            0.38f to Color.Transparent, 1f to Color.Transparent, center = center,
+        ),
+        20f, 140f, false, Offset(center.x - rr, center.y - rr), androidx.compose.ui.geometry.Size(rr * 2, rr * 2),
+        style = Stroke(w),
+    )
+}
+
+/**
+ * ガラスの反射。半径 [r] の円の中に、光の来る側 ([angle]: 12 時 = 0°、時計回り) の縁に沿った三日月形の映り込みと、
+ * 斜めに横切るうっすらした帯を描く。[strength] = 強さ (0〜1)
+ */
+internal fun DrawScope.drawGlass(center: Offset, r: Float, strength: Float, angle: Float) {
+    if (r <= 0f) return
+    val k = strength.coerceIn(0f, 1f)
+    val rad = com.obdmeter.util.toRadians(angle.toDouble())
+    // 光の来る向き (中心から光源へ)
+    val lx = sin(rad).toFloat()
+    val ly = -cos(rad).toFloat()
+    val circle = Path().apply { addOval(androidx.compose.ui.geometry.Rect(center, r)) }
+    clipPath(circle) {
+        // 全体のうっすらした明るさ (光の側ほど明るい)
+        drawCircle(
+            Brush.linearGradient(
+                listOf(Color.White.copy(alpha = 0.10f * k), Color.Transparent, Color.Transparent),
+                start = Offset(center.x + lx * r, center.y + ly * r), end = Offset(center.x - lx * r, center.y - ly * r),
+            ),
+            r, center,
+        )
+        // 光の側の縁に沿った三日月形の映り込み
+        val shift = r * 0.22f
+        val crescent = Path().apply {
+            fillType = androidx.compose.ui.graphics.PathFillType.EvenOdd
+            addOval(androidx.compose.ui.geometry.Rect(center, r))
+            addOval(androidx.compose.ui.geometry.Rect(Offset(center.x - lx * shift, center.y - ly * shift), r * 1.02f))
+        }
+        drawPath(
+            crescent,
+            Brush.linearGradient(
+                listOf(Color.White.copy(alpha = 0.55f * k), Color.White.copy(alpha = 0.12f * k), Color.Transparent),
+                start = Offset(center.x + lx * r, center.y + ly * r), end = Offset(center.x, center.y),
+            ),
+        )
+        // 斜めに横切る帯 (光の向きに垂直。中心より光の側)
+        val bandC = Offset(center.x + lx * r * 0.18f, center.y + ly * r * 0.18f)
+        val bw = r * 0.35f
+        drawRect(
+            Brush.linearGradient(
+                0f to Color.Transparent, 0.5f to Color.White.copy(alpha = 0.10f * k), 1f to Color.Transparent,
+                start = Offset(bandC.x + lx * bw, bandC.y + ly * bw), end = Offset(bandC.x - lx * bw, bandC.y - ly * bw),
+            ),
+            Offset(center.x - r, center.y - r), androidx.compose.ui.geometry.Size(r * 2, r * 2),
+        )
+    }
+}
