@@ -6,6 +6,15 @@ import kotlin.math.min
 import kotlin.math.sin
 
 /**
+ * デモ表示 (シミュレーター) で値を動かす範囲を、メーターで設定した目盛りの範囲に合わせるための表 (項目キー → 最小, 最大)。
+ * [com.obdmeter.AppCore] がページの内容から作る
+ */
+object SimulatorRanges {
+    @kotlin.concurrent.Volatile
+    var ranges: Map<String, Pair<Double, Double>> = emptyMap()
+}
+
+/**
  * 車なしで画面確認するための疑似車両。
  * 実際の OBD 応答と同じバイト列を作って返すので、デコード処理もそのまま検証できる。
  * 走行パターン: 加速 → 巡航 → 減速 → 停車 を繰り返す。
@@ -30,6 +39,8 @@ class SimulatorProtocol(
 
     private data class State(
         val rpm: Double, val speed: Double, val throttle: Double, val map: Double,
+        /** ギア段 (停車中は 0) */
+        val gear: Int = 0,
     )
 
     private fun state(): State {
@@ -49,7 +60,7 @@ class SimulatorProtocol(
         val ratio = doubleArrayOf(0.0, 120.0, 70.0, 50.0, 38.0, 30.0, 25.0)[gear]
         val rpm = max(750.0 + 30 * sin(t * 5), speed * ratio + throttle * 15)
         val map = 30 + throttle * 0.75 + 3 * sin(t * 3)
-        return State(min(rpm, 7200.0), max(speed, 0.0), throttle.coerceIn(0.0, 100.0), map)
+        return State(min(rpm, 7200.0), max(speed, 0.0), throttle.coerceIn(0.0, 100.0), map, if (speed < 1.0) 0 else gear)
     }
 
     override fun readPid(pid: Int): IntArray? {
@@ -111,15 +122,18 @@ class SimulatorProtocol(
             0x5A25 -> phys((1.2 + s.rpm / 2500.0) * 1000, 1.0)           // 油圧 (bar × 1000)
             0x5A2C -> phys(1013.0 + s.throttle * 10 + 20 * sin(t * 2), 0.0390625) // スロットル前圧力 (ブースト)
             0x4201 -> phys(1013.0, 0.08291752636432648)                   // 大気圧
+            0x5881 -> s.gear.toLong()                                    // 計算ギア段
             else -> {
                 // 項目の換算式 (1 次式) を逆算して、範囲の 35〜65% あたりで値を動かす
+                // (メーターで目盛りの範囲を設定していれば、その範囲の中で動かす)
                 val d = blockDefs[id] ?: return (128 + 60 * sin(t * 0.3 + id)).toLong()
                 val zero = IntArray(size)
                 val one = IntArray(size).also { it[size - 1] = 1 }
                 val v0 = runCatching { d.decode(zero) }.getOrNull() ?: return 0
                 val a = (runCatching { d.decode(one) }.getOrNull() ?: return 0) - v0
                 if (a == 0.0) return 0
-                val target = d.min + (d.max - d.min) * (0.5 + 0.15 * sin(t * 0.25 + id % 17))
+                val (lo, hi) = SimulatorRanges.ranges[d.key] ?: (d.min to d.max)
+                val target = lo + (hi - lo) * (0.5 + 0.15 * sin(t * 0.25 + id % 17))
                 kotlin.math.floor((target - v0) / a + 0.5).toLong()
             }
         }

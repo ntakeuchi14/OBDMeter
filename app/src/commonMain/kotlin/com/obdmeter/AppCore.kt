@@ -70,9 +70,20 @@ class AppCore(val platform: AppPlatform) {
         .stateIn(scope, SharingStarted.Eagerly, PidCatalog())
 
     /** メーターに出す値 (車から読んだ値 + 端末のセンサーの値) */
-    val values: StateFlow<Map<String, Double>> = combine(session.values, deviceSensors.values) { car, dev ->
+    val values: StateFlow<Map<String, Double>> = combine(session.values, deviceSensors.values, settings) { car0, dev, st ->
+        // デモ表示 (シミュレーター) では、値をメーターで設定した目盛りの範囲 (無ければ項目の範囲) に収める
+        val car = if (st.connectionType == com.obdmeter.data.ConnectionType.SIMULATOR) demoClamp(car0) else car0
         if (dev.isEmpty()) car else car + dev
     }.stateIn(scope, SharingStarted.Eagerly, emptyMap())
+
+    private fun demoClamp(v: Map<String, Double>): Map<String, Double> {
+        val ranges = com.obdmeter.core.SimulatorRanges.ranges
+        val cat = catalog.value
+        return v.mapValues { (k, x) ->
+            val (lo, hi) = ranges[k] ?: cat.get(k)?.let { it.min to it.max } ?: return@mapValues x
+            if (hi > lo && !x.isNaN()) x.coerceIn(lo, hi) else x
+        }
+    }
 
     /** グラフの記録で使っている端末のセンサーの項目 */
     private val recordingDeviceKeys = MutableStateFlow<Set<String>>(emptySet())
@@ -170,6 +181,21 @@ class AppCore(val platform: AppPlatform) {
                 captureKeys = ReadPlan.captureKeys(pages)
                 history.retentions = ReadPlan.retentions(pages)
                 recordingDeviceKeys.value = recordRules.keys.mapNotNullTo(HashSet()) { t -> t.key.takeIf { it.startsWith("DEV_") } }
+            }
+        }
+        // デモ表示 (シミュレーター) の値は、メーターで設定した目盛りの範囲の中で動かす
+        scope.launch {
+            dashboards.collect { pages ->
+                val m = HashMap<String, Pair<Double, Double>>()
+                for (g in pages.flatMap { it.gauges }) {
+                    val d = g.design
+                    if (d.min == null && d.max == null) continue
+                    val def = catalog.value.get(g.pidKey) ?: com.obdmeter.core.Pids.get(g.pidKey) ?: continue
+                    val lo = d.min ?: def.min
+                    val hi = d.max ?: def.max
+                    if (hi > lo) m[g.pidKey] = lo to hi
+                }
+                com.obdmeter.core.SimulatorRanges.ranges = m
             }
         }
         // 項目ごとの取得周期
