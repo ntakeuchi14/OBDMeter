@@ -1316,8 +1316,11 @@ internal fun DrawScope.drawGlass(center: Offset, r: Float, strength: Float, angl
 
 /** 表示する数値の文字。代わりの文字 ([GaugeLook.valueTexts]) の条件に合えばその文字、合わなければ数値 */
 internal fun GaugeLook.formatValue(def: PidDef, value: Double?): String {
+    val text = def.format(value)
     if (value != null && valueTexts.isNotEmpty()) {
-        for ((c, t) in valueTexts) if (runCatching { c.test(value) }.getOrDefault(false)) return t
+        // 条件は表示する桁数に丸めた値で見る (針・数値のなめらかな動きの途中の 0.0003 なども「0」として扱う)
+        val shown = text.toDoubleOrNull() ?: value
+        for ((c, t) in valueTexts) if (runCatching { c.test(shown) }.getOrDefault(false)) return t
     }
-    return def.format(value)
+    return text
 }
