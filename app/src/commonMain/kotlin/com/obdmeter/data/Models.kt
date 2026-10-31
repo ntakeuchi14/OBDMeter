@@ -128,6 +128,10 @@ data class GaugeDesign(
     val majorDivisions: Int? = null,
     /** 主目盛りの間の小目盛りの数 */
     val minorDivisions: Int = 0,
+    /** 主目盛りの間の真ん中の小目盛りを長く描く (小目盛りの数が奇数のとき) */
+    val midTick: Boolean = false,
+    /** 真ん中の小目盛りの長さ (主目盛りの長さに対する比率) */
+    val midTickLength: Float = 0.7f,
     val showLabels: Boolean = true,
     /** 目盛りを描く位置 (外周 = 1.0)。背景画像の枠の内側に合わせる */
     val tickRadius: Float = 1f,

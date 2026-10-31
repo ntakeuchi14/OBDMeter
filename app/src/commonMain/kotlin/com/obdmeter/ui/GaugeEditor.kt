@@ -560,6 +560,19 @@ private fun ScaleTab(g: GaugeConfig, update: ((GaugeDesign) -> GaugeDesign) -> U
     SliderLine("小目盛り (主目盛りの間)", d.minorDivisions.toFloat(), 0f..9f, "%.0f") { v ->
         update { it.copy(minorDivisions = v.roundToInt()) }
     }
+    if (d.minorDivisions > 0) {
+        SwitchLine(
+            "中間の目盛りを長くする",
+            "主目盛りと主目盛りの真ん中 (例: 1000 と 2000 の間の 1500) の小目盛りを長めの線で描きます。小目盛りの数が奇数 (1・3・5・7・9) のときに使えます",
+            d.midTick,
+        ) { v -> update { it.copy(midTick = v, minorDivisions = if (v && it.minorDivisions % 2 == 0) it.minorDivisions + 1 else it.minorDivisions) } }
+        if (d.midTick) {
+            if (d.minorDivisions % 2 == 0) Hint("小目盛りの数が偶数なので、真ん中の目盛りがありません。奇数にしてください。")
+            SliderLine("中間の目盛りの長さ (主目盛り = 100%)", d.midTickLength * 100, 30f..100f, "%.0f%%") { v ->
+                update { it.copy(midTickLength = snap(v, 5f) / 100f) }
+            }
+        }
+    }
     SliderLine("目盛りの位置 (外周 = 100%)", d.tickRadius * 100, 40f..200f, "%.0f%%") { v ->
         update { it.copy(tickRadius = snap(v, 1f) / 100f) }
     }

@@ -92,6 +92,8 @@ data class GaugeLook(
     val sweep: Float = 240f,
     val majorDivisions: Int? = null,
     val minorDivisions: Int = 0,
+    val midTick: Boolean = false,
+    val midTickLength: Float = 0.7f,
     val showLabels: Boolean = true,
     val tickRadius: Float = 1f,
     val tickColor: Color = GaugeColors.Tick,
@@ -529,13 +531,16 @@ fun AnalogGauge(
             // 小目盛り
             if (look.showTicks && look.minorDivisions > 0 && i < majors.lastIndex) {
                 val next = majors[i + 1]
+                // 小目盛りの数が奇数なら、真ん中 (主目盛りの中間の値) を長めに描ける
+                val mid = if (look.midTick && look.minorDivisions % 2 == 1) (look.minorDivisions + 1) / 2 else -1
                 for (k in 1..look.minorDivisions) {
                     val tv = t + (next - t) * k / (look.minorDivisions + 1)
                     val b = com.obdmeter.util.toRadians((start + sweep * fraction(def, tv)).toDouble())
+                    val len = if (k == mid) max(minorLen, majorLen * look.midTickLength) else minorLen
                     drawLine(look.tickColor,
-                        Offset(pc.x + (tickOuter - minorLen) * cos(b).toFloat(), pc.y + q * (tickOuter - minorLen) * sin(b).toFloat()),
+                        Offset(pc.x + (tickOuter - len) * cos(b).toFloat(), pc.y + q * (tickOuter - len) * sin(b).toFloat()),
                         Offset(pc.x + tickOuter * cos(b).toFloat(), pc.y + q * tickOuter * sin(b).toFloat()),
-                        strokeWidth = d * 0.006f)
+                        strokeWidth = if (k == mid) d * 0.009f else d * 0.006f)
                 }
             }
         }

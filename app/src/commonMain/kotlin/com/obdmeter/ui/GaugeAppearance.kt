@@ -64,6 +64,8 @@ fun GaugeDesign.toLook(def: PidDef, style: GaugeStyle): GaugeLook {
         sweep = sweep,
         majorDivisions = majorDivisions?.takeIf { it in 1..40 },
         minorDivisions = minorDivisions.coerceIn(0, 9),
+        midTick = midTick,
+        midTickLength = midTickLength.coerceIn(0.3f, 1f),
         showLabels = showLabels,
         tickRadius = tickRadius.coerceIn(0.3f, 2f),
         tickColor = tickColor.color(GaugeColors.Tick),
