@@ -142,6 +142,8 @@ data class GaugeLook(
     val unitColor: Color = GaugeColors.SubText,
     /** ランプの点灯条件 (null = 警告値で点灯) */
     val lampCondition: Condition? = null,
+    /** 数値の代わりに出す文字 (条件, 文字)。上から順に見る */
+    val valueTexts: List<Pair<Condition, String>> = emptyList(),
     val lampOnColor: Color = GaugeColors.Warn,
     val lampOffColor: Color = Color(0xFF2A2F36),
     /** 値テーブル */
@@ -577,7 +579,7 @@ fun AnalogGauge(
         val valueY = center.y + textR * look.valuePosition
         val valueX = center.x + textR * look.valueOffsetX
         if (look.showValue) {
-            val valueText = if (unsupported) "非対応" else def.format(value)
+            val valueText = if (unsupported) "非対応" else look.formatValue(def, value)
             val vColor = if (warn) GaugeColors.Warn else look.valueColor
             val vSize = d * (if (unsupported) 0.09f else 0.13f) * look.valueSize
             val style = TextStyle(color = vColor, fontSize = vSize.toSp(), fontWeight = FontWeight.Bold, fontFamily = fonts.value,
@@ -714,7 +716,7 @@ fun BarGauge(
                 fontWeight = FontWeight.Bold, fontFamily = fonts.value,
                 shadow = glowShadow(vColor, look.glow, unit * 0.34f * look.valueSize),
             )
-            val valueLayout = tm.measure(if (unsupported) "非対応" else def.format(value), valueStyle)
+            val valueLayout = tm.measure(if (unsupported) "非対応" else look.formatValue(def, value), valueStyle)
             val unitLayout = tm.measure(if (look.showUnit) def.unitText else "",
                 TextStyle(color = look.unitColor, fontFamily = fonts.label, fontSize = (unit * 0.14f * look.tableUnitSize).toSp()))
             // 縦横の位置調整 (アナログと共通の設定。既定は右寄せ・中央)
@@ -1001,7 +1003,7 @@ fun DigitalGauge(
                 fontSize = (unit * (if (unsupported) 0.2f else 0.38f) * look.valueSize).toSp(),
                 fontWeight = FontWeight.Bold, fontFamily = fonts.value,
                 shadow = glowShadow(vColor, look.glow, unit * 0.38f * look.valueSize))
-            val text = if (unsupported) "非対応" else def.format(value)
+            val text = if (unsupported) "非対応" else look.formatValue(def, value)
             if (look.ghostDigits && !unsupported) {
                 // 消えている 7 セグ (8) を中央に置き、数値はその右端にそろえる
                 val gs = style.copy(color = look.valueColor.copy(alpha = look.ghostAlpha), shadow = null)
@@ -1309,4 +1311,13 @@ internal fun DrawScope.drawGlass(center: Offset, r: Float, strength: Float, angl
             Offset(center.x - r, center.y - r), androidx.compose.ui.geometry.Size(r * 2, r * 2),
         )
     }
+}
+
+
+/** 表示する数値の文字。代わりの文字 ([GaugeLook.valueTexts]) の条件に合えばその文字、合わなければ数値 */
+internal fun GaugeLook.formatValue(def: PidDef, value: Double?): String {
+    if (value != null && valueTexts.isNotEmpty()) {
+        for ((c, t) in valueTexts) if (runCatching { c.test(value) }.getOrDefault(false)) return t
+    }
+    return def.format(value)
 }

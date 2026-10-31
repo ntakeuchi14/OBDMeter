@@ -94,6 +94,10 @@ enum class GaugeStyle(val label: String) {
     MONITOR("変動監視"),
 }
 
+/** 数値の代わりに出す文字。計測値 x が条件 [condition] (例: `x == 0`) に合うとき、数値の代わりに [text] を出す */
+@Serializable
+data class ValueText(val condition: String = "", val text: String = "")
+
 /**
  * メーター 1 個ごとの見た目の上書き設定。null の項目は PID 定義の既定値を使う。
  */
@@ -287,6 +291,8 @@ data class GaugeDesign(
     // --- 2 値ランプ ---
     /** 点灯条件 (値を x と書く。例: x >= 100)。空欄 = 警告値を超えたら点灯 */
     val lampCondition: String = "",
+    /** 数値の代わりに出す文字 (上から順に見て、最初に条件に合ったもの。例: ギアが 0 のとき N) */
+    val valueTexts: List<ValueText> = emptyList(),
     /** 点灯時・消灯時の色 (null = 既定: 赤 / 暗い灰色) */
     val lampOnColor: Long? = null,
     val lampOffColor: Long? = null,

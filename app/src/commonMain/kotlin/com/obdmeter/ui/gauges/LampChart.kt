@@ -141,7 +141,7 @@ internal fun LampGauge(
                     fontSize = (unit * 0.11f * look.labelSize * look.tableNameSize).toSp()))
         }
         if (look.showValue) {
-            val text = if (unsupported) "非対応" else def.format(value) + if (look.showUnit) " ${def.unitText}" else ""
+            val text = if (unsupported) "非対応" else look.formatValue(def, value) + if (look.showUnit) " ${def.unitText}" else ""
             drawCenteredText(tm, text, Offset(size.width / 2, size.height - valueH / 2),
                 TextStyle(color = look.valueColor, fontFamily = fonts.value,
                     fontSize = (unit * 0.11f * look.valueSize).toSp()))

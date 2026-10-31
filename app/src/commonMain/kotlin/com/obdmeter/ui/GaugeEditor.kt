@@ -787,6 +787,7 @@ private fun LookTab(g: GaugeConfig, update: ((GaugeDesign) -> GaugeDesign) -> Un
 
     PeakSection(g, update)
     ValueNameUnitSection(g, update)
+    ValueTextSection(g, update)
     CardSwitch(d, update, g.style)
 }
 
@@ -1010,6 +1011,7 @@ private fun LampTab(g: GaugeConfig, update: ((GaugeDesign) -> GaugeDesign) -> Un
     FaceSection(d, update)
     RingSection(d, update)
     ValueNameUnitSection(g, update)
+    ValueTextSection(g, update)
     CardSwitch(d, update, g.style)
     Head("背景画像")
     ImageTab(g, update)
@@ -1233,6 +1235,54 @@ private fun SliderLine(label: String, value: Float, range: ClosedFloatingPointRa
 }
 
 /** 2 値ランプの設定 (点灯条件と色) */
+/** 数値の代わりに出す文字 (例: ギアが 0 のとき N) */
+@Composable
+private fun ValueTextSection(g: GaugeConfig, update: ((GaugeDesign) -> GaugeDesign) -> Unit) {
+    val d = g.design
+    if (g.style !in setOf(GaugeStyle.ANALOG, GaugeStyle.BAR, GaugeStyle.DIGITAL, GaugeStyle.LAMP)) return
+    Head("数値の代わりに出す文字")
+    Hint(
+        "計測値を x として条件を書き、合ったときは数値の代わりに右の文字を出します (上から順に見て、最初に合ったもの)。" +
+            "例: x == 0 → N (ギアのニュートラル) / x < 0 → R / x > 7 → -"
+    )
+    fun set(list: List<com.obdmeter.data.ValueText>) = update { it.copy(valueTexts = list) }
+    d.valueTexts.forEachIndexed { i, v ->
+        var cond by remember(g.id, i, v.condition) { mutableStateOf(v.condition) }
+        val error = cond.takeIf { it.isNotBlank() }?.let { Condition.check(it) }
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Top) {
+            OutlinedTextField(
+                value = cond,
+                onValueChange = { t ->
+                    cond = t
+                    // 書き方が正しいときだけ反映する
+                    if (t.isBlank() || Condition.check(t) == null) {
+                        set(d.valueTexts.toMutableList().also { it[i] = it[i].copy(condition = t.trim()) })
+                    }
+                },
+                label = { Text("条件") },
+                placeholder = { Text("例: x == 0") },
+                isError = error != null,
+                supportingText = { if (error != null) Text(error) },
+                singleLine = true,
+                modifier = Modifier.weight(1.4f),
+            )
+            Text("→", Modifier.padding(horizontal = 6.dp, vertical = 18.dp))
+            OutlinedTextField(
+                value = v.text,
+                onValueChange = { t -> set(d.valueTexts.toMutableList().also { it[i] = it[i].copy(text = t) }) },
+                label = { Text("出す文字") },
+                singleLine = true,
+                modifier = Modifier.weight(1f),
+            )
+            TextButton(onClick = { set(d.valueTexts.toMutableList().also { it.removeAt(i) }) },
+                modifier = Modifier.padding(top = 8.dp)) { Text("外す") }
+        }
+    }
+    if (d.valueTexts.size < 10) {
+        OutlinedButton(onClick = { set(d.valueTexts + com.obdmeter.data.ValueText("x == 0", "N")) }) { Text("追加") }
+    }
+}
+
 @Composable
 private fun LampSettings(g: GaugeConfig, update: ((GaugeDesign) -> GaugeDesign) -> Unit) {
     val d = g.design

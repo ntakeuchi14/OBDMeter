@@ -129,6 +129,9 @@ fun GaugeDesign.toLook(def: PidDef, style: GaugeStyle): GaugeLook {
         unitOffsetY = unitOffsetY.coerceIn(-0.6f, 0.6f),
         unitColor = unitColor.color(labelColor.color(GaugeColors.SubText)),
         lampCondition = lampCondition.takeIf { it.isNotBlank() }?.let { runCatching { Condition.compile(it) }.getOrNull() },
+        valueTexts = valueTexts.mapNotNull { v ->
+            v.condition.takeIf { it.isNotBlank() }?.let { runCatching { Condition.compile(it) }.getOrNull() }?.let { it to v.text }
+        },
         lampOnColor = lampOnColor.color(GaugeColors.Warn),
         lampOffColor = lampOffColor.color(Color(0xFF2A2F36)),
         chartSpanMs = chartSpanSec.coerceIn(60, 31 * 86_400) * 1000L,
