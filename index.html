@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>OBD Meter デザイナー</title>
+    <style>
+        html, body { width: 100%; height: 100%; margin: 0; padding: 0; overflow: hidden; background: #0E1116; }
+        #loading { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center;
+                   color: #B3BAC5; font-family: sans-serif; font-size: 16px; }
+    </style>
+    <script>
+        window.OBDMETER_VERSION = 'web-65';
+        // ブラウザーの言語設定が Intl で読めない形式 (例: en-US@posix) だと画面が出ないので、日本語にしておく
+        try { new Intl.Locale(navigator.language); } catch (e) {
+            Object.defineProperty(navigator, 'language', { get: function () { return 'ja-JP'; } });
+            Object.defineProperty(navigator, 'languages', { get: function () { return ['ja-JP']; } });
+        }
+    </script>
+    <script type="application/javascript" src="obdmeter.js"></script>
+</head>
+<body>
+<div id="loading">読み込み中…</div>
+</body>
+</html>
