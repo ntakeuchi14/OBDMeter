@@ -83,6 +83,7 @@ import com.obdmeter.data.Dashboard
 import com.obdmeter.data.GaugeConfig
 import com.obdmeter.data.GaugeStyle
 import com.obdmeter.data.Layout
+import com.obdmeter.data.shownPages
 import com.obdmeter.session.ConnectionState
 import com.obdmeter.ui.gauges.GaugeCard
 import com.obdmeter.ui.gauges.GaugeColors
@@ -99,12 +100,31 @@ fun DashboardScreen(vm: MainViewModel, onNavigate: (Screen) -> Unit, onCreateCus
     val settings by vm.settings.collectAsStateWithLifecycle()
     val catalog by vm.catalog.collectAsStateWithLifecycle()
 
-    // 最後に表示していたページから始める (先頭ページが一瞬見えないよう、最初からそのページで作る)
-    val pager = rememberPagerState(initialPage = remember { vm.initialPageIndex() }) { dashboards.size }
-    val scope = rememberCoroutineScope()
-
     /** レイアウト編集モード (メーターをドラッグで移動・サイズ変更) */
     var editing by rememberSaveable { mutableStateOf(false) }
+    // 切り替えで出すページ (隠したページは編集中だけ出す)。
+    // ページの並びが変わったら、表示中のページのまま (隠れたら近くのページへ) 並びを差し替える
+    val wanted = remember(dashboards, editing) { dashboards.shownPages(editing) }
+    var pages by remember { mutableStateOf(wanted) }
+    // 最後に表示していたページから始める (先頭ページが一瞬見えないよう、最初からそのページで作る)
+    val pager = rememberPagerState(initialPage = remember { vm.initialPageIndex() }) { pages.size }
+    LaunchedEffect(wanted) {
+        if (wanted == pages) return@LaunchedEffect
+        val id = pages.getOrNull(pager.currentPage)?.id
+        var idx = wanted.indexOfFirst { it.id == id }
+        if (idx < 0 && id != null) {
+            // 隠れたページ: 元の並びで後ろ (無ければ前) の、出ているページへ
+            val all = dashboards.indexOfFirst { it.id == id }
+            val ids = wanted.map { it.id }.toSet()
+            idx = (dashboards.drop(all + 1).firstOrNull { it.id in ids } ?: dashboards.take(maxOf(all, 0)).lastOrNull { it.id in ids })
+                ?.let { p -> wanted.indexOfFirst { it.id == p.id } } ?: 0
+        }
+        pages = wanted
+        pager.requestScrollToPage(idx.coerceIn(0, maxOf(wanted.size - 1, 0)))
+    }
+    // ページの並びが同じなら (メーターの編集など)、最新の内容をすぐ使う
+    val shown = if (wanted.size == pages.size && wanted.indices.all { wanted[it].id == pages[it].id }) wanted else pages
+    val scope = rememberCoroutineScope()
     val clipboard by vm.clipboard.collectAsStateWithLifecycle()
     val toast = rememberToast()
     /** 設定ダイアログを開いているメーターの id */
@@ -117,7 +137,7 @@ fun DashboardScreen(vm: MainViewModel, onNavigate: (Screen) -> Unit, onCreateCus
     var selecting by remember { mutableStateOf(false) }
     var selected by remember { mutableStateOf(emptySet<Long>()) }
 
-    val current = dashboards.getOrNull(pager.currentPage)
+    val current = shown.getOrNull(pager.currentPage)
     // ページを変えた・編集をやめたら選択をやめる
     LaunchedEffect(current?.id, editing) { selecting = false; selected = emptySet() }
 
@@ -138,7 +158,7 @@ fun DashboardScreen(vm: MainViewModel, onNavigate: (Screen) -> Unit, onCreateCus
     var pageRestored by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) {
         vm.pageToRestore()?.let { id ->
-            val idx = vm.dashboards.value.indexOfFirst { it.id == id }
+            val idx = shown.indexOfFirst { it.id == id }
             if (idx >= 0 && idx != pager.currentPage) {
                 // 画面側のページ数が追いつくのを待ってから移動する
                 withTimeoutOrNull(2000) { snapshotFlow { pager.pageCount }.first { it > idx } }
@@ -203,7 +223,7 @@ fun DashboardScreen(vm: MainViewModel, onNavigate: (Screen) -> Unit, onCreateCus
     // ---- ダッシュボード (左右スワイプで切替。編集中はスワイプしない) ----
     val pagerContent: @Composable (Modifier) -> Unit = { modifier ->
         HorizontalPager(pager, modifier, userScrollEnabled = !editing) { page ->
-            dashboards.getOrNull(page)?.let { d ->
+            shown.getOrNull(page)?.let { d ->
                 DashboardCanvas(
                     dashboard = d,
                     values = values,
@@ -248,18 +268,29 @@ fun DashboardScreen(vm: MainViewModel, onNavigate: (Screen) -> Unit, onCreateCus
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 // 編集中もページを切り替えられるように (別のページへの貼り付け用)
-                if (dashboards.size > 1) {
+                if (shown.size > 1) {
                     IconButton(
                         onClick = { scope.launch { pager.animateScrollToPage(pager.currentPage - 1) } },
                         enabled = pager.currentPage > 0,
                     ) { Text("◀") }
                 }
-                Text(current?.name ?: "", fontWeight = FontWeight.Bold, maxLines = 1)
-                if (dashboards.size > 1) {
+                Text(current?.name ?: "", fontWeight = FontWeight.Bold, maxLines = 1,
+                    color = if (current?.hidden == true) GaugeColors.SubText else Color.Unspecified)
+                if (current?.hidden == true) Text("(隠しページ)", color = GaugeColors.SubText, fontSize = 12.sp)
+                if (shown.size > 1) {
                     IconButton(
                         onClick = { scope.launch { pager.animateScrollToPage(pager.currentPage + 1) } },
-                        enabled = pager.currentPage < dashboards.size - 1,
+                        enabled = pager.currentPage < shown.size - 1,
                     ) { Text("▶") }
+                }
+                if (current != null && !selecting) {
+                    val hideAll = !current.hidden && dashboards.count { !it.hidden } <= 1
+                    OutlinedButton(
+                        onClick = {
+                            if (hideAll) toast("ほかに出ているページが無いので隠せません")
+                            else vm.setDashboardHidden(current.id, !current.hidden)
+                        },
+                    ) { Text(if (current.hidden) "隠すのをやめる" else "ページを隠す") }
                 }
                 Spacer(Modifier.weight(1f))
                 if (selecting) {
@@ -297,12 +328,12 @@ fun DashboardScreen(vm: MainViewModel, onNavigate: (Screen) -> Unit, onCreateCus
                 OutlinedButton(onClick = { onNavigate(Screen.EDIT) }) { Text("ページ管理") }
                 }
             }
-        } else if (dashboards.size > 1) {
+        } else if (shown.size > 1) {
             Row(
                 modifier.fillMaxWidth().padding(vertical = 6.dp),
                 horizontalArrangement = Arrangement.Center,
             ) {
-                dashboards.forEachIndexed { i, d ->
+                shown.forEachIndexed { i, d ->
                     val selected = i == pager.currentPage
                     Text(
                         d.name,

@@ -529,7 +529,13 @@ data class Dashboard(
      * 以前の版 (1 = 24 × 12 マス) の保存データは、読み込み時に [Layout.SCALE] 倍して細かい単位に直す
      */
     val unitScale: Int = 1,
+    /** ページを隠す (ふだんのページ切り替えには出さず、レイアウト編集中だけ出す) */
+    val hidden: Boolean = false,
 )
+
+/** 切り替えで出すページ。編集中はすべて、ふだんは隠していないページ (全部隠したときはすべて) */
+fun List<Dashboard>.shownPages(editing: Boolean): List<Dashboard> =
+    if (editing) this else filterNot { it.hidden }.ifEmpty { this }
 
 object Layout {
     /** 旧来の 1 マス (横 24 × 縦 12 分割) を、さらに何分割して位置・大きさを持つか */

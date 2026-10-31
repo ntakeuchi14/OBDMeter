@@ -18,6 +18,7 @@ import com.obdmeter.data.ImportMode
 import com.obdmeter.data.Layout
 import com.obdmeter.data.LoadedBackup
 import com.obdmeter.data.imageNames
+import com.obdmeter.data.shownPages
 import com.obdmeter.data.withoutUnusedImages
 import com.obdmeter.session.ConnectionState
 import com.obdmeter.session.ObdSession
@@ -328,7 +329,7 @@ class MainViewModel(val core: AppCore) : ViewModel() {
     /** 最初に表示するページの位置 (最後に表示していたページ。無ければ先頭)。読み終えた後に呼ぶ */
     fun initialPageIndex(): Int {
         val id = core.appPage.value ?: settings.value.lastPageId ?: return 0
-        return dashboards.value.indexOfFirst { it.id == id }.coerceAtLeast(0)
+        return dashboards.value.shownPages(false).indexOfFirst { it.id == id }.coerceAtLeast(0)
     }
 
     suspend fun pageToRestore(): Long? {
@@ -405,6 +406,9 @@ class MainViewModel(val core: AppCore) : ViewModel() {
     }
 
     fun renameDashboard(id: Long, name: String) = editDashboard(id) { it.copy(name = name) }
+
+    /** ページを隠す / 隠すのをやめる */
+    fun setDashboardHidden(id: Long, hidden: Boolean) = editDashboard(id) { it.copy(hidden = hidden) }
 
     /** ページの背景を変える */
     fun setPageBackground(id: Long, bg: com.obdmeter.data.PageBackground) = editDashboard(id) { it.copy(background = bg) }

@@ -55,7 +55,7 @@ fun EditScreen(vm: MainViewModel, onBack: () -> Unit) {
     Column(Modifier.fillMaxSize()) {
         TopBar("ページ管理", onBack)
         Text(
-            "左右スワイプで切り替わるページの一覧です。「背景」でページの背景 (色・柄・画像) を変えられます。メーターの配置や見た目は、ダッシュボードの鉛筆ボタンで編集します。",
+            "左右スワイプで切り替わるページの一覧です。「隠す」にしたページは、ふだんのページ切り替えには出ず、レイアウト編集中だけ出ます。「背景」でページの背景 (色・柄・画像) を変えられます。メーターの配置や見た目は、ダッシュボードの鉛筆ボタンで編集します。",
             color = GaugeColors.SubText, fontSize = 13.sp, modifier = Modifier.padding(horizontal = 16.dp),
         )
         LazyColumn(Modifier.weight(1f).fillMaxWidth().padding(top = 8.dp)) {
@@ -65,10 +65,16 @@ fun EditScreen(vm: MainViewModel, onBack: () -> Unit) {
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Column(Modifier.weight(1f)) {
-                        Text("${index + 1}. ${d.name}", fontWeight = FontWeight.Medium)
+                        Text("${index + 1}. ${d.name}" + if (d.hidden) "  (隠しページ)" else "", fontWeight = FontWeight.Medium,
+                            color = if (d.hidden) GaugeColors.SubText else androidx.compose.ui.graphics.Color.Unspecified)
                         val items = d.gauges.mapNotNull { catalog.get(it.pidKey)?.shortName }.joinToString("・")
                         Text(items.ifEmpty { "メーターなし" }, color = GaugeColors.SubText, fontSize = 12.sp, maxLines = 1)
                     }
+                    TextButton(
+                        onClick = { vm.setDashboardHidden(d.id, !d.hidden) },
+                        // 最後の 1 ページは隠せない (ふだん出すページが無くなるので)
+                        enabled = d.hidden || dashboards.count { !it.hidden } > 1,
+                    ) { Text(if (d.hidden) "出す" else "隠す") }
                     TextButton(onClick = { backgroundFor = d.id }) { Text("背景") }
                     IconButton(onClick = { nameDialog = NameDialog(d.id, d.name) }) { Icon(Icons.Default.Edit, "名前変更") }
                     IconButton(onClick = { vm.moveDashboard(d.id, -1) }, enabled = index > 0) {
