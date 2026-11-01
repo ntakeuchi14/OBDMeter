@@ -421,6 +421,8 @@ fun AnalogGauge(
     /** 本体と針の層で針の位置を共有する (本体が書き、針の層が読む) */
     needleState: MutableFloatState? = null,
 ) {
+    // くぼみ・ガラスの反射は重いので、一度画像に描いておき、毎回はその画像を貼るだけにする
+    val fx = remember { GaugeFxCache() }
     val tm = rememberTextMeasurer()
     val f = if (layer == GaugeLayer.NEEDLE && needleState != null) needleState.floatValue else animated(def, value, look.smoothing)
     if (layer == GaugeLayer.BODY && needleState != null) SideEffect { needleState.floatValue = f }
@@ -613,7 +615,7 @@ fun AnalogGauge(
                 TextStyle(color = look.peakTextColor, fontSize = (d * 0.05f * look.peakTextSize).toSp(), fontFamily = fonts.value))
         }
         // 背景からのくぼみ (縁から内側へ落ちる影と、下の縁の光)
-        if (look.recessDepth > 0f) drawRecess(center, outer, look.recessDepth)
+        if (look.recessDepth > 0f) fx.recess.draw(this, listOf(center, outer, look.recessDepth)) { drawRecess(center, outer, look.recessDepth) }
         }
 
         // 針 (根元が太く先が細い形) と中心のノブ。数値などより手前に描く
@@ -662,7 +664,10 @@ fun AnalogGauge(
         }
         if (shifted) drawContext.canvas.restore()
         // ガラスの反射 (針より手前)
-        if (look.glassStrength > 0f) drawGlass(center, look.glassSize?.let { outer * it } ?: (outer - ringWidth), look.glassStrength, look.glassAngle)
+        if (look.glassStrength > 0f) {
+            val gr = look.glassSize?.let { outer * it } ?: (outer - ringWidth)
+            fx.glass.draw(this, listOf(center, gr, look.glassStrength, look.glassAngle)) { drawGlass(center, gr, look.glassStrength, look.glassAngle) }
+        }
 
         }
     }
@@ -1328,4 +1333,33 @@ internal fun GaugeLook.formatValue(def: PidDef, value: Double?): String {
         for ((c, t) in valueTexts) if (runCatching { c.test(shown) }.getOrDefault(false)) return t
     }
     return text
+}
+
+
+/** 重い飾り (くぼみ・ガラスの反射) を画像にしておく入れ物。描く内容 ([key]) か大きさが変わったときだけ描き直す */
+internal class FxLayer {
+    private var key: Any? = null
+    private var image: ImageBitmap? = null
+
+    fun draw(scope: DrawScope, key: Any, block: DrawScope.() -> Unit) {
+        val w = kotlin.math.ceil(scope.size.width).toInt()
+        val h = kotlin.math.ceil(scope.size.height).toInt()
+        if (w <= 0 || h <= 0) return
+        val k = listOf(key, w, h)
+        var img = image
+        if (img == null || this.key != k) {
+            img = ImageBitmap(w, h)
+            androidx.compose.ui.graphics.drawscope.CanvasDrawScope().draw(
+                scope, scope.layoutDirection, androidx.compose.ui.graphics.Canvas(img), scope.size, block,
+            )
+            image = img
+            this.key = k
+        }
+        scope.drawImage(img)
+    }
+}
+
+internal class GaugeFxCache {
+    val recess = FxLayer()
+    val glass = FxLayer()
 }
