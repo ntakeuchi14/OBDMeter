@@ -1110,8 +1110,14 @@ private fun MonitorViewTab(g: GaugeConfig, update: ((GaugeDesign) -> GaugeDesign
                 Modifier.padding(end = 6.dp))
         }
     }
+    Head("並べ順")
+    Row {
+        FilterChip(!d.monitorSortByTime, { update { it.copy(monitorSortByTime = false) } }, { Text("変動回数の多い順") }, Modifier.padding(end = 6.dp))
+        FilterChip(d.monitorSortByTime, { update { it.copy(monitorSortByTime = true) } }, { Text("最後の変化が新しい順") })
+    }
     Hint(
-        "ダッシュボードでは、上の期間の欄をタップして切り替えられます。現在の値は「最新の計測値 − 初回の計測値」です。" +
+        "ダッシュボードでは、上の期間の欄をタップして期間を、その右の「回数順 / 新しい順」をタップして並べ順を切り替えられます (並べ順は覚えておき、次もその順で出します)。" +
+            "現在の値は「最新の計測値 − 初回の計測値」です。" +
             "値は項目の取得周期 (設定画面) ごとに見て、このページを表示していないときも記録します。" +
             "記録はこのメーターを削除するまで残ります (表示形式を変えた場合も消えます)。" +
             "メーター右上の「書出」「読込」で記録を CSV で書き出し・読み込み、「リセット」で記録を消せます。"

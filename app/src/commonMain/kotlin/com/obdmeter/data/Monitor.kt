@@ -45,6 +45,12 @@ object Monitor {
             .sortedWith(compareByDescending<IndexedValue<Stat>> { it.value.count(window) }.thenBy { it.index })
             .map { it.value }
 
+    /** 最後に変わった時刻の新しい順。変わったことが無い項目は後ろ (登録順) */
+    fun rankByTime(stats: List<Stat>): List<Stat> =
+        stats.withIndex()
+            .sortedWith(compareByDescending<IndexedValue<Stat>> { it.value.lastChangeAt ?: Long.MIN_VALUE }.thenBy { it.index })
+            .map { it.value }
+
     /**
      * 現在の値 = 最新の計測値 - 初回の計測値。最新の計測値は今読めている値 [live] (無ければ最後に記録した値)
      */

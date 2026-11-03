@@ -72,6 +72,9 @@ import kotlin.math.min
 /** 折れ線グラフの記録 (アプリ全体で 1 つ)。画面のルートとフロート表示で渡す */
 val LocalHistory = staticCompositionLocalOf<HistoryStore?> { null }
 
+/** メーター ([com.obdmeter.data.HistorySlot] で指定) の設定を書き換えて保存する (ダッシュボードでの切り替えを覚えるため)。null = 保存しない */
+val LocalGaugeDesignUpdate = staticCompositionLocalOf<((String, (com.obdmeter.data.GaugeDesign) -> com.obdmeter.data.GaugeDesign) -> Unit)?> { null }
+
 
 
 /** 線の色の自動割り当て */

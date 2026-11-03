@@ -190,6 +190,7 @@ data class GaugeLook(
     val legendAlign: com.obdmeter.data.LegendAlign = com.obdmeter.data.LegendAlign.START,
     val legendScale: Float = 1f,
     val monitorWindow: Int = 1,
+    val monitorSortByTime: Boolean = false,
     /** 変動監視: 変動時の前後の値を残す設定がある (ZIP のボタンを出す) */
     val monitorCapture: Boolean = false,
     val legendBgAlpha: Float = 0.5f,

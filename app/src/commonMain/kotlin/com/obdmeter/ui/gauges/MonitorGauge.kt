@@ -71,6 +71,9 @@ internal fun MonitorGauge(
         )
     }
     var window by remember(look.monitorWindow) { mutableIntStateOf(look.monitorWindow) }
+    // 並べ順 (回数順 / 新しい順)。切り替えたらメーターの設定に保存して、次も同じ順で出す
+    var byTime by remember(look.monitorSortByTime) { androidx.compose.runtime.mutableStateOf(look.monitorSortByTime) }
+    val saveDesign = LocalGaugeDesignUpdate.current
     val keys = remember(series.map { it.def.key }) { series.map { it.def.key } }
     // 記録が増えたら読み直す (読み直しは 2 秒に 1 回まで)。期間の境目が動くので一定の間隔でも読み直す
     var revision by remember { mutableLongStateOf(0L) }
@@ -87,7 +90,8 @@ internal fun MonitorGauge(
         if (interactive && history != null && slot != null) value = history.captureNames(slot).size
     }
     val byKey = stats.associateBy { it.key }
-    val ordered = Monitor.rank(keys.map { k -> byKey[k] ?: Monitor.Stat(k, null, null, null, emptyList()) }, window)
+    val all = keys.map { k -> byKey[k] ?: Monitor.Stat(k, null, null, null, emptyList()) }
+    val ordered = if (byTime) Monitor.rankByTime(all) else Monitor.rank(all, window)
     val seriesByKey = series.associateBy { it.def.key }
     val timeFmt = remember { com.obdmeter.util.DateFmt("yyyy/MM/dd HH:mm:ss") }
 
@@ -112,7 +116,22 @@ internal fun MonitorGauge(
                     )
                 }
             }
+            // 並べ順の切り替え
+            Text(
+                if (byTime) "新しい順" else "回数順",
+                color = GaugeColors.Background, fontSize = (base * 0.85f).sp, fontWeight = FontWeight.Bold,
+                modifier = Modifier
+                    .padding(start = 6.dp)
+                    .background(look.accent, RoundedCornerShape(6.dp))
+                    .then(if (interactive) Modifier.clickable {
+                        byTime = !byTime
+                        val v = byTime
+                        if (slot != null) saveDesign?.invoke(slot) { it.copy(monitorSortByTime = v) }
+                    } else Modifier)
+                    .padding(horizontal = 6.dp, vertical = 2.dp),
+            )
             if (interactive && history != null && slot != null) {
+                androidx.compose.foundation.layout.Spacer(Modifier.width(6.dp))
                 ChartCsvButtons(history, slot, keys)
                 androidx.compose.foundation.layout.Spacer(Modifier.width(4.dp))
                 if (captureCount > 0 || look.monitorCapture) {

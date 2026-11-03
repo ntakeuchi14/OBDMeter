@@ -62,6 +62,10 @@ fun App(vm: MainViewModel, onKeepScreenOn: (Boolean) -> Unit) {
         LocalContentColor provides GaugeColors.Text,
         LocalFontLibrary provides fontLibrary.associateBy { it.id },
         LocalHistory provides vm.history,
+        com.obdmeter.ui.gauges.LocalGaugeDesignUpdate provides { slot, f ->
+            val ids = slot.split(':').mapNotNull { it.toLongOrNull() }
+            if (ids.size == 2) vm.updateGauge(ids[0], ids[1]) { it.copy(design = f(it.design)) }
+        },
         LocalPlatform provides vm.core.platform,
     ) {
     Box(

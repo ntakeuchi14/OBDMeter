@@ -345,6 +345,8 @@ data class GaugeDesign(
     val monitorWindowMs: Long = 86_400_000L,
     /** 変動監視: 値が増えたときだけ記録する (生涯失火数など、減らないはずの値で、一時的に古い値が読めても数えない) */
     val monitorIncreaseOnly: Boolean = false,
+    /** 変動監視: 並べ順。false = 変動回数の多い順、true = 最後に変わった時刻の新しい順 (ダッシュボードで切り替えると覚える) */
+    val monitorSortByTime: Boolean = false,
     /**
      * 変動監視: 変動を検知したときに前後の値をファイルに残す項目 (空 = 残さない)。
      * 設定すると、監視の読み出しのたびにこれらの項目も読み、検知の前後 [com.obdmeter.data.MonitorCapture.COUNT] 回分を書き出す
