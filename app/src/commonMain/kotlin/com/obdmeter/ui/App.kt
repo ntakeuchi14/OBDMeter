@@ -67,6 +67,7 @@ fun App(vm: MainViewModel, onKeepScreenOn: (Boolean) -> Unit) {
             if (ids.size == 2) vm.updateGauge(ids[0], ids[1]) { it.copy(design = f(it.design)) }
         },
         LocalPlatform provides vm.core.platform,
+        LocalSaveFolder provides SaveFolder(settings.saveFolder, settings.saveFolderName),
     ) {
     Box(
         Modifier

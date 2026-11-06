@@ -60,6 +60,13 @@ data class AppSettings(
     val gridStep: Int = Layout.SCALE,
     /** 再現する画面の大きさ "幅x高さx倍率" (空 = 端末・ウィンドウの大きさのまま) */
     val screenSize: String = "",
+    /**
+     * 書き出し (エクスポート・CSV・ZIP など) の既定の保存先。空 = 毎回選ぶ。
+     * Android はフォルダーの URI (アクセス許可を保ったもの)、Web はブラウザーに覚えたフォルダー
+     */
+    val saveFolder: String = "",
+    /** 既定の保存先の表示名 */
+    val saveFolderName: String = "",
     /** 項目ごとの取得周期 (項目キー → ミリ秒)。無い項目は毎回 (遅い項目は 8 回に 1 回) */
     val pollIntervalsMs: Map<String, Int> = emptyMap(),
     /** 最後に表示していたダッシュボードのページ (次の起動時にこのページから始める) */

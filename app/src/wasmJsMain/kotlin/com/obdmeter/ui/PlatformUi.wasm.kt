@@ -22,6 +22,8 @@ import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.text.font.FontFamily
 import com.obdmeter.data.FontEntry
 import com.obdmeter.web.WebUi
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.async
 import com.obdmeter.web.downloadFile
 import com.obdmeter.web.pickFile
 
@@ -63,14 +65,51 @@ actual fun rememberFileOpener(mimeTypes: List<String>, onPicked: (PickedFile) ->
 @Composable
 actual fun rememberFileSaver(mimeType: String, onTarget: (FileTarget) -> Unit): (String) -> Unit {
     val callback by rememberUpdatedState(onTarget)
-    return remember(mimeType) {
+    val folder = LocalSaveFolder.current
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
+    return remember(mimeType, folder) {
         { name: String ->
-            callback(FileTarget { bytes ->
-                downloadFile(name, bytes, mimeType)
-                "ダウンロード ($name)"
-            })
+            if (folder.folder.isNotEmpty() && com.obdmeter.web.SaveFolderStore.supported) {
+                // 既定の保存先: 押した直後に書き込みの許可を確かめ (必要なら求め)、聞かずにそのフォルダーへ保存する
+                val permission = scope.async { runCatching { com.obdmeter.web.SaveFolderStore.ensurePermission() }.getOrDefault(false) }
+                callback(FileTarget { bytes ->
+                    val ok = permission.await()
+                    val saved = if (ok) runCatching { com.obdmeter.web.SaveFolderStore.save(name, bytes) }.getOrNull() else null
+                    saved ?: run {
+                        downloadFile(name, bytes, mimeType)
+                        "ダウンロード ($name。既定の保存先に書き込めませんでした)"
+                    }
+                })
+            } else {
+                callback(FileTarget { bytes ->
+                    downloadFile(name, bytes, mimeType)
+                    "ダウンロード ($name)"
+                })
+            }
         }
     }
+}
+
+@Composable
+actual fun rememberFolderPicker(onPicked: (folder: String, name: String) -> Unit): (() -> Unit)? {
+    if (!com.obdmeter.web.SaveFolderStore.supported) return null
+    val callback by rememberUpdatedState(onPicked)
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
+    return remember {
+        {
+            scope.launch {
+                runCatching { com.obdmeter.web.SaveFolderStore.pick() }
+                    .onSuccess { name -> if (name != null) callback("browser", name) }
+                    .onFailure { com.obdmeter.web.WebUi.toast("フォルダーを選べませんでした: ${it.message}") }
+            }
+            Unit
+        }
+    }
+}
+
+actual fun releaseSaveFolder(platform: com.obdmeter.AppPlatform?, folder: String) {
+    // 未設定に戻したとき: 覚えていたフォルダーを忘れる (選び直したときは新しいフォルダーで上書き済み)
+    kotlinx.coroutines.MainScope().launch { runCatching { com.obdmeter.web.SaveFolderStore.clear() } }
 }
 
 @Composable

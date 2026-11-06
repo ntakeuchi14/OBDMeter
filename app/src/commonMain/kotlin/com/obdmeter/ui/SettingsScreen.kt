@@ -358,6 +358,7 @@ private fun BackupSection(vm: MainViewModel) {
     val pending by vm.pendingImport.collectAsStateWithLifecycle()
 
     val exporter = rememberFileSaver("application/zip") { target -> vm.exportBackup(target.write) }
+    SaveFolderSection(vm)
     val importer = rememberFileOpener(listOf("application/zip", "application/x-zip-compressed", "application/octet-stream")) { f ->
         vm.loadBackup(f.read)
     }
@@ -590,3 +591,45 @@ private fun PollIntervalSection(vm: MainViewModel, s: AppSettings) {
     }
 }
 
+
+
+/** 書き出しの既定の保存先 (設定していれば、保存先を聞かずにワンタップで保存する) */
+@Composable
+private fun SaveFolderSection(vm: MainViewModel) {
+    val settings by vm.settings.collectAsStateWithLifecycle()
+    val platform = LocalPlatform.current
+    val toast = rememberToast()
+    val picker = rememberFolderPicker { folder, name ->
+        val old = settings.saveFolder
+        if (old.isNotEmpty() && old != folder) releaseSaveFolder(platform, old)
+        vm.updateSettings { it.copy(saveFolder = folder, saveFolderName = name) }
+        toast("保存先を「$name」にしました")
+    }
+    Text("書き出しの保存先", fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 4.dp))
+    Text(
+        "設定のエクスポート、グラフ・変動監視の CSV、変動時の ZIP、通信ログなどを書き出すときの保存先です。" +
+            "決めておくと、保存先を聞かずにワンタップでここへ保存します (同じ名前のファイルがあれば別の名前で保存します)。" +
+            "未設定なら今までどおり毎回選びます。" +
+            if (isWebApp) "クラウド (OneDrive・Google ドライブ・iCloud) は、パソコンに同期しているフォルダーを選べばそのまま上がります。"
+            else "クラウドは、フォルダーを選ぶ画面の左上のメニューに出るもの (OneDrive など、アプリが対応しているもの) から選べます。",
+        color = GaugeColors.SubText, fontSize = 12.sp,
+    )
+    Text(
+        if (settings.saveFolder.isEmpty()) "未設定 (毎回選ぶ)" else settings.saveFolderName.ifEmpty { "設定済み" },
+        modifier = Modifier.padding(top = 6.dp),
+    )
+    Row(Modifier.padding(vertical = 8.dp)) {
+        if (picker != null) {
+            FilledTonalButton(onClick = picker) { Text(if (settings.saveFolder.isEmpty()) "保存先を選ぶ" else "変更") }
+        } else {
+            Text("このブラウザーではフォルダーを選べません (Edge・Chrome で使えます)", color = GaugeColors.SubText, fontSize = 12.sp)
+        }
+        if (settings.saveFolder.isNotEmpty()) {
+            Spacer(Modifier.width(8.dp))
+            OutlinedButton(onClick = {
+                releaseSaveFolder(platform, settings.saveFolder)
+                vm.updateSettings { it.copy(saveFolder = "", saveFolderName = "") }
+            }) { Text("未設定に戻す") }
+        }
+    }
+}

@@ -63,10 +63,18 @@ actual fun rememberFileOpener(mimeTypes: List<String>, onPicked: (PickedFile) ->
 actual fun rememberFileSaver(mimeType: String, onTarget: (FileTarget) -> Unit): (String) -> Unit {
     val context = LocalContext.current
     val callback by rememberUpdatedState(onTarget)
+    val saveFolder = LocalSaveFolder.current
     val launcher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument(mimeType)) { uri ->
         if (uri != null) callback(FileTarget { bytes -> BackupFiles.write(context, uri, bytes); null })
     }
-    return { name ->
+    return save@{ name ->
+        val tree = saveFolder.folder.takeIf { it.isNotEmpty() }?.let { runCatching { Uri.parse(it) }.getOrNull() }
+        if (tree != null && hasTreeAccess(context, tree)) {
+            // 既定の保存先: 聞かずにそのフォルダーへ保存する
+            callback(FileTarget { bytes -> writeToTree(context, tree, saveFolder.name, name, mimeType, bytes) })
+            return@save
+        }
+        if (tree != null) Toast.makeText(context, "既定の保存先に書き込めなくなっています。保存先を選んでください (設定で選び直せます)", Toast.LENGTH_LONG).show()
         // 保存先を選ぶ画面が無い端末 (車載ナビなど) では、ダウンロードフォルダに直接保存する
         if (runCatching { launcher.launch(name) }.isFailure) {
             callback(FileTarget { bytes -> writeToDownloads(context, name, mimeType, bytes) })
@@ -180,4 +188,74 @@ actual fun deviceScreenInfo(): String? {
     val h = minOf(m.widthPixels, m.heightPixels)
     val d = (kotlin.math.round(m.density * 1000) / 1000.0).toString().trimEnd('0').trimEnd('.')
     return "この端末の画面: $w × $h px、倍率 $d (${m.densityDpi} dpi)"
+}
+
+
+/** 既定の保存先のフォルダーに、まだ書き込めるか (アクセス許可が残っているか) */
+private fun hasTreeAccess(context: Context, tree: Uri): Boolean =
+    context.contentResolver.persistedUriPermissions.any { it.uri == tree && it.isWritePermission }
+
+/** フォルダー [tree] に [name] で保存する (同じ名前があれば、保存先のアプリが別の名前を付ける) */
+private suspend fun writeToTree(context: Context, tree: Uri, folderName: String, name: String, mimeType: String, bytes: ByteArray): String =
+    withContext(Dispatchers.IO) {
+        val cr = context.contentResolver
+        val parent = android.provider.DocumentsContract.buildDocumentUriUsingTree(tree, android.provider.DocumentsContract.getTreeDocumentId(tree))
+        val doc = android.provider.DocumentsContract.createDocument(cr, parent, mimeType, name) ?: error("保存先にファイルを作れませんでした")
+        cr.openOutputStream(doc, "w")?.use { it.write(bytes) } ?: error("ファイルを開けませんでした")
+        val saved = runCatching {
+            cr.query(doc, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { c -> if (c.moveToFirst()) c.getString(0) else null }
+        }.getOrNull() ?: name
+        "${folderName.ifEmpty { "保存先" }}/$saved"
+    }
+
+@Composable
+actual fun rememberFolderPicker(onPicked: (folder: String, name: String) -> Unit): (() -> Unit)? {
+    val context = LocalContext.current
+    val callback by rememberUpdatedState(onPicked)
+    val launcher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
+        if (uri == null) return@rememberLauncherForActivityResult
+        val ok = runCatching {
+            context.contentResolver.takePersistableUriPermission(
+                uri, Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION,
+            )
+        }.isSuccess
+        if (!ok) {
+            Toast.makeText(context, "このフォルダーには保存できません (別のフォルダーを選んでください)", Toast.LENGTH_LONG).show()
+            return@rememberLauncherForActivityResult
+        }
+        callback(uri.toString(), folderLabel(context, uri))
+    }
+    return {
+        if (runCatching { launcher.launch(null) }.isFailure) {
+            Toast.makeText(context, "この端末にはフォルダーを選ぶ画面がありません", Toast.LENGTH_LONG).show()
+        }
+    }
+}
+
+/** フォルダーの表示名 (「アプリ名: フォルダー名」) */
+private fun folderLabel(context: Context, tree: Uri): String {
+    val cr = context.contentResolver
+    val doc = runCatching {
+        android.provider.DocumentsContract.buildDocumentUriUsingTree(tree, android.provider.DocumentsContract.getTreeDocumentId(tree))
+    }.getOrNull()
+    val dir = doc?.let {
+        runCatching {
+            cr.query(it, arrayOf(android.provider.DocumentsContract.Document.COLUMN_DISPLAY_NAME), null, null, null)
+                ?.use { c -> if (c.moveToFirst()) c.getString(0) else null }
+        }.getOrNull()
+    } ?: tree.lastPathSegment.orEmpty()
+    val app = runCatching {
+        val pm = context.packageManager
+        tree.authority?.let { pm.resolveContentProvider(it, 0)?.loadLabel(pm)?.toString() }
+    }.getOrNull()
+    return if (app.isNullOrEmpty()) dir else "$app: $dir"
+}
+
+actual fun releaseSaveFolder(platform: com.obdmeter.AppPlatform?, folder: String) {
+    val context = (platform as? com.obdmeter.AndroidPlatform)?.context ?: return
+    runCatching {
+        context.contentResolver.releasePersistableUriPermission(
+            Uri.parse(folder), Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION,
+        )
+    }
 }
