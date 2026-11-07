@@ -307,8 +307,9 @@ fun GaugeCard(
         return
     }
     // ピーク値 (生の値で記録する。表示用のならし前の値)
-    // 「ページを切り替えても維持」のときは、アプリの中 ([PeakStore]) にも覚えておき、ページに戻ったらそこから続ける
-    val keepKey = if (look.showPeak && look.peakKeep && peakKey != null) "$peakKey|${def.key}" else null
+    // 「ページを切り替えても維持」のときは、アプリの中 ([PeakStore]) に項目ごとに覚えておき、ページに戻ったら
+    // (別のページの同じ項目のメーターでも) そこから続ける
+    val keepKey = if (look.showPeak && look.peakKeep && peakKey != null) def.key else null
     val lastReset = remember { intArrayOf(peakResetKey) }
     if (lastReset[0] != peakResetKey) {
         // 長押しでリセットした
@@ -1380,7 +1381,7 @@ internal class GaugeFxCache {
 }
 
 
-/** ページを切り替えても維持するピーク値 (メーター|項目 → 値)。アプリを終了すると消える */
+/** ページを切り替えても維持するピーク値 (項目キー → 値。維持する設定のメーターどうしで共有)。アプリを終了すると消える */
 internal object PeakStore {
     val values = HashMap<String, Double>()
 }
