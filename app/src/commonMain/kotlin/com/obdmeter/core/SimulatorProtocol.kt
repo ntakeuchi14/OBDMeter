@@ -121,6 +121,7 @@ class SimulatorProtocol(
             0x5A29 -> phys(s.throttle, 0.390625)                         // アクセル開度
             0x5A25 -> phys((1.2 + s.rpm / 2500.0) * 1000, 1.0)           // 油圧 (bar × 1000)
             0x5A2C -> phys(1013.0 + s.throttle * 10 + 20 * sin(t * 2), 0.0390625) // スロットル前圧力 (ブースト)
+            0x5AB0 -> phys(1013.0 + s.throttle * 11, 0.0390625)                 // 目標過給圧 (実際より少し高め)
             0x4201 -> phys(1013.0, 0.08291752636432648)                   // 大気圧
             0x5881 -> s.gear.toLong()                                    // 計算ギア段
             else -> {
