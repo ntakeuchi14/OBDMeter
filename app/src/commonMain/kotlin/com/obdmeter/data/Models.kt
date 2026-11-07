@@ -196,6 +196,8 @@ data class GaugeDesign(
     // ---- ピーク値 ----
     /** これまでの最大値の位置に印を付ける (メーターを長押しでリセット) */
     val showPeak: Boolean = false,
+    /** ピーク値 (最大値) を、ページを切り替えても覚えておく (アプリを終了すると消える) */
+    val peakKeep: Boolean = false,
     val peakColor: Long? = null,
     /** バー: 最大値の印の太さ・長さ (1 = 標準) */
     val peakMarkWidth: Float = 1f,

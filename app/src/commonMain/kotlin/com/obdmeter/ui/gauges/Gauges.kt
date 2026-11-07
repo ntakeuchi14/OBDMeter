@@ -197,6 +197,7 @@ data class GaugeLook(
     /** 折れ線グラフの線の色 (項目の順。足りない分は自動) */
     val chartColors: List<Color?> = emptyList(),
     val showPeak: Boolean = false,
+    val peakKeep: Boolean = false,
     val peakColor: Color = GaugeColors.Peak,
     val peakMarkWidth: Float = 1f,
     val peakMarkLength: Float = 1f,
@@ -281,6 +282,8 @@ fun GaugeCard(
     modifier: Modifier = Modifier,
     /** 値が変わるとピーク値をリセットする (メーターの長押しで増やす) */
     peakResetKey: Int = 0,
+    /** ピーク値をページ切り替え後も覚えておくときの、メーターを区別する名前 ([GaugeLook.peakKeep] のとき使う) */
+    peakKey: String? = null,
     /** 折れ線グラフの項目 (空なら [def] だけ) */
     series: List<ChartSeries> = emptyList(),
     /** 折れ線グラフをドラッグで操作できるか (編集中・フロート表示では false) */
@@ -304,9 +307,20 @@ fun GaugeCard(
         return
     }
     // ピーク値 (生の値で記録する。表示用のならし前の値)
-    val peakHolder = remember(def.key, peakResetKey, def.min, def.max) { doubleArrayOf(Double.NaN) }
+    // 「ページを切り替えても維持」のときは、アプリの中 ([PeakStore]) にも覚えておき、ページに戻ったらそこから続ける
+    val keepKey = if (look.showPeak && look.peakKeep && peakKey != null) "$peakKey|${def.key}" else null
+    val lastReset = remember { intArrayOf(peakResetKey) }
+    if (lastReset[0] != peakResetKey) {
+        // 長押しでリセットした
+        lastReset[0] = peakResetKey
+        keepKey?.let { PeakStore.values.remove(it) }
+    }
+    val peakHolder = remember(def.key, peakResetKey, def.min, def.max, keepKey) {
+        doubleArrayOf(keepKey?.let { PeakStore.values[it] } ?: Double.NaN)
+    }
     if (look.showPeak && value != null && !unsupported && (peakHolder[0].isNaN() || value > peakHolder[0])) {
         peakHolder[0] = value
+        keepKey?.let { PeakStore.values[it] = value }
     }
     val peak = peakHolder[0].takeIf { look.showPeak && !it.isNaN() }
     Box(
@@ -1363,4 +1377,10 @@ internal class FxLayer {
 internal class GaugeFxCache {
     val recess = FxLayer()
     val glass = FxLayer()
+}
+
+
+/** ページを切り替えても維持するピーク値 (メーター|項目 → 値)。アプリを終了すると消える */
+internal object PeakStore {
+    val values = HashMap<String, Double>()
 }

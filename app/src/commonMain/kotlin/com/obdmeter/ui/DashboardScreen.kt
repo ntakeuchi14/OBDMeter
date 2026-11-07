@@ -745,6 +745,7 @@ fun GaugeView(
             look = g.look(def).let { if (noCard) it.copy(showCard = false) else it },
             modifier = Modifier.fillMaxSize(),
             peakResetKey = peakResetKey,
+            peakKey = g.id.toString(),
             series = if (g.style == GaugeStyle.CHART || g.style == GaugeStyle.TABLE || g.style == GaugeStyle.MONITOR) chartSeries(g, def, values, catalog) else emptyList(),
             interactive = interactive,
             historySlot = historySlot,
