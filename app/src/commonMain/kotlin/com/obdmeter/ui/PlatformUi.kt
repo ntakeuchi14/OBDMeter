@@ -36,21 +36,6 @@ expect fun rememberFileOpener(mimeTypes: List<String>, onPicked: (PickedFile) ->
 @Composable
 expect fun rememberFileSaver(mimeType: String, onTarget: (FileTarget) -> Unit): (String) -> Unit
 
-/** 既定の保存先 ([com.obdmeter.data.AppSettings.saveFolder])。設定していればファイルの書き出しで保存先を聞かずにここへ保存する */
-data class SaveFolder(val folder: String = "", val name: String = "")
-
-val LocalSaveFolder = androidx.compose.runtime.staticCompositionLocalOf { SaveFolder() }
-
-/**
- * 既定の保存先のフォルダーを選ぶ画面を開く関数を返す (この端末・ブラウザーで選べなければ null)。
- * 選んだら (フォルダー, 表示名) を [onPicked] に返す
- */
-@Composable
-expect fun rememberFolderPicker(onPicked: (folder: String, name: String) -> Unit): (() -> Unit)?
-
-/** 既定の保存先をやめるとき (Android はフォルダーへのアクセス許可を返す) */
-expect fun releaseSaveFolder(platform: com.obdmeter.AppPlatform?, folder: String)
-
 /** テキストを共有する (Android は共有メニュー、Web はテキストファイルのダウンロード) */
 @Composable
 expect fun rememberShareText(): (subject: String, text: String) -> Unit

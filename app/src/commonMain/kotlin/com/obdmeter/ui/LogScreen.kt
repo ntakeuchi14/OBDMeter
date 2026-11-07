@@ -29,7 +29,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.obdmeter.core.CommLogger
-import kotlinx.coroutines.launch
 import com.obdmeter.ui.gauges.GaugeColors
 
 /** 送受信の生データを表示する。実車でうまく動かないときの調査用 (共有ボタンでテキスト送信可)。 */
@@ -39,14 +38,6 @@ fun LogScreen(vm: MainViewModel, onBack: () -> Unit) {
     var follow by remember { mutableStateOf(true) }
     val listState = rememberLazyListState()
     val share = rememberShareText()
-    val toast = rememberToast()
-    val scope = androidx.compose.runtime.rememberCoroutineScope()
-    val saver = rememberFileSaver("text/plain") { target ->
-        scope.launch {
-            toast(runCatching { target.write(vm.log.asText().encodeToByteArray())?.let { "$it に保存しました" } ?: "保存しました" }
-                .getOrElse { "保存に失敗しました: ${it.message}" })
-        }
-    }
 
     LaunchedEffect(lines.size, follow) {
         if (follow && lines.isNotEmpty()) listState.scrollToItem(lines.lastIndex)
@@ -56,9 +47,6 @@ fun LogScreen(vm: MainViewModel, onBack: () -> Unit) {
         TopBar("通信ログ", onBack) {
             Text("自動スクロール", fontSize = 12.sp, color = GaugeColors.SubText)
             Switch(follow, { follow = it }, Modifier.padding(horizontal = 4.dp))
-            androidx.compose.material3.TextButton(onClick = {
-                saver("OBDMeter_log_" + com.obdmeter.util.DateFmt("yyyyMMdd_HHmmss").format(com.obdmeter.util.nowMs()) + ".txt")
-            }) { Text("保存") }
             IconButton(onClick = { share("OBD Meter 通信ログ", vm.log.asText()) }) { Icon(Icons.Default.Share, "共有") }
             IconButton(onClick = { vm.log.clear() }) { Icon(Icons.Default.Delete, "クリア") }
         }

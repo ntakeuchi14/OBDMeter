@@ -45,8 +45,6 @@ class DataStoreRepository(private val context: Context) : Repository {
         val KEY_PAGE_NAV = booleanPreferencesKey("key_page_nav")
         val GRID_STEP = intPreferencesKey("grid_step")
         val SCREEN_SIZE = stringPreferencesKey("screen_size")
-        val SAVE_FOLDER = stringPreferencesKey("save_folder")
-        val SAVE_FOLDER_NAME = stringPreferencesKey("save_folder_name")
         val DASHBOARDS = stringPreferencesKey("dashboards_json")
         val CUSTOM_PIDS = stringPreferencesKey("custom_pids_json")
         val FONTS = stringPreferencesKey("fonts_json")
@@ -111,8 +109,6 @@ class DataStoreRepository(private val context: Context) : Repository {
             p[Keys.KEY_PAGE_NAV] = s.keyPageNav
             p[Keys.GRID_STEP] = s.gridStep
             p[Keys.SCREEN_SIZE] = s.screenSize
-            p[Keys.SAVE_FOLDER] = s.saveFolder
-            p[Keys.SAVE_FOLDER_NAME] = s.saveFolderName
             p[Keys.POLL_INTERVALS] = json.encodeToString(s.pollIntervalsMs)
         }
     }
@@ -151,8 +147,6 @@ class DataStoreRepository(private val context: Context) : Repository {
             keyPageNav = this[Keys.KEY_PAGE_NAV] ?: d.keyPageNav,
             gridStep = this[Keys.GRID_STEP] ?: d.gridStep,
             screenSize = this[Keys.SCREEN_SIZE] ?: d.screenSize,
-            saveFolder = this[Keys.SAVE_FOLDER] ?: d.saveFolder,
-            saveFolderName = this[Keys.SAVE_FOLDER_NAME] ?: d.saveFolderName,
             pollIntervalsMs = this[Keys.POLL_INTERVALS]
                 ?.let { runCatching { json.decodeFromString<Map<String, Int>>(it) }.getOrNull() }
                 ?: d.pollIntervalsMs,

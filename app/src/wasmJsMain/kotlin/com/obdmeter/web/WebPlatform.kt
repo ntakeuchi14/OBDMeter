@@ -54,8 +54,6 @@ private data class WebSettings(
     val pollIntervalsMs: Map<String, Int> = AppSettings().pollIntervalsMs,
     // 以前の版は別の場所 (obd.screen) に保存していた
     val screenSize: String = LocalStore.get("obd.screen").orEmpty(),
-    /** 既定の保存先のフォルダー名 (空 = 未設定。フォルダー自体は IndexedDB に覚える) */
-    val saveFolderName: String = "",
 )
 
 /** 設定とページをブラウザーの保存領域 (localStorage) に保存する */
@@ -87,8 +85,6 @@ class WebRepository : Repository {
         gridStep = gridStep,
         pollIntervalsMs = pollIntervalsMs,
         screenSize = screenSize,
-        saveFolder = if (saveFolderName.isNotEmpty()) "browser" else "",
-        saveFolderName = saveFolderName,
     )
 
     private fun save(key: String, value: String) {
@@ -108,8 +104,7 @@ class WebRepository : Repository {
     override suspend fun updateSettings(transform: (AppSettings) -> AppSettings) {
         val s = transform(settingsState.value).copy(connectionType = ConnectionType.SIMULATOR)
         settingsState.value = s
-        save("obd.settings", json.encodeToString(WebSettings(s.alwaysShowToolbar, s.lastPageId, s.gridStep, s.pollIntervalsMs, s.screenSize,
-            if (s.saveFolder.isNotEmpty()) s.saveFolderName.ifEmpty { "保存先" } else "")))
+        save("obd.settings", json.encodeToString(WebSettings(s.alwaysShowToolbar, s.lastPageId, s.gridStep, s.pollIntervalsMs, s.screenSize)))
     }
 
     override suspend fun saveDashboards(list: List<Dashboard>) {

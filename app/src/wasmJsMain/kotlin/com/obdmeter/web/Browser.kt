@@ -73,8 +73,6 @@ private fun idbKeys(db: JsAny): Promise<JsAny?> = js("""
 
 private fun jsToString(v: JsAny?): String? = js("(typeof v === 'string') ? v : null")
 
-internal fun idbOpenShared(): Promise<JsAny?> = idbOpen()
-
 /** ブラウザーの IndexedDB に置くファイル (画像・フォント) */
 object FileStore {
     private var db: JsAny? = null
@@ -147,90 +145,3 @@ suspend fun fetchBinary(url: String): ByteArray? =
 private fun jsAppVersion(): String = js("(window.OBDMETER_VERSION || '')")
 
 fun appVersion(): String = jsAppVersion()
-
-// ---- 既定の保存先のフォルダー (File System Access API。Edge・Chrome) ----
-// 選んだフォルダーのハンドルは IndexedDB (files ストアの "saveFolderHandle") に覚えておく
-
-private fun jsFolderSupported(): Boolean = js("typeof window.showDirectoryPicker === 'function'")
-
-private fun jsPickFolder(db: JsAny): Promise<JsAny?> = js("""
-    window.showDirectoryPicker({ id: 'obdmeter-save', mode: 'readwrite' }).then(function (h) {
-        return new Promise(function (resolve, reject) {
-            var tx = db.transaction('files', 'readwrite');
-            tx.objectStore('files').put(h, 'saveFolderHandle');
-            tx.oncomplete = function () { resolve(h.name); };
-            tx.onerror = function () { reject(tx.error); };
-        });
-    }).catch(function (e) { return (e && e.name === 'AbortError') ? null : Promise.reject(e); })
-""")
-
-// 保存のボタンを押した直後 (ユーザーの操作の中) に呼んで、書き込みの許可を確かめる (無ければ許可を求める)
-private fun jsFolderPermission(db: JsAny): Promise<JsAny?> = js("""
-    new Promise(function (resolve, reject) {
-        var req = db.transaction('files', 'readonly').objectStore('files').get('saveFolderHandle');
-        req.onsuccess = function () { resolve(req.result || null); };
-        req.onerror = function () { reject(req.error); };
-    }).then(function (h) {
-        if (!h) return 'none';
-        return h.queryPermission({ mode: 'readwrite' }).then(function (p) {
-            if (p === 'granted') return 'granted';
-            return h.requestPermission({ mode: 'readwrite' });
-        });
-    })
-""")
-
-private fun jsSaveToFolder(db: JsAny, name: String, data: String): Promise<JsAny?> = js("""
-    new Promise(function (resolve, reject) {
-        var req = db.transaction('files', 'readonly').objectStore('files').get('saveFolderHandle');
-        req.onsuccess = function () { resolve(req.result || null); };
-        req.onerror = function () { reject(req.error); };
-    }).then(function (h) {
-        if (!h) throw new Error('保存先のフォルダーがありません');
-        var dot = name.lastIndexOf('.');
-        var base = dot > 0 ? name.substring(0, dot) : name;
-        var ext = dot > 0 ? name.substring(dot) : '';
-        // 同じ名前のファイルがあれば「名前 (1).拡張子」…にする
-        function pick(i) {
-            var n = i === 0 ? name : base + ' (' + i + ')' + ext;
-            return h.getFileHandle(n).then(function () { return pick(i + 1); }, function () { return n; });
-        }
-        return pick(0).then(function (n) {
-            return h.getFileHandle(n, { create: true }).then(function (fh) {
-                return fh.createWritable().then(function (w) {
-                    var bytes = new Uint8Array(data.length);
-                    for (var i = 0; i < data.length; i++) bytes[i] = data.charCodeAt(i);
-                    return w.write(bytes).then(function () { return w.close(); }).then(function () { return h.name + '/' + n; });
-                });
-            });
-        });
-    })
-""")
-
-private fun jsClearFolder(db: JsAny): Promise<JsAny?> = js("""
-    new Promise(function (resolve, reject) {
-        var tx = db.transaction('files', 'readwrite');
-        tx.objectStore('files').delete('saveFolderHandle');
-        tx.oncomplete = function () { resolve(null); };
-        tx.onerror = function () { reject(tx.error); };
-    })
-""")
-
-/** 既定の保存先のフォルダー */
-object SaveFolderStore {
-    private var db: JsAny? = null
-    private suspend fun db(): JsAny = db ?: idbOpenShared().await<JsAny?>()!!.also { db = it }
-
-    val supported: Boolean get() = jsFolderSupported()
-
-    /** フォルダーを選ぶ (やめたら null)。フォルダー名を返す */
-    suspend fun pick(): String? = jsToString(jsPickFolder(db()).await<JsAny?>())
-
-    /** 書き込みの許可を確かめる (無ければ求める)。許可されたら true */
-    suspend fun ensurePermission(): Boolean = jsToString(jsFolderPermission(db()).await<JsAny?>()) == "granted"
-
-    /** フォルダーに保存する。「フォルダー名/ファイル名」を返す */
-    suspend fun save(name: String, bytes: ByteArray): String =
-        jsToString(jsSaveToFolder(db(), name, bytes.toBinaryString()).await<JsAny?>()) ?: name
-
-    suspend fun clear() { jsClearFolder(db()).await<JsAny?>() }
-}
