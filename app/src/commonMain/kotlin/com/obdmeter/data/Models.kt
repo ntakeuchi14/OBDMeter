@@ -608,8 +608,9 @@ object Layout {
     val widthRange: IntRange get() = MIN_SIZE..COLS * 3
     val heightRange: IntRange get() = MIN_SIZE..ROWS * 3
     /** 幅 [w] のメーターを置ける横の位置 (ページの外にはみ出してよいが、つかめるよう 1 マスはページ内に残す) */
-    fun xRange(w: Int): IntRange = (SCALE - w)..(COLS - SCALE)
-    fun yRange(h: Int): IntRange = (SCALE - h)..(ROWS - SCALE)
+    // (1 マスより小さいメーターは、全体がページ内に入る範囲)
+    fun xRange(w: Int): IntRange = minOf(0, SCALE - w)..(COLS - minOf(SCALE, w))
+    fun yRange(h: Int): IntRange = minOf(0, SCALE - h)..(ROWS - minOf(SCALE, h))
 
     /** 位置・大きさを置ける範囲に収める。戻り値は (x, y, w, h) */
     fun clampPlacement(x: Int, y: Int, w: Int, h: Int): IntArray {
