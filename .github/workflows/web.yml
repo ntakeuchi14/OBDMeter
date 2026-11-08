@@ -24,15 +24,23 @@ jobs:
 
       - name: Download fonts (Japanese)
         run: |
-          mkdir -p app/src/wasmJsMain/resources/fonts
-          curl -fsSL --retry 6 --retry-delay 10 --retry-all-errors -o app/src/wasmJsMain/resources/fonts/NotoSansJP-Regular.otf \
-            https://github.com/notofonts/noto-cjk/raw/main/Sans/SubsetOTF/JP/NotoSansJP-Regular.otf
-          curl -fsSL --retry 6 --retry-delay 10 --retry-all-errors -o app/src/wasmJsMain/resources/fonts/NotoSansMono-Regular.ttf \
-            https://github.com/notofonts/notofonts.github.io/raw/main/fonts/NotoSansMono/hinted/ttf/NotoSansMono-Regular.ttf
+          F=app/src/wasmJsMain/resources/fonts
+          mkdir -p $F
+          # 取れなかったフォントは、公開中のサイト (gh-pages) に入っているものを使う (配布元が落ちていてもビルドできるように)
+          fallback() {
+            git fetch -q --depth 1 origin gh-pages:refs/remotes/origin/gh-pages 2>/dev/null || true
+            git show origin/gh-pages:fonts/$1 > $F/$1
+          }
+          get() { curl -fsSL --retry 3 --retry-delay 5 --retry-all-errors -o $F/$1 "$2" || fallback $1; }
+          get NotoSansJP-Regular.otf https://github.com/notofonts/noto-cjk/raw/main/Sans/SubsetOTF/JP/NotoSansJP-Regular.otf
+          get NotoSansMono-Regular.ttf https://github.com/notofonts/notofonts.github.io/raw/main/fonts/NotoSansMono/hinted/ttf/NotoSansMono-Regular.ttf
           # Android の標準フォント (Roboto) と同じ文字の形・行の高さにするため
-          curl -fsSL --retry 6 --retry-delay 10 --retry-all-errors -o roboto.zip https://github.com/googlefonts/roboto/releases/download/v2.138/roboto-unhinted.zip
-          unzip -j -o roboto.zip Roboto-Regular.ttf Roboto-Medium.ttf Roboto-Bold.ttf -d app/src/wasmJsMain/resources/fonts
-                    ls -la app/src/wasmJsMain/resources/fonts
+          if curl -fsSL --retry 3 --retry-delay 5 --retry-all-errors -o roboto.zip https://github.com/googlefonts/roboto/releases/download/v2.138/roboto-unhinted.zip; then
+            unzip -j -o roboto.zip Roboto-Regular.ttf Roboto-Medium.ttf Roboto-Bold.ttf -d $F
+          else
+            for f in Roboto-Regular.ttf Roboto-Medium.ttf Roboto-Bold.ttf; do fallback $f; done
+          fi
+          ls -la $F
 
       - name: Build web app (WebAssembly)
         run: |
