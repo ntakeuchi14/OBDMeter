@@ -16,3 +16,13 @@ class BoostTargetTest {
         assertEquals(Pids.ReadKind.BLOCK, Pids.readKind(bar))
     }
 }
+
+class BoostTargetEngineOffTest {
+    @Test
+    fun zeroWhileEngineStopped() {
+        val psi = Pids.get("BMW_BOOST_TARGET_PSI")!!
+        val v = mapOf("MSD80_5AB0" to 1700.0, "MSD80_4201" to 1013.0)
+        assertEquals(0.0, psi.derive!!(v + ("BMW_RPM" to 0.0))!!, 1e-9)
+        assertEquals((1700.0 - 1013.0) / 1000.0 * 14.503774, psi.derive!!(v + ("BMW_RPM" to 800.0))!!, 1e-6)
+    }
+}

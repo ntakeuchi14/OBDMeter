@@ -924,6 +924,11 @@ private fun PeakSection(g: GaugeConfig, update: ((GaugeDesign) -> GaugeDesign) -
     }
     if (d.showPeak) {
         SwitchLine(
+            "エンジン停止中は最大値を記録しない",
+            "回転数が 400 rpm 未満の間 (イグニッション ON だけのときなど) は最大値を更新しません。そのために回転数も読みます",
+            d.peakEngineRunningOnly,
+        ) { v -> update { it.copy(peakEngineRunningOnly = v) } }
+        SwitchLine(
             "ページを切り替えても最大値を維持",
             "OFF: ページを切り替えると最大値はリセットされます。ON: 別のページに行って戻っても最大値を覚えています。" +
                 "同じ項目でこの設定を ON にしたメーターどうしは、ページが違っても同じ最大値を使います (どれかを長押しすると全部リセット。アプリを終了すると消えます)",

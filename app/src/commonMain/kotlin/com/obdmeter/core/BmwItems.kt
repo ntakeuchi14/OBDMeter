@@ -154,16 +154,21 @@ internal object BmwItems {
                 derive = { v -> boostHpa(v)?.let { it / 1000.0 * 14.503774 } }),
             // 目標ブースト = DME の目標過給圧 (絶対圧) − 大気圧
             PidDef("BMW_BOOST_TARGET_BAR", "目標ブースト (BMW, bar)", "目標ブースト", "bar", -1.0, 1.5, decimals = 2,
-                kind = PidDef.Kind.DERIVED, deps = listOf("MSD80_5AB0", "MSD80_4201"),
+                kind = PidDef.Kind.DERIVED, deps = listOf("MSD80_5AB0", "MSD80_4201", "BMW_RPM"),
                 derive = { v -> boostTargetHpa(v)?.let { it / 1000.0 } }),
             PidDef("BMW_BOOST_TARGET_PSI", "目標ブースト (BMW, psi)", "目標ブースト", "psi", -15.0, 22.0, decimals = 1,
-                kind = PidDef.Kind.DERIVED, deps = listOf("MSD80_5AB0", "MSD80_4201"),
+                kind = PidDef.Kind.DERIVED, deps = listOf("MSD80_5AB0", "MSD80_4201", "BMW_RPM"),
                 derive = { v -> boostTargetHpa(v)?.let { it / 1000.0 * 14.503774 } }),
         )
     }
 
+    /** これ以上ならエンジンがかかっているとみなす回転数 */
+    const val ENGINE_RUNNING_RPM = 400.0
+
     /** 目標ブースト (hPa)。大気圧が読めていなければ 1013 hPa とみなす */
     internal fun boostTargetHpa(v: Map<String, Double>): Double? {
+        // エンジンが止まっている間 (イグニッション ON だけ) は、DME が既定の目標値 (10 psi 前後) を出すので 0 にする
+        v["BMW_RPM"]?.let { if (it < ENGINE_RUNNING_RPM) return 0.0 }
         val p = v["MSD80_5AB0"] ?: return null
         val baro = v["MSD80_4201"]?.takeIf { it in 500.0..1200.0 } ?: 1013.25
         return p - baro

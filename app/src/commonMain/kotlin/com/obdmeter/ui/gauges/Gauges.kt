@@ -286,6 +286,8 @@ fun GaugeCard(
     peakResetKey: Int = 0,
     /** ピーク値をページ切り替え後も覚えておくときの、メーターを区別する名前 ([GaugeLook.peakKeep] のとき使う) */
     peakKey: String? = null,
+    /** false の間はピーク値を更新しない (エンジン停止中など) */
+    peakAllowed: Boolean = true,
     /** 折れ線グラフの項目 (空なら [def] だけ) */
     series: List<ChartSeries> = emptyList(),
     /** 折れ線グラフをドラッグで操作できるか (編集中・フロート表示では false) */
@@ -321,7 +323,7 @@ fun GaugeCard(
     val peakHolder = remember(def.key, peakResetKey, def.min, def.max, keepKey, PeakStore.generation) {
         doubleArrayOf(keepKey?.let { PeakStore.values[it] } ?: Double.NaN)
     }
-    if (look.showPeak && value != null && !unsupported && (peakHolder[0].isNaN() || value > peakHolder[0])) {
+    if (look.showPeak && peakAllowed && value != null && !unsupported && (peakHolder[0].isNaN() || value > peakHolder[0])) {
         peakHolder[0] = value
         keepKey?.let { PeakStore.values[it] = value }
     }

@@ -8,8 +8,15 @@ import com.obdmeter.core.PidDef
  */
 object ReadPlan {
     /** メーターが使う項目のキー (グラフ・値テーブルは追加した項目も) */
+    /** エンジンがかかっているかを見る回転数の項目 (BMW の項目なら DME の回転数、それ以外は標準の回転数) */
+    fun engineRpmKey(pidKey: String): String =
+        if (pidKey.startsWith("BMW_") || pidKey.startsWith("MSD80_")) "BMW_RPM" else "RPM"
+
     fun gaugeKeys(g: GaugeConfig): List<String> =
         if (g.style == GaugeStyle.BUTTON) emptyList() // ボタンは何も読まない
+        // 「エンジン停止中は最大値を記録しない」は回転数も読む
+        else if (g.style in setOf(GaugeStyle.ANALOG, GaugeStyle.BAR, GaugeStyle.DIGITAL) && g.design.showPeak && g.design.peakEngineRunningOnly)
+            listOf(g.pidKey, engineRpmKey(g.pidKey))
         else if (g.style == GaugeStyle.CHART || g.style == GaugeStyle.TABLE || g.style == GaugeStyle.MONITOR) g.chartAllKeys else listOf(g.pidKey)
 
     /**

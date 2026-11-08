@@ -206,6 +206,8 @@ data class GaugeDesign(
     val showPeak: Boolean = false,
     /** ピーク値 (最大値) を、ページを切り替えても覚えておく (アプリを終了すると消える) */
     val peakKeep: Boolean = false,
+    /** エンジンが止まっている間 (回転数 400 rpm 未満) は最大値を記録しない */
+    val peakEngineRunningOnly: Boolean = false,
     val peakColor: Long? = null,
     /** バー: 最大値の印の太さ・長さ (1 = 標準) */
     val peakMarkWidth: Float = 1f,

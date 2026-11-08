@@ -762,6 +762,9 @@ fun GaugeView(
             modifier = Modifier.fillMaxSize(),
             peakResetKey = peakResetKey,
             peakKey = g.id.toString(),
+            // 「エンジン停止中は最大値を記録しない」: 回転数が読めていて 400 rpm 以上のときだけ記録する
+            peakAllowed = !(g.design.showPeak && g.design.peakEngineRunningOnly) ||
+                (values[com.obdmeter.data.ReadPlan.engineRpmKey(g.pidKey)]?.let { it >= com.obdmeter.core.BmwItems.ENGINE_RUNNING_RPM } == true),
             series = if (g.style == GaugeStyle.CHART || g.style == GaugeStyle.TABLE || g.style == GaugeStyle.MONITOR) chartSeries(g, def, values, catalog) else emptyList(),
             interactive = interactive,
             historySlot = historySlot,
