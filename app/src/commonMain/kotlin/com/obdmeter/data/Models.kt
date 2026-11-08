@@ -100,6 +100,8 @@ enum class GaugeStyle(val label: String) {
 enum class ButtonAction(val label: String) {
     /** 全ページのメーターの最大値 (ピーク値) をリセットする */
     RESET_PEAKS("全ページの最大値をリセット"),
+    /** このページのメーターの発光 (数値・目盛り・針) を ON / OFF する (各メーターの発光の設定値は残す) */
+    TOGGLE_GLOW("このページの発光の ON / OFF"),
 }
 
 /** 数値の代わりに出す文字。計測値 x が条件 [condition] (例: `x == 0`) に合うとき、数値の代わりに [text] を出す */
@@ -562,6 +564,8 @@ data class Dashboard(
     val unitScale: Int = 1,
     /** ページを隠す (ふだんのページ切り替えには出さず、レイアウト編集中だけ出す) */
     val hidden: Boolean = false,
+    /** このページのメーターの発光を止めている (ボタンで切り替える。各メーターの発光の設定値はそのまま) */
+    val glowOff: Boolean = false,
 )
 
 /** 切り替えで出すページ。編集中はすべて、ふだんは隠していないページ (全部隠したときはすべて) */

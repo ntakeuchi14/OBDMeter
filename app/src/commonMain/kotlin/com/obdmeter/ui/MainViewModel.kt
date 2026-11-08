@@ -407,6 +407,9 @@ class MainViewModel(val core: AppCore) : ViewModel() {
 
     fun renameDashboard(id: Long, name: String) = editDashboard(id) { it.copy(name = name) }
 
+    /** ページの発光の ON / OFF (ボタン) */
+    fun setPageGlowOff(id: Long, off: Boolean) = editDashboard(id) { it.copy(glowOff = off) }
+
     /** ページを隠す / 隠すのをやめる */
     fun setDashboardHidden(id: Long, hidden: Boolean) = editDashboard(id) { it.copy(hidden = hidden) }
 

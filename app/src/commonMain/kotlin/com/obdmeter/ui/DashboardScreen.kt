@@ -227,6 +227,7 @@ fun DashboardScreen(vm: MainViewModel, onNavigate: (Screen) -> Unit, onCreateCus
             shown.getOrNull(page)?.let { d ->
                 DashboardCanvas(
                     dashboard = d,
+                    onToggleGlow = { vm.setPageGlowOff(d.id, !d.glowOff) },
                     values = values,
                     supported = supported,
                     catalog = catalog,
@@ -522,6 +523,8 @@ private fun DashboardCanvas(
     selecting: Boolean = false,
     selected: Set<Long> = emptySet(),
     onToggleSelect: (GaugeConfig) -> Unit = {},
+    /** ボタン: このページの発光の ON / OFF */
+    onToggleGlow: () -> Unit = {},
 ) {
     // メーターごとのピーク値リセット回数 (長押しで増やす)
     val peakResets = remember { mutableStateMapOf<Long, Int>() }
@@ -545,7 +548,7 @@ private fun DashboardCanvas(
             // 背景の無いメーターが前に重なっていても、見えている部分 (カード・文字盤・ランプなど) があるメーターを優先する
             fun hit(p: Offset): GaugeConfig? = viewHit(gaugesNow, p, cellPx.first, cellPx.second, 2.dp.toPx(), 6.dp.toPx())
             detectTapGestures(
-                onTap = { p -> hit(p)?.takeIf { it.style == GaugeStyle.BUTTON }?.let { com.obdmeter.ui.gauges.ButtonActions.press(it) } },
+                onTap = { p -> hit(p)?.takeIf { it.style == GaugeStyle.BUTTON }?.let { com.obdmeter.ui.gauges.ButtonActions.press(it, onToggleGlow) } },
                 onLongPress = { p -> hit(p)?.let { g -> peakResets[g.id] = (peakResets[g.id] ?: 0) + 1 } },
             )
         }
@@ -642,13 +645,13 @@ private fun DashboardCanvas(
                     // アナログの針は、ほかのメーター (中に重ねて置いたものも) より手前に描く
                     // (グループにするメーターを選んでいる間は、選んだ印が隠れないよう針もメーターと一緒に描く)
                     overlay = if (g.style == GaugeStyle.ANALOG && def != null && !(editing && selecting)) {
-                        { GaugeView(g, def, values, supported, layer = com.obdmeter.ui.gauges.GaugeLayer.NEEDLE, needleState = needle) }
+                        { GaugeView(g, def, values, supported, layer = com.obdmeter.ui.gauges.GaugeLayer.NEEDLE, needleState = needle, glowOff = dashboard.glowOff) }
                     } else null,
                 ) {
                     GaugeView(g, def, values, supported, peakResets[g.id] ?: 0, catalog = catalog, interactive = !editing,
                         historySlot = HistorySlot.of(dashboard.id, g.id),
                         layer = if (g.style == GaugeStyle.ANALOG && !(editing && selecting)) com.obdmeter.ui.gauges.GaugeLayer.BODY else com.obdmeter.ui.gauges.GaugeLayer.ALL,
-                        needleState = needle)
+                        needleState = needle, glowOff = dashboard.glowOff)
                 }
             }
         }
@@ -750,6 +753,8 @@ fun GaugeView(
     /** 描く部分 (アナログの針を別の層にして、ほかのメーターより手前に出すとき) */
     layer: com.obdmeter.ui.gauges.GaugeLayer = com.obdmeter.ui.gauges.GaugeLayer.ALL,
     needleState: androidx.compose.runtime.MutableFloatState? = null,
+    /** ページの発光を止めている (ボタン)。メーターの発光の設定値はそのまま、描くときだけ 0 にする */
+    glowOff: Boolean = false,
 ) {
     if (def != null) {
         GaugeCard(
@@ -758,7 +763,10 @@ fun GaugeView(
             value = values[def.key] ?: g.fallbackKey?.let { values[it] },
             style = g.style,
             unsupported = isUnsupported(def, supported) && g.fallbackKey == null,
-            look = g.look(def).let { if (noCard) it.copy(showCard = false) else it },
+            look = g.look(def).let { if (noCard) it.copy(showCard = false) else it }
+                .let { if (glowOff) it.copy(glow = 0f, scaleGlow = 0f, needleGlow = 0f) else it },
+            // 発光の ON / OFF ボタンは、発光している間ずっと点灯
+            buttonOn = if (g.style == GaugeStyle.BUTTON && g.design.buttonAction == com.obdmeter.data.ButtonAction.TOGGLE_GLOW) !glowOff else null,
             modifier = Modifier.fillMaxSize(),
             peakResetKey = peakResetKey,
             peakKey = g.id.toString(),

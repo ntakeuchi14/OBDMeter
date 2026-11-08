@@ -290,6 +290,8 @@ fun GaugeCard(
     peakKey: String? = null,
     /** false の間はピーク値を更新しない (エンジン停止中など) */
     peakAllowed: Boolean = true,
+    /** ボタン: 点灯しているか (null = 押した直後だけ点灯) */
+    buttonOn: Boolean? = null,
     /** 折れ線グラフの項目 (空なら [def] だけ) */
     series: List<ChartSeries> = emptyList(),
     /** 折れ線グラフをドラッグで操作できるか (編集中・フロート表示では false) */
@@ -356,7 +358,7 @@ fun GaugeCard(
             // ボタン: ランプの見た目で、押した直後だけ点灯する。名前 (表示名) だけ出す
             GaugeStyle.BUTTON -> LampGauge(
                 def, null, false, look.copy(showName = true, showValue = false), image, Modifier.fillMaxSize(), fonts,
-                forceOn = peakKey != null && ButtonActions.lit(peakKey),
+                forceOn = buttonOn ?: (peakKey != null && ButtonActions.lit(peakKey)),
             )
             GaugeStyle.TABLE -> TableGauge(
                 series.ifEmpty { listOf(ChartSeries(def, value)) }, look, fonts, Modifier.fillMaxSize(),
@@ -1444,9 +1446,10 @@ object ButtonActions {
     /** ボタン (メーターの id) が点灯中か */
     fun lit(id: String): Boolean = litUntil.containsKey(id)
 
-    fun press(g: com.obdmeter.data.GaugeConfig) {
+    fun press(g: com.obdmeter.data.GaugeConfig, toggleGlow: () -> Unit = {}) {
         when (g.design.buttonAction) {
             com.obdmeter.data.ButtonAction.RESET_PEAKS -> PeakStore.resetAll()
+            com.obdmeter.data.ButtonAction.TOGGLE_GLOW -> toggleGlow()
         }
         val id = g.id.toString()
         val until = com.obdmeter.util.nowMs() + 400

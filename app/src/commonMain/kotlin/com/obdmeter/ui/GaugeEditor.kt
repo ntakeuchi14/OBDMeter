@@ -1069,7 +1069,15 @@ private fun ButtonTab(
             FilterChip(d.buttonAction == a, { update { it.copy(buttonAction = a) } }, { Text(a.label) }, Modifier.padding(end = 6.dp))
         }
     }
-    Hint("ダッシュボードでタップすると動きます (押した直後に少し点灯します)。全ページのメーターの最大値 (ページ切り替えで維持しているものも) をリセットします。")
+    Hint(
+        when (d.buttonAction) {
+            com.obdmeter.data.ButtonAction.RESET_PEAKS ->
+                "ダッシュボードでタップすると、全ページのメーターの最大値 (ページ切り替えで維持しているものも) をリセットします (押した直後に少し点灯します)。"
+            com.obdmeter.data.ButtonAction.TOGGLE_GLOW ->
+                "ダッシュボードでタップするたびに、このページのメーターの発光 (数値・目盛り・文字・針) を OFF / ON します。" +
+                    "各メーターの発光の設定値はそのまま残り、ON に戻すと元の光り方に戻ります。発光している間はボタンが点灯します。"
+        }
+    )
     Head("ボタンの文字")
     OutlinedTextField(
         value = d.label.orEmpty(),

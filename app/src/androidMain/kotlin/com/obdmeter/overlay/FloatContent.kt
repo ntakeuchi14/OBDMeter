@@ -96,12 +96,12 @@ fun FloatGauge(
                                 GaugeView(g, def, values, supported, noCard = true, catalog = catalog,
                                     historySlot = unitPage?.let { com.obdmeter.data.HistorySlot.of(it.id, g.id) },
                                     layer = if (analog) com.obdmeter.ui.gauges.GaugeLayer.BODY else com.obdmeter.ui.gauges.GaugeLayer.ALL,
-                                    needleState = needle)
+                                    needleState = needle, glowOff = unitPage?.glowOff == true)
                             }
                             // アナログの針は、まとめて表示しているほかのメーターより手前に描く
                             if (analog) Box(Modifier.zIndex(1f).then(place)) {
                                 GaugeView(g, def, values, supported, noCard = true,
-                                    layer = com.obdmeter.ui.gauges.GaugeLayer.NEEDLE, needleState = needle)
+                                    layer = com.obdmeter.ui.gauges.GaugeLayer.NEEDLE, needleState = needle, glowOff = unitPage?.glowOff == true)
                             }
                         }
                     }
