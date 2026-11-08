@@ -11,7 +11,9 @@ class EditorTabsTest {
     fun everyStyleHasItemAndPlaceTabs() {
         for (s in GaugeStyle.entries) {
             val tabs = EditorTabs.forStyle(s)
-            assertTrue("$s: 最初は項目のタブ", tabs.first() == EditorTab.ITEM || tabs.first() == EditorTab.ITEM_AXIS)
+            // ボタンは項目を読まないので、最初はボタンのタブ
+            assertTrue("$s: 最初は項目のタブ", tabs.first() == EditorTab.ITEM || tabs.first() == EditorTab.ITEM_AXIS ||
+                (s == GaugeStyle.BUTTON && tabs.first() == EditorTab.BUTTON))
             assertEquals("$s: 最後は配置のタブ", EditorTab.PLACE, tabs.last())
             assertEquals("$s: タブの重複なし", tabs.size, tabs.toSet().size)
         }
