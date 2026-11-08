@@ -1,6 +1,7 @@
 package com.obdmeter.ui.gauges
 
 import kotlinx.coroutines.launch
+import androidx.compose.ui.draw.drawWithContent
 import com.obdmeter.ui.drawSoftShadow
 import com.obdmeter.util.format
 
@@ -333,7 +334,10 @@ fun GaugeCard(
             } else {
                 m.padding(2.dp)
             }
-        }
+        }.then(
+            // 描いた文字の範囲を覚えておく (通常表示中のタップの振り分けに使う)
+            if (peakKey != null) Modifier.drawWithContent { TextHits.begin(); drawContent(); TextHits.end(peakKey) } else Modifier
+        )
     ) {
         val v = rememberDisplayValue(def, if (unsupported) null else value, look.smoothing)
         val image = rememberGaugeImage(look.image)
@@ -618,9 +622,9 @@ fun AnalogGauge(
                 val ghost = tm.measure(ghostText(def), style.copy(color = look.valueColor.copy(alpha = look.ghostAlpha), shadow = null))
                 val gx = valueX - ghost.size.width / 2f
                 val gy = valueY - ghost.size.height / 2f
-                drawText(ghost, topLeft = Offset(gx, gy))
+                drawTextHit(ghost, topLeft = Offset(gx, gy))
                 val vl = tm.measure(valueText, style)
-                drawText(vl, topLeft = Offset(gx + ghost.size.width - vl.size.width, gy))
+                drawTextHit(vl, topLeft = Offset(gx + ghost.size.width - vl.size.width, gy))
             } else {
                 drawCenteredText(tm, valueText, Offset(valueX, valueY), style)
             }
@@ -698,7 +702,7 @@ fun AnalogGauge(
 
 internal fun DrawScope.drawCenteredText(tm: TextMeasurer, text: String, center: Offset, style: TextStyle) {
     val layout = tm.measure(text, style)
-    drawText(layout, topLeft = Offset(center.x - layout.size.width / 2f, center.y - layout.size.height / 2f))
+    drawTextHit(layout, topLeft = Offset(center.x - layout.size.width / 2f, center.y - layout.size.height / 2f))
 }
 
 /** [drawCenteredText] と同じだが、幅が [maxWidth] を超えるときは文字を縮める */
@@ -707,7 +711,7 @@ internal fun DrawScope.drawCenteredTextFit(tm: TextMeasurer, text: String, cente
     if (layout.size.width > maxWidth && maxWidth > 0f) {
         layout = tm.measure(text, style.copy(fontSize = style.fontSize * (maxWidth / layout.size.width)))
     }
-    drawText(layout, topLeft = Offset(center.x - layout.size.width / 2f, center.y - layout.size.height / 2f))
+    drawTextHit(layout, topLeft = Offset(center.x - layout.size.width / 2f, center.y - layout.size.height / 2f))
 }
 
 // ---------------------------------------------------------------------------
@@ -737,7 +741,7 @@ fun BarGauge(
         if (look.showName) {
             val name = tm.measure(def.shortName,
                 TextStyle(color = look.nameColor, fontFamily = fonts.label, fontSize = (unit * 0.16f * look.tableNameSize).toSp(), fontWeight = FontWeight.Medium))
-            drawText(name, topLeft = Offset(4f + w * look.nameOffsetX, h * look.nameOffsetY))
+            drawTextHit(name, topLeft = Offset(4f + w * look.nameOffsetX, h * look.nameOffsetY))
         }
 
         if (look.showValue) {
@@ -754,7 +758,7 @@ fun BarGauge(
             // 縦横の位置調整 (アナログと共通の設定。既定は右寄せ・中央)
             val valueY = h * (0.52f + (look.valuePosition - 0.42f) * 0.5f) - valueLayout.size.height / 2f
             val dx = w * look.valueOffsetX * 0.5f
-            drawText(unitLayout, topLeft = Offset(
+            drawTextHit(unitLayout, topLeft = Offset(
                 w - unitLayout.size.width - 4f + dx + w * look.unitOffsetX,
                 valueY + valueLayout.size.height - unitLayout.size.height * 1.15f + h * look.unitOffsetY,
             ))
@@ -762,9 +766,9 @@ fun BarGauge(
             if (look.ghostDigits && !unsupported) {
                 // 消えている 7 セグ (8) を後ろにうっすら
                 val ghost = tm.measure(ghostText(def), valueStyle.copy(color = look.valueColor.copy(alpha = look.ghostAlpha), shadow = null))
-                drawText(ghost, topLeft = Offset(valueRight - ghost.size.width, valueY))
+                drawTextHit(ghost, topLeft = Offset(valueRight - ghost.size.width, valueY))
             }
-            drawText(valueLayout, topLeft = Offset(valueRight - valueLayout.size.width, valueY))
+            drawTextHit(valueLayout, topLeft = Offset(valueRight - valueLayout.size.width, valueY))
         }
 
         drawBar(def, value, f, warn, look, peak, tm, fonts, unit)
@@ -990,7 +994,7 @@ private fun DrawScope.drawBar(
         if (look.showPeakValue) {
             val t = tm.measure("MAX " + def.format(peak),
                 TextStyle(color = look.peakTextColor, fontSize = (unit * 0.12f * look.peakTextSize).toSp(), fontFamily = fonts.value))
-            drawText(t, topLeft = Offset(4f + size.width * look.peakTextX, size.height * look.peakTextY))
+            drawTextHit(t, topLeft = Offset(4f + size.width * look.peakTextX, size.height * look.peakTextY))
         }
     }
 }
@@ -1024,7 +1028,7 @@ fun DigitalGauge(
         if (look.showName) {
             val name = tm.measure(def.shortName,
                 TextStyle(color = look.nameColor, fontFamily = fonts.label, fontSize = (unit * 0.14f * look.tableNameSize).toSp(), fontWeight = FontWeight.Medium))
-            drawText(name, topLeft = Offset(4f + size.width * look.nameOffsetX, size.height * look.nameOffsetY))
+            drawTextHit(name, topLeft = Offset(4f + size.width * look.nameOffsetX, size.height * look.nameOffsetY))
         }
         // valuePosition は中心からのずれ (アナログと共通の値を流用。既定 0.42 → 中央やや下)
         val cy = size.height * (0.5f + (look.valuePosition - 0.42f) * 0.5f)
@@ -1049,9 +1053,9 @@ fun DigitalGauge(
                 }
                 val gx = cx - ghost.size.width / 2f
                 val gy = cy - ghost.size.height / 2f
-                drawText(ghost, topLeft = Offset(gx, gy))
+                drawTextHit(ghost, topLeft = Offset(gx, gy))
                 val vl = tm.measure(text, vs)
-                drawText(vl, topLeft = Offset(gx + ghost.size.width - vl.size.width, gy))
+                drawTextHit(vl, topLeft = Offset(gx + ghost.size.width - vl.size.width, gy))
             } else {
                 // 幅に収まらないときは縮める (メーターの形によってはみ出さないように)
                 drawCenteredTextFit(tm, text, Offset(cx, cy), style, maxWidth = size.width * 0.96f)
@@ -1065,7 +1069,7 @@ fun DigitalGauge(
         if (peak != null) {
             val t = tm.measure("MAX " + def.format(peak),
                 TextStyle(color = look.peakTextColor, fontSize = (unit * 0.12f * look.peakTextSize).toSp(), fontFamily = fonts.value))
-            drawText(t, topLeft = Offset(size.width - t.size.width - 4f + size.width * look.peakTextX, size.height * look.peakTextY))
+            drawTextHit(t, topLeft = Offset(size.width - t.size.width - 4f + size.width * look.peakTextX, size.height * look.peakTextY))
         }
     }
 }
@@ -1420,4 +1424,24 @@ object ButtonActions {
             if (litUntil[id] == until) litUntil.remove(id)
         }
     }
+}
+
+
+/** 文字を描いて、その範囲を [TextHits] に残す (通常表示中のタップで、文字の部分も「見えている部分」にするため) */
+internal fun DrawScope.drawTextHit(layout: androidx.compose.ui.text.TextLayoutResult, topLeft: Offset) {
+    drawText(layout, topLeft = topLeft)
+    TextHits.current?.add(androidx.compose.ui.geometry.Rect(topLeft, androidx.compose.ui.geometry.Size(layout.size.width.toFloat(), layout.size.height.toFloat())))
+}
+
+/** メーターごとの、描いた文字の範囲 (メーターの id → メーターの中の位置、px)。最後に描いたときのもの */
+object TextHits {
+    internal var current: MutableList<androidx.compose.ui.geometry.Rect>? = null
+    private val byGauge = HashMap<String, List<androidx.compose.ui.geometry.Rect>>()
+
+    internal fun begin() { current = ArrayList() }
+    internal fun end(id: String) { current?.let { byGauge[id] = it }; current = null }
+
+    /** メーター [id] の中の位置 ([x], [y]) に文字があるか ([slop] だけ広げて判定) */
+    fun hit(id: String, x: Float, y: Float, slop: Float): Boolean =
+        byGauge[id]?.any { r -> x >= r.left - slop && x <= r.right + slop && y >= r.top - slop && y <= r.bottom + slop } == true
 }

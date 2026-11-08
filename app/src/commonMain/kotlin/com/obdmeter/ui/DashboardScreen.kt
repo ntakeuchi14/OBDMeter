@@ -543,7 +543,7 @@ private fun DashboardCanvas(
         else Modifier.pointerInput("view") {
             // 通常表示中: タップでボタンを押す・長押しでピーク値をリセット。
             // 背景の無いメーターが前に重なっていても、見えている部分 (カード・文字盤・ランプなど) があるメーターを優先する
-            fun hit(p: Offset): GaugeConfig? = viewHit(gaugesNow, p, cellPx.first, cellPx.second)
+            fun hit(p: Offset): GaugeConfig? = viewHit(gaugesNow, p, cellPx.first, cellPx.second, 2.dp.toPx(), 6.dp.toPx())
             detectTapGestures(
                 onTap = { p -> hit(p)?.takeIf { it.style == GaugeStyle.BUTTON }?.let { com.obdmeter.ui.gauges.ButtonActions.press(it) } },
                 onLongPress = { p -> hit(p)?.let { g -> peakResets[g.id] = (peakResets[g.id] ?: 0) + 1 } },
@@ -1033,7 +1033,13 @@ fun PidDef.sourceLabel(): String = when (kind) {
  * 通常表示中にタップした位置 [p] (px) のメーター。前 (リストの後ろ) から見て、その位置に見えている部分
  * (カード・文字盤・背景画像・リング・ランプの玉) があるメーターを選ぶ。無ければ、範囲に入っている一番前のメーター
  */
-internal fun viewHit(gauges: List<GaugeConfig>, p: Offset, cellW: Float, cellH: Float): GaugeConfig? {
+internal fun viewHit(
+    gauges: List<GaugeConfig>, p: Offset, cellW: Float, cellH: Float,
+    /** カードの無いメーターの、描く範囲の内側の余白 (px) */
+    inset: Float = 0f,
+    /** 文字の範囲を広げて判定する量 (px。細い文字も触りやすく) */
+    slop: Float = 0f,
+): GaugeConfig? {
     if (cellW <= 0f || cellH <= 0f) return null
     var fallback: GaugeConfig? = null
     for (g in gauges.asReversed()) {
@@ -1044,6 +1050,8 @@ internal fun viewHit(gauges: List<GaugeConfig>, p: Offset, cellW: Float, cellH: 
         if (p.x < l || p.y < t || p.x > l + w || p.y > t + h) continue
         if (fallback == null) fallback = g
         if (solidAt(g, p.x - l, p.y - t, w, h)) return g
+        // 文字 (数値・名前・単位・最大値など) の部分
+        if (com.obdmeter.ui.gauges.TextHits.hit(g.id.toString(), p.x - l - inset, p.y - t - inset, slop)) return g
     }
     return fallback
 }

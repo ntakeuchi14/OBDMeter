@@ -513,7 +513,7 @@ internal fun ChartGauge(
                         val lay = tm.measure("%.${dec}f".format(v), st)
                         val y = (plotH * i / 4f - lay.size.height / 2f).coerceIn(0f, max(0f, plotH - lay.size.height))
                         val x = if (right) padL + pw + 3f else (padL - 3f - lay.size.width).coerceAtLeast(0f)
-                        drawText(lay, topLeft = Offset(x, y))
+                        drawTextHit(lay, topLeft = Offset(x, y))
                     }
                 }
                 drawAxis(axes.left, false)
@@ -531,7 +531,7 @@ internal fun ChartGauge(
                         val lx = (x - lay.size.width / 2f).coerceIn(0f, max(0f, w - lay.size.width))
                         // 詰めたところで目盛りの文字が重なるときは出さない
                         if (lx > lastLabelEnd + 4f) {
-                            drawText(lay, topLeft = Offset(lx, plotH + 2f))
+                            drawTextHit(lay, topLeft = Offset(lx, plotH + 2f))
                             lastLabelEnd = lx + lay.size.width
                         }
                         t += step
