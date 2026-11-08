@@ -58,6 +58,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -535,12 +536,26 @@ private fun DashboardCanvas(
     Box(Modifier.fillMaxSize().clipToBounds()) {
     // ページの背景 (色・柄・画像)。メーターは必ずこの上に描く
     PageBackgroundView(dashboard.background, Modifier.matchParentSize())
-    BoxWithConstraints(Modifier.fillMaxSize().padding(4.dp)) {
+    val gaugesNow by rememberUpdatedState(dashboard.gauges)
+    var cellPx by remember { mutableStateOf(0f to 0f) }
+    BoxWithConstraints(Modifier.fillMaxSize().padding(4.dp).then(
+        if (editing) Modifier
+        else Modifier.pointerInput("view") {
+            // 通常表示中: タップでボタンを押す・長押しでピーク値をリセット。
+            // 背景の無いメーターが前に重なっていても、見えている部分 (カード・文字盤・ランプなど) があるメーターを優先する
+            fun hit(p: Offset): GaugeConfig? = viewHit(gaugesNow, p, cellPx.first, cellPx.second)
+            detectTapGestures(
+                onTap = { p -> hit(p)?.takeIf { it.style == GaugeStyle.BUTTON }?.let { com.obdmeter.ui.gauges.ButtonActions.press(it) } },
+                onLongPress = { p -> hit(p)?.let { g -> peakResets[g.id] = (peakResets[g.id] ?: 0) + 1 } },
+            )
+        }
+    )) {
         val cellW = maxWidth / Layout.COLS
         val cellH = maxHeight / Layout.ROWS
         val density = LocalDensity.current
         val cellWPx = with(density) { cellW.toPx() }
         val cellHPx = with(density) { cellH.toPx() }
+        SideEffect { cellPx = cellWPx to cellHPx }
         LaunchedEffect(cellWPx, cellHPx) {
             if (cellHPx > 0f) onCellAspect(cellWPx / cellHPx)
             onCellSize(cellW.value, cellH.value)
@@ -913,14 +928,8 @@ private fun GaugeOnGrid(
                             }
                         }
                     }
-                else if (gauge.style == GaugeStyle.BUTTON) Modifier.pointerInput(gauge.id, "button") {
-                    // ボタン: タップで動作
-                    detectTapGestures(onTap = { com.obdmeter.ui.gauges.ButtonActions.press(gauge) })
-                }
-                else Modifier.pointerInput(gauge.id, "view") {
-                    // 通常表示中は長押しでピーク値をリセット
-                    detectTapGestures(onLongPress = { onLongPress() })
-                }
+                // 通常表示中のタップ・長押しは、ページ全体で受けて見えている部分で振り分ける ([viewHit])
+                else Modifier
             )
     ) {
         content()
@@ -1018,3 +1027,47 @@ fun PidDef.sourceLabel(): String = when (kind) {
     PidDef.Kind.DEVICE -> "端末のセンサー"
 }
 
+
+
+/**
+ * 通常表示中にタップした位置 [p] (px) のメーター。前 (リストの後ろ) から見て、その位置に見えている部分
+ * (カード・文字盤・背景画像・リング・ランプの玉) があるメーターを選ぶ。無ければ、範囲に入っている一番前のメーター
+ */
+internal fun viewHit(gauges: List<GaugeConfig>, p: Offset, cellW: Float, cellH: Float): GaugeConfig? {
+    if (cellW <= 0f || cellH <= 0f) return null
+    var fallback: GaugeConfig? = null
+    for (g in gauges.asReversed()) {
+        val l = g.x * cellW
+        val t = g.y * cellH
+        val w = g.w * cellW
+        val h = g.h * cellH
+        if (p.x < l || p.y < t || p.x > l + w || p.y > t + h) continue
+        if (fallback == null) fallback = g
+        if (solidAt(g, p.x - l, p.y - t, w, h)) return g
+    }
+    return fallback
+}
+
+/** メーター [g] (大きさ [w]×[h]) の中の位置 ([x], [y]) に、見えている部分 (背景のある部分) があるか */
+internal fun solidAt(g: GaugeConfig, x: Float, y: Float, w: Float, h: Float): Boolean {
+    val d = g.design
+    if (d.showCard) return true
+    val cx = w / 2
+    val cy = h / 2
+    fun inCircle(r: Float) = (x - cx) * (x - cx) + (y - cy) * (y - cy) <= r * r
+    fun inFace(): Boolean {
+        val sw = w * d.faceScale
+        val sh = h * d.faceScale
+        return kotlin.math.abs(x - cx) <= sw / 2 && kotlin.math.abs(y - cy) <= sh / 2
+    }
+    return when (g.style) {
+        GaugeStyle.ANALOG -> (d.faceColor != null || d.backgroundImage != null || d.ring != com.obdmeter.data.RingStyle.NONE) &&
+            inCircle(minOf(w, h) / 2)
+        // ランプ・ボタンは玉がいつも見えている
+        GaugeStyle.LAMP, GaugeStyle.BUTTON -> inCircle(minOf(w, h) * 0.42f) || (d.faceColor != null && inFace()) || d.backgroundImage != null
+        GaugeStyle.BAR, GaugeStyle.DIGITAL -> (d.faceColor != null && inFace()) || d.backgroundImage != null
+        // 値テーブルは背景が無ければ文字だけ。グラフ・変動監視は中で操作するので範囲全体
+        GaugeStyle.TABLE -> d.tableValueImage != null || d.tableValueBg != null
+        GaugeStyle.CHART, GaugeStyle.MONITOR -> true
+    }
+}
