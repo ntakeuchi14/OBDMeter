@@ -596,8 +596,8 @@ object Layout {
     /** ページの横・縦の単位数 (96 × 48) */
     const val COLS = 24 * SCALE
     const val ROWS = 12 * SCALE
-    /** メーターの最小の大きさ (単位) */
-    const val MIN_SIZE = 2 * SCALE
+    /** メーターの最小の大きさ (単位。1/2 マス。ランプ・ボタンなどを小さく置けるように) */
+    const val MIN_SIZE = SCALE / 2
     /** 移動・大きさ変更の吸着の間隔の選択肢 (単位)。4 = 旧来の 1 マス */
     val GRID_STEPS = listOf(1 to "1/4 マス", 2 to "1/2 マス", 4 to "1 マス", 8 to "2 マス")
 
