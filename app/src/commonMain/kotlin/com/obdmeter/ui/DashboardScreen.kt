@@ -540,6 +540,7 @@ private fun DashboardCanvas(
     // ページの背景 (色・柄・画像)。メーターは必ずこの上に描く
     PageBackgroundView(dashboard.background, Modifier.matchParentSize())
     val gaugesNow by rememberUpdatedState(dashboard.gauges)
+    val foreground = dashboard.foreground()
     // タップの受け取りは作り直さないので、最新の処理を呼ぶ
     val toggleGlowNow by rememberUpdatedState(onToggleGlow)
     var cellPx by remember { mutableStateOf(0f to 0f) }
@@ -647,13 +648,13 @@ private fun DashboardCanvas(
                     // アナログの針は、ほかのメーター (中に重ねて置いたものも) より手前に描く
                     // (グループにするメーターを選んでいる間は、選んだ印が隠れないよう針もメーターと一緒に描く)
                     overlay = if (g.style == GaugeStyle.ANALOG && def != null && !(editing && selecting)) {
-                        { GaugeView(g, def, values, supported, layer = com.obdmeter.ui.gauges.GaugeLayer.NEEDLE, needleState = needle, glowOff = dashboard.glowOff) }
+                        { GaugeView(g, def, values, supported, layer = com.obdmeter.ui.gauges.GaugeLayer.NEEDLE, needleState = needle, glowOff = dashboard.glowOff, foreground = foreground) }
                     } else null,
                 ) {
                     GaugeView(g, def, values, supported, peakResets[g.id] ?: 0, catalog = catalog, interactive = !editing,
                         historySlot = HistorySlot.of(dashboard.id, g.id),
                         layer = if (g.style == GaugeStyle.ANALOG && !(editing && selecting)) com.obdmeter.ui.gauges.GaugeLayer.BODY else com.obdmeter.ui.gauges.GaugeLayer.ALL,
-                        needleState = needle, glowOff = dashboard.glowOff)
+                        needleState = needle, glowOff = dashboard.glowOff, foreground = foreground)
                 }
             }
         }
@@ -757,6 +758,8 @@ fun GaugeView(
     needleState: androidx.compose.runtime.MutableFloatState? = null,
     /** ページの発光を止めている (ボタン)。メーターの発光の設定値はそのまま、描くときだけ 0 にする */
     glowOff: Boolean = false,
+    /** ページの前景色 (発光の ON / OFF ボタンで設定。色, 変える部分)。null = 各メーターの色のまま */
+    foreground: Pair<Color, Set<com.obdmeter.data.ColorPart>>? = null,
 ) {
     if (def != null) {
         GaugeCard(
@@ -766,7 +769,8 @@ fun GaugeView(
             style = g.style,
             unsupported = isUnsupported(def, supported) && g.fallbackKey == null,
             look = g.look(def).let { if (noCard) it.copy(showCard = false) else it }
-                .let { if (glowOff) it.copy(glow = 0f, scaleGlow = 0f, needleGlow = 0f) else it },
+                .let { if (glowOff) it.copy(glow = 0f, scaleGlow = 0f, needleGlow = 0f) else it }
+                .let { l -> if (foreground != null && g.style != GaugeStyle.BUTTON) l.withForeground(foreground.first, foreground.second) else l },
             // 発光の ON / OFF ボタンは、発光している間ずっと点灯
             buttonOn = if (g.style == GaugeStyle.BUTTON && g.design.buttonAction == com.obdmeter.data.ButtonAction.TOGGLE_GLOW) !glowOff else null,
             modifier = Modifier.fillMaxSize(),
@@ -1091,4 +1095,29 @@ internal fun solidAt(g: GaugeConfig, x: Float, y: Float, w: Float, h: Float): Bo
         GaugeStyle.TABLE -> d.tableValueImage != null || d.tableValueBg != null
         GaugeStyle.CHART, GaugeStyle.MONITOR -> true
     }
+}
+
+
+/** ページの前景色 (発光の ON / OFF ボタンの設定。今の発光の状態に合う色)。設定が無ければ null */
+fun com.obdmeter.data.Dashboard.foreground(): Pair<Color, Set<com.obdmeter.data.ColorPart>>? {
+    val b = gauges.firstOrNull { it.style == GaugeStyle.BUTTON && it.design.buttonAction == com.obdmeter.data.ButtonAction.TOGGLE_GLOW }
+        ?: return null
+    val c = (if (glowOff) b.design.glowOffColor else b.design.glowOnColor) ?: return null
+    return Color(c) to b.design.colorParts.toSet()
+}
+
+/** 前景色 [c] を、選んだ部分 [parts] にまとめて使う */
+fun com.obdmeter.ui.gauges.GaugeLook.withForeground(c: Color, parts: Set<com.obdmeter.data.ColorPart>): com.obdmeter.ui.gauges.GaugeLook {
+    var l = this
+    for (p in parts) l = when (p) {
+        com.obdmeter.data.ColorPart.TICKS -> l.copy(tickColor = c)
+        com.obdmeter.data.ColorPart.LABELS -> l.copy(labelColor = c)
+        com.obdmeter.data.ColorPart.NAME -> l.copy(nameColor = c)
+        com.obdmeter.data.ColorPart.UNIT -> l.copy(unitColor = c)
+        com.obdmeter.data.ColorPart.VALUE -> l.copy(valueColor = c)
+        com.obdmeter.data.ColorPart.NEEDLE -> l.copy(needleColor = c)
+        com.obdmeter.data.ColorPart.ACCENT -> l.copy(accent = c)
+        com.obdmeter.data.ColorPart.PEAK -> l.copy(peakColor = c, peakTextColor = c)
+    }
+    return l
 }

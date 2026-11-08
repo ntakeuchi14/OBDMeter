@@ -104,6 +104,18 @@ enum class ButtonAction(val label: String) {
     TOGGLE_GLOW("このページの発光の ON / OFF"),
 }
 
+/** 発光の ON / OFF ボタンで、前景色をまとめて変える部分 */
+enum class ColorPart(val label: String) {
+    TICKS("目盛り"),
+    LABELS("目盛りの数字"),
+    NAME("名前"),
+    UNIT("単位"),
+    VALUE("数値"),
+    NEEDLE("針"),
+    ACCENT("値の弧・バー"),
+    PEAK("最大値の印・文字"),
+}
+
 /** 数値の代わりに出す文字。計測値 x が条件 [condition] (例: `x == 0`) に合うとき、数値の代わりに [text] を出す */
 @Serializable
 data class ValueText(val condition: String = "", val text: String = "")
@@ -315,6 +327,12 @@ data class GaugeDesign(
     val lampCondition: String = "",
     /** ボタン: 押したときの動作 */
     val buttonAction: ButtonAction = ButtonAction.RESET_PEAKS,
+    /** 発光の ON / OFF ボタン: 発光 ON のときにページのメーターに使う前景色 (null = 各メーターの色のまま) */
+    val glowOnColor: Long? = null,
+    /** 発光の ON / OFF ボタン: 発光 OFF のときの前景色 (null = 各メーターの色のまま) */
+    val glowOffColor: Long? = null,
+    /** 発光の ON / OFF ボタン: 前景色を変える部分 */
+    val colorParts: List<ColorPart> = listOf(ColorPart.TICKS, ColorPart.LABELS, ColorPart.NAME, ColorPart.UNIT, ColorPart.VALUE),
     /** 数値の代わりに出す文字 (上から順に見て、最初に条件に合ったもの。例: ギアが 0 のとき N) */
     val valueTexts: List<ValueText> = emptyList(),
     /** 点灯時・消灯時の色 (null = 既定: 赤 / 暗い灰色) */

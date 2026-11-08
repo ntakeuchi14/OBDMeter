@@ -32,6 +32,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.obdmeter.AppCore
 import com.obdmeter.ui.GaugeView
+import com.obdmeter.ui.foreground
 import com.obdmeter.ui.gauges.GaugeColors
 import com.obdmeter.ui.gauges.LocalFontLibrary
 import com.obdmeter.ui.gauges.LocalHistory
@@ -96,12 +97,13 @@ fun FloatGauge(
                                 GaugeView(g, def, values, supported, noCard = true, catalog = catalog,
                                     historySlot = unitPage?.let { com.obdmeter.data.HistorySlot.of(it.id, g.id) },
                                     layer = if (analog) com.obdmeter.ui.gauges.GaugeLayer.BODY else com.obdmeter.ui.gauges.GaugeLayer.ALL,
-                                    needleState = needle, glowOff = unitPage?.glowOff == true)
+                                    needleState = needle, glowOff = unitPage?.glowOff == true, foreground = unitPage?.foreground())
                             }
                             // アナログの針は、まとめて表示しているほかのメーターより手前に描く
                             if (analog) Box(Modifier.zIndex(1f).then(place)) {
                                 GaugeView(g, def, values, supported, noCard = true,
-                                    layer = com.obdmeter.ui.gauges.GaugeLayer.NEEDLE, needleState = needle, glowOff = unitPage?.glowOff == true)
+                                    layer = com.obdmeter.ui.gauges.GaugeLayer.NEEDLE, needleState = needle, glowOff = unitPage?.glowOff == true,
+                                    foreground = unitPage?.foreground())
                             }
                         }
                     }
