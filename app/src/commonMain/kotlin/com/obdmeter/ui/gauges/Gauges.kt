@@ -696,9 +696,10 @@ fun AnalogGauge(
             // 針の発光 (針の色で、外側ほど薄く広げる。ぼかしを使わないので軽い)
             if (look.needleGlow > 0f) {
                 val g = look.needleGlow
-                drawPath(needle, color.copy(alpha = 0.10f * g), style = Stroke(d * 0.045f * g + 2f, join = StrokeJoin.Round, cap = StrokeCap.Round))
-                drawPath(needle, color.copy(alpha = 0.18f * g), style = Stroke(d * 0.026f * g + 2f, join = StrokeJoin.Round, cap = StrokeCap.Round))
-                drawPath(needle, color.copy(alpha = 0.30f * g), style = Stroke(d * 0.012f * g + 1f, join = StrokeJoin.Round, cap = StrokeCap.Round))
+                drawPath(needle, color.copy(alpha = 0.08f * g), style = Stroke(d * 0.09f * g + 2f, join = StrokeJoin.Round, cap = StrokeCap.Round))
+                drawPath(needle, color.copy(alpha = 0.14f * g), style = Stroke(d * 0.055f * g + 2f, join = StrokeJoin.Round, cap = StrokeCap.Round))
+                drawPath(needle, color.copy(alpha = 0.22f * g), style = Stroke(d * 0.03f * g + 2f, join = StrokeJoin.Round, cap = StrokeCap.Round))
+                drawPath(needle, color.copy(alpha = 0.35f * g), style = Stroke(d * 0.012f * g + 1f, join = StrokeJoin.Round, cap = StrokeCap.Round))
             }
             drawPath(needle, color)
         }
