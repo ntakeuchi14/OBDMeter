@@ -1,5 +1,6 @@
 package com.obdmeter.ui.gauges
 
+import kotlinx.coroutines.launch
 import com.obdmeter.ui.drawSoftShadow
 import com.obdmeter.util.format
 
@@ -254,7 +255,7 @@ internal fun DrawScope.drawObjectShadow(style: GaugeStyle, look: GaugeLook) {
                 val fr = if (look.ring == RingStyle.NONE && look.faceColor != null) d / 2 * look.faceScale else d / 2
                 path.addOval(androidx.compose.ui.geometry.Rect(inner.center, fr))
             }
-            GaugeStyle.BAR, GaugeStyle.DIGITAL, GaugeStyle.LAMP -> {
+            GaugeStyle.BAR, GaugeStyle.DIGITAL, GaugeStyle.LAMP, GaugeStyle.BUTTON -> {
                 if (look.faceColor == null) return
                 val sc = look.faceScale
                 val sz = androidx.compose.ui.geometry.Size(inner.width * sc, inner.height * sc)
@@ -316,7 +317,7 @@ fun GaugeCard(
         lastReset[0] = peakResetKey
         keepKey?.let { PeakStore.values.remove(it) }
     }
-    val peakHolder = remember(def.key, peakResetKey, def.min, def.max, keepKey) {
+    val peakHolder = remember(def.key, peakResetKey, def.min, def.max, keepKey, PeakStore.generation) {
         doubleArrayOf(keepKey?.let { PeakStore.values[it] } ?: Double.NaN)
     }
     if (look.showPeak && value != null && !unsupported && (peakHolder[0].isNaN() || value > peakHolder[0])) {
@@ -344,6 +345,11 @@ fun GaugeCard(
             GaugeStyle.DIGITAL -> DigitalGauge(def, v, unsupported, look, image, Modifier.fillMaxSize(), peak, fonts)
             // ランプは条件判定をならし前の値で行う
             GaugeStyle.LAMP -> LampGauge(def, if (unsupported) null else value, unsupported, look, image, Modifier.fillMaxSize(), fonts)
+            // ボタン: ランプの見た目で、押した直後だけ点灯する。名前 (表示名) だけ出す
+            GaugeStyle.BUTTON -> LampGauge(
+                def, null, false, look.copy(showName = true, showValue = false), image, Modifier.fillMaxSize(), fonts,
+                forceOn = peakKey != null && ButtonActions.lit(peakKey),
+            )
             GaugeStyle.TABLE -> TableGauge(
                 series.ifEmpty { listOf(ChartSeries(def, value)) }, look, fonts, Modifier.fillMaxSize(),
             )
@@ -1384,4 +1390,34 @@ internal class GaugeFxCache {
 /** ページを切り替えても維持するピーク値 (項目キー → 値。維持する設定のメーターどうしで共有)。アプリを終了すると消える */
 internal object PeakStore {
     val values = HashMap<String, Double>()
+
+    /** 全部のメーターの最大値をリセットした回数 (変わると、表示中のメーターも最大値をやり直す) */
+    var generation by androidx.compose.runtime.mutableIntStateOf(0)
+
+    fun resetAll() {
+        values.clear()
+        generation++
+    }
+}
+
+/** ボタンの動作と、押した直後の点灯 */
+object ButtonActions {
+    private val litUntil = androidx.compose.runtime.mutableStateMapOf<String, Long>()
+    private val scope = kotlinx.coroutines.MainScope()
+
+    /** ボタン (メーターの id) が点灯中か */
+    fun lit(id: String): Boolean = litUntil.containsKey(id)
+
+    fun press(g: com.obdmeter.data.GaugeConfig) {
+        when (g.design.buttonAction) {
+            com.obdmeter.data.ButtonAction.RESET_PEAKS -> PeakStore.resetAll()
+        }
+        val id = g.id.toString()
+        val until = com.obdmeter.util.nowMs() + 400
+        litUntil[id] = until
+        scope.launch {
+            kotlinx.coroutines.delay(450)
+            if (litUntil[id] == until) litUntil.remove(id)
+        }
+    }
 }

@@ -9,7 +9,8 @@ import com.obdmeter.core.PidDef
 object ReadPlan {
     /** メーターが使う項目のキー (グラフ・値テーブルは追加した項目も) */
     fun gaugeKeys(g: GaugeConfig): List<String> =
-        if (g.style == GaugeStyle.CHART || g.style == GaugeStyle.TABLE || g.style == GaugeStyle.MONITOR) g.chartAllKeys else listOf(g.pidKey)
+        if (g.style == GaugeStyle.BUTTON) emptyList() // ボタンは何も読まない
+        else if (g.style == GaugeStyle.CHART || g.style == GaugeStyle.TABLE || g.style == GaugeStyle.MONITOR) g.chartAllKeys else listOf(g.pidKey)
 
     /**
      * 表示中のページ。アプリの画面が前にあればアプリのページ、無ければフロート表示のページ。

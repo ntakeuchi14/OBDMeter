@@ -25,6 +25,8 @@ object DeviceItems {
     const val BATTERY_VOLT = "DEV_BATTERY_VOLT"
     const val SINE = "DEV_TEST_SINE"
     const val SAW = "DEV_TEST_SAW"
+    /** ボタン (値は無い) */
+    const val BUTTON = "APP_BUTTON"
 
     val ALL: List<PidDef> = listOf(
         dev(PITCH, "傾き 前後", "前後の傾き", "°", -90.0, 90.0),
@@ -44,6 +46,8 @@ object DeviceItems {
         dev(BATTERY_VOLT, "バッテリー電圧", "電池電圧", "V", 3.0, 4.5, decimals = 2),
         dev(SINE, "テスト信号 サイン波 (10 秒周期)", "サイン波", "", 0.0, 100.0),
         dev(SAW, "テスト信号 のこぎり波 (10 秒周期)", "のこぎり波", "", 0.0, 100.0),
+        // 値は無い。メーターの追加でこれを選ぶと「ボタン」を置く
+        PidDef(BUTTON, "ボタン (最大値のリセットなど)", "リセット", "", 0.0, 1.0, kind = PidDef.Kind.DEVICE),
     )
 
     fun isDevice(d: PidDef): Boolean = d.kind == PidDef.Kind.DEVICE

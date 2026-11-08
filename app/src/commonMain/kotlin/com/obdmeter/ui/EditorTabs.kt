@@ -9,6 +9,7 @@ enum class EditorTab(val label: String) {
     SCALE("目盛り・針"),
     BAR("バーの形"),
     LAMP("点灯条件・色"),
+    BUTTON("ボタン"),
     TABLE("並べ方・文字"),
     VIEW("表示"),
     RECORD("記録"),
@@ -30,6 +31,7 @@ object EditorTabs {
         GaugeStyle.TABLE -> listOf(EditorTab.ITEM, EditorTab.TABLE, EditorTab.PLACE)
         GaugeStyle.CHART -> listOf(EditorTab.ITEM_AXIS, EditorTab.VIEW, EditorTab.RECORD, EditorTab.PLACE)
         GaugeStyle.MONITOR -> listOf(EditorTab.ITEM, EditorTab.VIEW, EditorTab.PLACE)
+        GaugeStyle.BUTTON -> listOf(EditorTab.BUTTON, EditorTab.PLACE)
     }
 
     /** 表示形式を変えたとき、開いていたタブが無くなっていれば最初のタブにする */
@@ -49,11 +51,11 @@ object EditorTabs {
     fun usesPeak(style: GaugeStyle): Boolean = style in setOf(GaugeStyle.ANALOG, GaugeStyle.BAR, GaugeStyle.DIGITAL)
 
     /** 外周リングを使う */
-    fun usesRing(style: GaugeStyle): Boolean = style in setOf(GaugeStyle.ANALOG, GaugeStyle.LAMP)
+    fun usesRing(style: GaugeStyle): Boolean = style in setOf(GaugeStyle.ANALOG, GaugeStyle.LAMP, GaugeStyle.BUTTON)
 
     /** 消えている 7 セグを使う */
     fun usesGhost(style: GaugeStyle): Boolean = style in setOf(GaugeStyle.ANALOG, GaugeStyle.BAR, GaugeStyle.DIGITAL, GaugeStyle.TABLE)
 
     /** メーターの色 (現在値の弧・バー、グラフの 1 本目の線、変動監視の回数) を使う */
-    fun usesAccent(style: GaugeStyle): Boolean = style !in setOf(GaugeStyle.DIGITAL, GaugeStyle.LAMP, GaugeStyle.TABLE)
+    fun usesAccent(style: GaugeStyle): Boolean = style !in setOf(GaugeStyle.DIGITAL, GaugeStyle.LAMP, GaugeStyle.TABLE, GaugeStyle.BUTTON)
 }

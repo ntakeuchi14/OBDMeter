@@ -208,6 +208,7 @@ fun GaugeSettingsDialog(
                                 EditorTab.SCALE -> ScaleTab(draft, ::update)
                                 EditorTab.BAR -> BarTab(draft, def, ::update)
                                 EditorTab.LAMP -> LampTab(draft, ::update, onPickFont)
+                                EditorTab.BUTTON -> ButtonTab(draft, ::update, { draft = it }, onPickFont)
                                 EditorTab.TABLE -> TableTab(draft, ::update, onPickFont)
                                 EditorTab.VIEW -> if (draft.style == GaugeStyle.CHART) ChartViewTab(draft, ::update, onPickFont)
                                     else MonitorViewTab(draft, ::update, onPickFont)
@@ -1031,6 +1032,50 @@ private fun LampTab(g: GaugeConfig, update: ((GaugeDesign) -> GaugeDesign) -> Un
     RingSection(d, update)
     ValueNameUnitSection(g, update)
     ValueTextSection(g, update)
+    CardSwitch(d, update, g.style)
+    Head("背景画像")
+    ImageTab(g, update)
+}
+
+// ---------------------------------------------------------------------------
+// タブ: ボタン
+// ---------------------------------------------------------------------------
+
+@Composable
+private fun ButtonTab(
+    g: GaugeConfig,
+    update: ((GaugeDesign) -> GaugeDesign) -> Unit,
+    replace: (GaugeConfig) -> Unit,
+    onPickFont: (String) -> Unit,
+) {
+    val d = g.design
+    Head("表示形式")
+    Row(Modifier.horizontalScroll(rememberScrollState())) {
+        GaugeStyle.entries.forEach { s ->
+            FilterChip(g.style == s, { replace(g.copy(style = s)) }, { Text(s.label) }, Modifier.padding(end = 6.dp))
+        }
+    }
+    Head("押したときの動作")
+    Row(Modifier.horizontalScroll(rememberScrollState())) {
+        com.obdmeter.data.ButtonAction.entries.forEach { a ->
+            FilterChip(d.buttonAction == a, { update { it.copy(buttonAction = a) } }, { Text(a.label) }, Modifier.padding(end = 6.dp))
+        }
+    }
+    Hint("ダッシュボードでタップすると動きます (押した直後に少し点灯します)。全ページのメーターの最大値 (ページ切り替えで維持しているものも) をリセットします。")
+    Head("ボタンの文字")
+    OutlinedTextField(
+        value = d.label.orEmpty(),
+        onValueChange = { t -> update { it.copy(label = t) } },
+        placeholder = { Text("リセット") },
+        singleLine = true,
+        modifier = Modifier.fillMaxWidth(),
+    )
+    Head("色")
+    ColorLine("押したとき (点灯) の色", d.lampOnColor, GaugeColors.Warn) { c -> update { it.copy(lampOnColor = c) } }
+    ColorLine("ふだん (消灯) の色", d.lampOffColor, Color(0xFF2A2F36)) { c -> update { it.copy(lampOffColor = c) } }
+    FontSection(d, onPickFont)
+    FaceSection(d, update)
+    RingSection(d, update)
     CardSwitch(d, update, g.style)
     Head("背景画像")
     ImageTab(g, update)

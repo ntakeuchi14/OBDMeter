@@ -466,6 +466,7 @@ fun statusColor(state: ConnectionState): Color = when (state) {
 }
 
 fun defaultStyleFor(def: PidDef): GaugeStyle = when (def.key) {
+    com.obdmeter.core.DeviceItems.BUTTON -> GaugeStyle.BUTTON
     "RPM", "SPEED", "LOAD", "THROTTLE", "PEDAL", "BOOST", "TIMING" -> GaugeStyle.ANALOG
     "STFT1", "STFT2", "LTFT1", "LTFT2", "FUEL_LEVEL", "COOLANT", "OIL_TEMP" -> GaugeStyle.BAR
     else -> GaugeStyle.DIGITAL
@@ -912,6 +913,10 @@ private fun GaugeOnGrid(
                             }
                         }
                     }
+                else if (gauge.style == GaugeStyle.BUTTON) Modifier.pointerInput(gauge.id, "button") {
+                    // ボタン: タップで動作
+                    detectTapGestures(onTap = { com.obdmeter.ui.gauges.ButtonActions.press(gauge) })
+                }
                 else Modifier.pointerInput(gauge.id, "view") {
                     // 通常表示中は長押しでピーク値をリセット
                     detectTapGestures(onLongPress = { onLongPress() })

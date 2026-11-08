@@ -92,6 +92,14 @@ enum class GaugeStyle(val label: String) {
     TABLE("値テーブル"),
     /** 変動監視: 複数項目の値が変わった回数を期間ごとにランキング表示 (記録はメーターを削除するまで残す) */
     MONITOR("変動監視"),
+    /** ボタン: タップで操作する (見た目はランプと同じ) */
+    BUTTON("ボタン"),
+}
+
+/** ボタンを押したときの動作 */
+enum class ButtonAction(val label: String) {
+    /** 全ページのメーターの最大値 (ピーク値) をリセットする */
+    RESET_PEAKS("全ページの最大値をリセット"),
 }
 
 /** 数値の代わりに出す文字。計測値 x が条件 [condition] (例: `x == 0`) に合うとき、数値の代わりに [text] を出す */
@@ -297,6 +305,8 @@ data class GaugeDesign(
     // --- 2 値ランプ ---
     /** 点灯条件 (値を x と書く。例: x >= 100)。空欄 = 警告値を超えたら点灯 */
     val lampCondition: String = "",
+    /** ボタン: 押したときの動作 */
+    val buttonAction: ButtonAction = ButtonAction.RESET_PEAKS,
     /** 数値の代わりに出す文字 (上から順に見て、最初に条件に合ったもの。例: ギアが 0 のとき N) */
     val valueTexts: List<ValueText> = emptyList(),
     /** 点灯時・消灯時の色 (null = 既定: 赤 / 暗い灰色) */
@@ -464,7 +474,8 @@ val GaugeDesign.historyRetentionMs: Long
 
 /** 今の表示形式で背景画像を描くか */
 val GaugeStyle.drawsBackgroundImage: Boolean
-    get() = this == GaugeStyle.ANALOG || this == GaugeStyle.BAR || this == GaugeStyle.DIGITAL || this == GaugeStyle.LAMP
+    get() = this == GaugeStyle.ANALOG || this == GaugeStyle.BAR || this == GaugeStyle.DIGITAL || this == GaugeStyle.LAMP ||
+        this == GaugeStyle.BUTTON
 
 /** メーターが今の表示形式で実際に表示している画像の名前 (ほかの形式用に残っている設定は含めない) */
 fun GaugeConfig.imageNames(): List<String> = listOfNotNull(

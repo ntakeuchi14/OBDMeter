@@ -100,9 +100,11 @@ internal fun LampGauge(
     image: ImageBitmap?,
     modifier: Modifier,
     fonts: GaugeFontSet,
+    /** 条件に関係なく点灯・消灯する (ボタン) */
+    forceOn: Boolean? = null,
 ) {
     val tm = rememberTextMeasurer()
-    val on = !unsupported && value != null && (look.lampCondition?.test(value) ?: isWarn(def, value))
+    val on = forceOn ?: (!unsupported && value != null && (look.lampCondition?.test(value) ?: isWarn(def, value)))
     Canvas(modifier) {
         drawFace(look)
         image?.let {
