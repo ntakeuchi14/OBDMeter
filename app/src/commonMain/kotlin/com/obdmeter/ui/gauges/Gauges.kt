@@ -176,6 +176,7 @@ data class GaugeLook(
     val barMidColor: Color = Color(0xFFFFC107),
     val barMidFrom: Double? = null,
     val glow: Float = 0f,
+    val scaleGlow: Float = 0f,
     val smoothing: Float = 0.5f,
     val showTicks: Boolean = true,
     val arcRoundCap: Boolean = false,
@@ -542,21 +543,30 @@ fun AnalogGauge(
             }
         }
 
-        // 目盛り (主・小) と数字
+        // 目盛り (主・小) と数字。発光させるときは光のにじみが重いので、一度画像に描いておく
         val scale = TickScale.of(def.min, def.max, look.majorDivisions)
         val labelSize = (d * 0.07f * look.labelSize).toSp()
         val majors = scale.values(def.max)
+        fun DrawScope.tick(a: Offset, b: Offset, w: Float) {
+            if (look.scaleGlow > 0f) {
+                drawLine(look.tickColor.copy(alpha = 0.16f * look.scaleGlow), a, b, strokeWidth = w + d * 0.03f * look.scaleGlow, cap = StrokeCap.Round)
+                drawLine(look.tickColor.copy(alpha = 0.30f * look.scaleGlow), a, b, strokeWidth = w + d * 0.012f * look.scaleGlow, cap = StrokeCap.Round)
+            }
+            drawLine(look.tickColor, a, b, strokeWidth = w)
+        }
+        val drawScale: DrawScope.() -> Unit = {
         for ((i, t) in majors.withIndex()) {
             val a = com.obdmeter.util.toRadians((start + sweep * fraction(def, t)).toDouble())
-            if (look.showTicks) drawLine(look.tickColor,
+            if (look.showTicks) tick(
                 Offset(pc.x + (tickOuter - majorLen) * cos(a).toFloat(), pc.y + q * (tickOuter - majorLen) * sin(a).toFloat()),
                 Offset(pc.x + tickOuter * cos(a).toFloat(), pc.y + q * tickOuter * sin(a).toFloat()),
-                strokeWidth = d * 0.012f)
+                d * 0.012f)
             if (look.showLabels) {
                 val labelR = tickOuter - majorLen - d * 0.06f * look.labelSize
                 drawCenteredText(tm, scale.label(t),
                     Offset(pc.x + labelR * cos(a).toFloat(), pc.y + q * labelR * sin(a).toFloat()),
-                    TextStyle(color = look.labelColor, fontFamily = fonts.label, fontSize = labelSize))
+                    TextStyle(color = look.labelColor, fontFamily = fonts.label, fontSize = labelSize,
+                        shadow = glowShadow(look.labelColor, look.scaleGlow, d * 0.07f * look.labelSize)))
             }
             // 小目盛り
             if (look.showTicks && look.minorDivisions > 0 && i < majors.lastIndex) {
@@ -567,13 +577,21 @@ fun AnalogGauge(
                     val tv = t + (next - t) * k / (look.minorDivisions + 1)
                     val b = com.obdmeter.util.toRadians((start + sweep * fraction(def, tv)).toDouble())
                     val len = if (k == mid) max(minorLen, majorLen * look.midTickLength) else minorLen
-                    drawLine(look.tickColor,
+                    tick(
                         Offset(pc.x + (tickOuter - len) * cos(b).toFloat(), pc.y + q * (tickOuter - len) * sin(b).toFloat()),
                         Offset(pc.x + tickOuter * cos(b).toFloat(), pc.y + q * tickOuter * sin(b).toFloat()),
-                        strokeWidth = if (k == mid) d * 0.009f else d * 0.006f)
+                        if (k == mid) d * 0.009f else d * 0.006f)
                 }
             }
         }
+        }
+        if (look.scaleGlow > 0f) {
+            fx.scale.draw(this, listOf(
+                look.tickColor, look.labelColor, look.majorDivisions, look.minorDivisions, look.midTick, look.midTickLength,
+                look.labelSize, look.showTicks, look.showLabels, look.scaleGlow, start, sweep, def.min, def.max, pc, q, tickOuter,
+                fonts.label, d,
+            ), drawScale)
+        } else drawScale()
 
         // 弧の先の丸い点を付けるときは、その点をピーク値の印にする (弧の上、ピーク値の位置)
         if (peak != null && look.arcTipDot && stroke > 0f) {
@@ -609,7 +627,8 @@ fun AnalogGauge(
         if (look.showName) {
             drawCenteredText(tm, def.shortName,
                 Offset(center.x + d * look.nameOffsetX, center.y - textR * 0.38f + d * look.nameOffsetY),
-                TextStyle(color = look.nameColor, fontFamily = fonts.label, fontSize = (d * 0.07f * look.tableNameSize).toSp(), fontWeight = FontWeight.Medium))
+                TextStyle(color = look.nameColor, fontFamily = fonts.label, fontSize = (d * 0.07f * look.tableNameSize).toSp(), fontWeight = FontWeight.Medium,
+                    shadow = glowShadow(look.nameColor, look.scaleGlow, d * 0.07f * look.tableNameSize)))
         }
         val valueY = center.y + textR * look.valuePosition
         val valueX = center.x + textR * look.valueOffsetX
@@ -634,7 +653,8 @@ fun AnalogGauge(
         if (look.showUnit) {
             drawCenteredText(tm, def.unitText + scale.unitSuffix,
                 Offset(valueX + d * look.unitOffsetX, valueY + d * 0.1f * max(look.valueSize, 0.6f) + d * look.unitOffsetY),
-                TextStyle(color = look.unitColor, fontFamily = fonts.label, fontSize = (d * 0.055f * look.tableUnitSize).toSp()))
+                TextStyle(color = look.unitColor, fontFamily = fonts.label, fontSize = (d * 0.055f * look.tableUnitSize).toSp(),
+                    shadow = glowShadow(look.unitColor, look.scaleGlow, d * 0.055f * look.tableUnitSize)))
         }
         if (peak != null && look.showPeakValue) {
             drawCenteredText(tm, "MAX " + def.format(peak),
@@ -1390,6 +1410,7 @@ internal class FxLayer {
 internal class GaugeFxCache {
     val recess = FxLayer()
     val glass = FxLayer()
+    val scale = FxLayer()
 }
 
 

@@ -595,6 +595,8 @@ private fun ScaleTab(g: GaugeConfig, update: ((GaugeDesign) -> GaugeDesign) -> U
     }
     Hint("今の針の中心・開始〜終了角度で、目盛りが外周リングの内側に収まり、なるべく大きくなる「目盛りの位置」と「縦横比」を自動で設定します (数字は目盛りの内側に出ます)。")
     SwitchLine("目盛りの数字を表示", null, d.showLabels) { v -> update { it.copy(showLabels = v) } }
+    SliderLine("目盛り・文字の発光 (0 = なし)", d.scaleGlow * 100, 0f..100f, "%.0f%%") { v -> update { it.copy(scaleGlow = snap(v, 5f) / 100f) } }
+    Hint("目盛り・目盛りの数字・名前・単位を、それぞれの色で光らせます (数値の発光は「数値・名前・単位」の発光で設定します)。")
     if (d.showLabels) {
         SliderLine("数字の大きさ", d.labelSize * 100, 40f..250f, "%.0f%%") { v -> update { it.copy(labelSize = snap(v, 5f) / 100f) } }
     }
