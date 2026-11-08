@@ -625,6 +625,7 @@ private fun ScaleTab(g: GaugeConfig, update: ((GaugeDesign) -> GaugeDesign) -> U
         SliderLine("針の長さ", d.needleLength * 100, 30f..130f, "%.0f%%") { v -> update { it.copy(needleLength = snap(v, 5f) / 100f) } }
         SliderLine("針の太さ", d.needleWidth * 100, 20f..400f, "%.0f%%") { v -> update { it.copy(needleWidth = snap(v, 5f) / 100f) } }
         SliderLine("反対側の尾の長さ", d.needleTail * 100, 0f..60f, "%.0f%%") { v -> update { it.copy(needleTail = snap(v, 1f) / 100f) } }
+        SliderLine("針の発光 (0 = なし)", d.needleGlow * 100, 0f..100f, "%.0f%%") { v -> update { it.copy(needleGlow = snap(v, 5f) / 100f) } }
 
         Head("針の中心の位置")
         Hint(

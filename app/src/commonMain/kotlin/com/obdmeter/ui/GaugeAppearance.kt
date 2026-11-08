@@ -117,6 +117,7 @@ fun GaugeDesign.toLook(def: PidDef, style: GaugeStyle): GaugeLook {
         barMidFrom = barMidFrom,
         glow = glow.coerceIn(0f, 1f),
         scaleGlow = scaleGlow.coerceIn(0f, 1f),
+        needleGlow = needleGlow.coerceIn(0f, 1f),
         smoothing = smoothing.coerceIn(0f, 1f),
         showTicks = showTicks,
         arcRoundCap = arcRoundCap,

@@ -177,6 +177,7 @@ data class GaugeLook(
     val barMidFrom: Double? = null,
     val glow: Float = 0f,
     val scaleGlow: Float = 0f,
+    val needleGlow: Float = 0f,
     val smoothing: Float = 0.5f,
     val showTicks: Boolean = true,
     val arcRoundCap: Boolean = false,
@@ -692,6 +693,13 @@ fun AnalogGauge(
             }
             // 針の影 (文字盤から少し浮いているように、右下へずらしてぼかす)
             if (look.needleShadow) drawSoftShadow(needle, d * 0.012f, d * 0.02f, d * 0.012f, 0.45f * look.shadowStrength)
+            // 針の発光 (針の色で、外側ほど薄く広げる。ぼかしを使わないので軽い)
+            if (look.needleGlow > 0f) {
+                val g = look.needleGlow
+                drawPath(needle, color.copy(alpha = 0.10f * g), style = Stroke(d * 0.045f * g + 2f, join = StrokeJoin.Round, cap = StrokeCap.Round))
+                drawPath(needle, color.copy(alpha = 0.18f * g), style = Stroke(d * 0.026f * g + 2f, join = StrokeJoin.Round, cap = StrokeCap.Round))
+                drawPath(needle, color.copy(alpha = 0.30f * g), style = Stroke(d * 0.012f * g + 1f, join = StrokeJoin.Round, cap = StrokeCap.Round))
+            }
             drawPath(needle, color)
         }
         if (look.showNeedle && look.knobSize > 0f) {

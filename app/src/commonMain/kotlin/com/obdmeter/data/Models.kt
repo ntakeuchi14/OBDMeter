@@ -298,6 +298,8 @@ data class GaugeDesign(
     val glow: Float = 0f,
     /** アナログ: 目盛り・目盛りの数字・名前・単位の発光の強さ (0 = なし〜1) */
     val scaleGlow: Float = 0f,
+    /** アナログ: 針の発光の強さ (0 = なし〜1) */
+    val needleGlow: Float = 0f,
     /** 数値の後ろに消えている 7 セグ (8) をうっすら出す */
     val ghostDigits: Boolean = false,
     val ghostAlpha: Float = 0.15f,
