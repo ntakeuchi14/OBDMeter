@@ -1096,13 +1096,16 @@ private fun ButtonTab(
         }
     }
     Head("ボタンの文字")
-    OutlinedTextField(
-        value = d.label.orEmpty(),
-        onValueChange = { t -> update { it.copy(label = t) } },
-        placeholder = { Text("リセット") },
-        singleLine = true,
-        modifier = Modifier.fillMaxWidth(),
-    )
+    SwitchLine("文字を表示", null, d.showName) { v -> update { it.copy(showName = v) } }
+    if (d.showName) {
+        OutlinedTextField(
+            value = d.label.orEmpty(),
+            onValueChange = { t -> update { it.copy(label = t) } },
+            placeholder = { Text("リセット") },
+            singleLine = true,
+            modifier = Modifier.fillMaxWidth(),
+        )
+    }
     Head("色")
     ColorLine("押したとき (点灯) の色", d.lampOnColor, GaugeColors.Warn) { c -> update { it.copy(lampOnColor = c) } }
     ColorLine("ふだん (消灯) の色", d.lampOffColor, Color(0xFF2A2F36)) { c -> update { it.copy(lampOffColor = c) } }

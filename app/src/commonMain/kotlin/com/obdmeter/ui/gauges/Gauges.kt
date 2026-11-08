@@ -357,7 +357,7 @@ fun GaugeCard(
             GaugeStyle.LAMP -> LampGauge(def, if (unsupported) null else value, unsupported, look, image, Modifier.fillMaxSize(), fonts)
             // ボタン: ランプの見た目で、押した直後だけ点灯する。名前 (表示名) だけ出す
             GaugeStyle.BUTTON -> LampGauge(
-                def, null, false, look.copy(showName = true, showValue = false), image, Modifier.fillMaxSize(), fonts,
+                def, null, false, look.copy(showValue = false, showUnit = false), image, Modifier.fillMaxSize(), fonts,
                 forceOn = buttonOn ?: (peakKey != null && ButtonActions.lit(peakKey)),
             )
             GaugeStyle.TABLE -> TableGauge(
