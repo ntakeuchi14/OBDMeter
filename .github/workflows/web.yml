@@ -25,12 +25,12 @@ jobs:
       - name: Download fonts (Japanese)
         run: |
           mkdir -p app/src/wasmJsMain/resources/fonts
-          curl -fsSL -o app/src/wasmJsMain/resources/fonts/NotoSansJP-Regular.otf \
+          curl -fsSL --retry 6 --retry-delay 10 --retry-all-errors -o app/src/wasmJsMain/resources/fonts/NotoSansJP-Regular.otf \
             https://github.com/notofonts/noto-cjk/raw/main/Sans/SubsetOTF/JP/NotoSansJP-Regular.otf
-          curl -fsSL -o app/src/wasmJsMain/resources/fonts/NotoSansMono-Regular.ttf \
+          curl -fsSL --retry 6 --retry-delay 10 --retry-all-errors -o app/src/wasmJsMain/resources/fonts/NotoSansMono-Regular.ttf \
             https://github.com/notofonts/notofonts.github.io/raw/main/fonts/NotoSansMono/hinted/ttf/NotoSansMono-Regular.ttf
           # Android の標準フォント (Roboto) と同じ文字の形・行の高さにするため
-          curl -fsSL -o roboto.zip https://github.com/googlefonts/roboto/releases/download/v2.138/roboto-unhinted.zip
+          curl -fsSL --retry 6 --retry-delay 10 --retry-all-errors -o roboto.zip https://github.com/googlefonts/roboto/releases/download/v2.138/roboto-unhinted.zip
           unzip -j -o roboto.zip Roboto-Regular.ttf Roboto-Medium.ttf Roboto-Bold.ttf -d app/src/wasmJsMain/resources/fonts
                     ls -la app/src/wasmJsMain/resources/fonts
 
