@@ -410,6 +410,9 @@ class MainViewModel(val core: AppCore) : ViewModel() {
     /** ページの発光の ON / OFF (ボタン) */
     fun setPageGlowOff(id: Long, off: Boolean) = editDashboard(id) { it.copy(glowOff = off) }
 
+    /** ページの発光を今の状態から切り替える (保存されている最新の状態を見て反転する) */
+    fun togglePageGlow(id: Long) = editDashboard(id) { it.copy(glowOff = !it.glowOff) }
+
     /** ページを隠す / 隠すのをやめる */
     fun setDashboardHidden(id: Long, hidden: Boolean) = editDashboard(id) { it.copy(hidden = hidden) }
 

@@ -227,7 +227,7 @@ fun DashboardScreen(vm: MainViewModel, onNavigate: (Screen) -> Unit, onCreateCus
             shown.getOrNull(page)?.let { d ->
                 DashboardCanvas(
                     dashboard = d,
-                    onToggleGlow = { vm.setPageGlowOff(d.id, !d.glowOff) },
+                    onToggleGlow = { vm.togglePageGlow(d.id) },
                     values = values,
                     supported = supported,
                     catalog = catalog,
@@ -540,6 +540,8 @@ private fun DashboardCanvas(
     // ページの背景 (色・柄・画像)。メーターは必ずこの上に描く
     PageBackgroundView(dashboard.background, Modifier.matchParentSize())
     val gaugesNow by rememberUpdatedState(dashboard.gauges)
+    // タップの受け取りは作り直さないので、最新の処理を呼ぶ
+    val toggleGlowNow by rememberUpdatedState(onToggleGlow)
     var cellPx by remember { mutableStateOf(0f to 0f) }
     BoxWithConstraints(Modifier.fillMaxSize().padding(4.dp).then(
         if (editing) Modifier
@@ -548,7 +550,7 @@ private fun DashboardCanvas(
             // 背景の無いメーターが前に重なっていても、見えている部分 (カード・文字盤・ランプなど) があるメーターを優先する
             fun hit(p: Offset): GaugeConfig? = viewHit(gaugesNow, p, cellPx.first, cellPx.second, 2.dp.toPx(), 6.dp.toPx())
             detectTapGestures(
-                onTap = { p -> hit(p)?.takeIf { it.style == GaugeStyle.BUTTON }?.let { com.obdmeter.ui.gauges.ButtonActions.press(it, onToggleGlow) } },
+                onTap = { p -> hit(p)?.takeIf { it.style == GaugeStyle.BUTTON }?.let { com.obdmeter.ui.gauges.ButtonActions.press(it) { toggleGlowNow() } } },
                 onLongPress = { p -> hit(p)?.let { g -> peakResets[g.id] = (peakResets[g.id] ?: 0) + 1 } },
             )
         }
