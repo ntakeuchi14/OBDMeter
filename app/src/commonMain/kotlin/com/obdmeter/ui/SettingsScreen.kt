@@ -167,6 +167,7 @@ fun SettingsScreen(vm: MainViewModel, onBack: () -> Unit, onOpenCustomPids: () -
 
             Section("画面サイズ")
             ScreenSizeSection(vm)
+            GlowLinkSection(vm)
 
             Section("その他")
             if (!isWebApp) SwitchRow(
@@ -590,3 +591,44 @@ private fun PollIntervalSection(vm: MainViewModel, s: AppSettings) {
     }
 }
 
+
+
+/** ライト連動の発光 ON / OFF (車載ナビ。画面が夜用になるのを読む) */
+@Composable
+private fun GlowLinkSection(vm: MainViewModel) {
+    val light = vm.core.platform.displayLight ?: return
+    val settings by vm.settings.collectAsStateWithLifecycle()
+    val now by light.collectAsStateWithLifecycle()
+    Text("ライト連動 (発光の ON / OFF)", fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 12.dp))
+    Text(
+        "車載ナビがライトの点灯で画面を夜用 (暗く) にするのに合わせて、全ページのメーターの発光を切り替えます (ライト ON で発光 ON)。" +
+            "ナビによって、ナイトモードが切り替わるものと、画面の明るさの設定値だけが下がるものがあります。" +
+            "下の「今の状態」がライトの ON / OFF で変わる方を選んでください。切り替わったときだけ変えるので、そのあと発光ボタンで手で切り替えることもできます。",
+        color = GaugeColors.SubText, fontSize = 12.sp,
+    )
+    Text(
+        "今の状態: ナイトモード ${if (now.nightMode) "ON" else "OFF"}・画面の明るさ ${now.brightness ?: "読めません"}" +
+            (com.obdmeter.data.GlowLinkRule.lightOn(now, settings)?.let { if (it) " → ライト ON とみなす" else " → ライト OFF とみなす" } ?: ""),
+        modifier = Modifier.padding(top = 6.dp),
+    )
+    Row(Modifier.horizontalScroll(rememberScrollState()).padding(top = 4.dp)) {
+        com.obdmeter.data.GlowLink.entries.forEach { m ->
+            FilterChip(settings.glowLink == m, { vm.updateSettings { it.copy(glowLink = m) } }, { Text(m.label) }, Modifier.padding(end = 6.dp))
+        }
+    }
+    if (settings.glowLink == com.obdmeter.data.GlowLink.BRIGHTNESS) {
+        Text("この値以下ならライト ON: ${settings.glowLinkBrightness}", modifier = Modifier.padding(top = 6.dp))
+        Slider(
+            value = settings.glowLinkBrightness.toFloat(),
+            onValueChange = { v -> vm.updateSettings { it.copy(glowLinkBrightness = v.roundToInt()) } },
+            valueRange = 0f..255f,
+        )
+        Text("ライト OFF のときと ON のときの「画面の明るさ」の間の値にしてください。", color = GaugeColors.SubText, fontSize = 12.sp)
+    }
+    if (settings.glowLink != com.obdmeter.data.GlowLink.OFF) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text("逆にする (ライト ON で発光 OFF)", Modifier.weight(1f))
+            Switch(settings.glowLinkInvert, { v -> vm.updateSettings { it.copy(glowLinkInvert = v) } })
+        }
+    }
+}

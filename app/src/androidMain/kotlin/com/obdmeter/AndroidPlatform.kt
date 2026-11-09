@@ -22,6 +22,7 @@ import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 /** Android 版の [AppPlatform] (DataStore・SQLite・USB アダプター・端末のセンサー・アプリ内のファイル) */
@@ -35,6 +36,30 @@ class AndroidPlatform(context: Context) : AppPlatform {
     override val deviceSensors get() = sensors
     override val ioDispatcher: CoroutineDispatcher = Dispatchers.IO
     override val minCycleMs: Long = 0
+
+    /** 画面の夜用の状態 (ナイトモード・画面の明るさ)。ナビによって知らせ方が違うので 1 秒ごとに読む */
+    private val _displayLight = kotlinx.coroutines.flow.MutableStateFlow(readDisplayLight())
+    override val displayLight: kotlinx.coroutines.flow.StateFlow<com.obdmeter.DisplayLight> = _displayLight
+
+    init {
+        scope.launch {
+            while (true) {
+                kotlinx.coroutines.delay(1000)
+                _displayLight.value = readDisplayLight()
+            }
+        }
+    }
+
+    private fun readDisplayLight(): com.obdmeter.DisplayLight {
+        val ui = context.getSystemService(Context.UI_MODE_SERVICE) as? android.app.UiModeManager
+        val sysNight = (android.content.res.Resources.getSystem().configuration.uiMode and
+            android.content.res.Configuration.UI_MODE_NIGHT_MASK) == android.content.res.Configuration.UI_MODE_NIGHT_YES
+        val night = sysNight || ui?.nightMode == android.app.UiModeManager.MODE_NIGHT_YES
+        val brightness = runCatching {
+            android.provider.Settings.System.getInt(context.contentResolver, android.provider.Settings.System.SCREEN_BRIGHTNESS)
+        }.getOrNull()
+        return com.obdmeter.DisplayLight(night, brightness)
+    }
 
     override val appVersion: String
         get() = runCatching { context.packageManager.getPackageInfo(context.packageName, 0).versionName }.getOrNull() ?: ""

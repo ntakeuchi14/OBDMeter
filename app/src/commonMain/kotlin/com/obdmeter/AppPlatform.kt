@@ -9,6 +9,9 @@ import com.obdmeter.data.Repository
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.flow.StateFlow
 
+/** 画面の夜用の状態。[nightMode] = Android のナイトモード、[brightness] = 画面の明るさの設定値 (0〜255。読めなければ null) */
+data class DisplayLight(val nightMode: Boolean = false, val brightness: Int? = null)
+
 /** 端末のセンサーの値 (傾き・加速度・テスト信号など) */
 interface DeviceSensorSource {
     val values: StateFlow<Map<String, Double>>
@@ -58,6 +61,9 @@ interface AppPlatform {
     suspend fun imageBytes(name: String): ByteArray?
 
     fun deleteFont(entry: FontEntry)
+
+    /** 画面の夜用の状態 (ライト連動用。読めない環境は null) */
+    val displayLight: StateFlow<DisplayLight>? get() = null
 
     /** 接続テスト (アダプターと車両の応答を順に確かめる)。できない環境なら例外 */
     suspend fun connectionTest(settings: AppSettings, log: CommLogger, out: (String) -> Unit) {

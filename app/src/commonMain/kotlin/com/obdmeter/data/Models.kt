@@ -60,6 +60,12 @@ data class AppSettings(
     val gridStep: Int = Layout.SCALE,
     /** 再現する画面の大きさ "幅x高さx倍率" (空 = 端末・ウィンドウの大きさのまま) */
     val screenSize: String = "",
+    /** ライト (ヘッドライト・スモール) 連動で発光を ON / OFF する方法 */
+    val glowLink: GlowLink = GlowLink.OFF,
+    /** 画面の明るさで判定するとき、この値以下ならライト ON とみなす (0〜255) */
+    val glowLinkBrightness: Int = 100,
+    /** 逆にする (ライト ON で発光 OFF) */
+    val glowLinkInvert: Boolean = false,
     /** 項目ごとの取得周期 (項目キー → ミリ秒)。無い項目は毎回 (遅い項目は 8 回に 1 回) */
     val pollIntervalsMs: Map<String, Int> = emptyMap(),
     /** 最後に表示していたダッシュボードのページ (次の起動時にこのページから始める) */
@@ -94,6 +100,15 @@ enum class GaugeStyle(val label: String) {
     MONITOR("変動監視"),
     /** ボタン: タップで操作する (見た目はランプと同じ) */
     BUTTON("ボタン"),
+}
+
+/** ライト連動で発光を切り替える方法 (車載ナビはライトを点けると画面を夜用にする) */
+enum class GlowLink(val label: String) {
+    OFF("連動しない"),
+    /** Android のナイトモード (ダークモード) が ON になったらライト ON */
+    NIGHT_MODE("ナイトモード"),
+    /** 画面の明るさの設定値が下がったらライト ON */
+    BRIGHTNESS("画面の明るさ"),
 }
 
 /** ボタンを押したときの動作 */

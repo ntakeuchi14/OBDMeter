@@ -20,6 +20,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
@@ -53,6 +54,23 @@ class AppCore(val platform: AppPlatform) {
         repo.settings.stateIn(scope, SharingStarted.Eagerly, AppSettings())
     val dashboards: StateFlow<List<Dashboard>> =
         repo.dashboards.stateIn(scope, SharingStarted.Eagerly, Defaults.dashboards)
+    init {
+        // ライト連動: ナビがライトの点灯で画面を夜用にしたら、全ページの発光を ON にする (消えたら OFF)。
+        // 切り替わったときだけ変えるので、そのあとボタンで手で切り替えることもできる
+        platform.displayLight?.let { light ->
+            scope.launch {
+                kotlinx.coroutines.flow.combine(light, settings) { l, s -> com.obdmeter.data.GlowLinkRule.lightOn(l, s) }
+                    .distinctUntilChanged()
+                    .collect { on ->
+                        if (on == null) return@collect
+                        val glowOff = !on xor settings.value.glowLinkInvert
+                        val pages = repo.dashboards.first()
+                        if (pages.any { it.glowOff != glowOff }) repo.saveDashboards(pages.map { it.copy(glowOff = glowOff) })
+                    }
+            }
+        }
+    }
+
     val customPids: StateFlow<List<CustomPid>> =
         repo.customPids.stateIn(scope, SharingStarted.Eagerly, emptyList())
     val fonts: StateFlow<List<FontEntry>> =
