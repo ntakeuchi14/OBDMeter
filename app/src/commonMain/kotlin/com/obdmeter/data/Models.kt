@@ -125,10 +125,41 @@ enum class ColorPart(val label: String) {
     LABELS("目盛りの数字"),
     NAME("名前"),
     UNIT("単位"),
+    /** 旧: すべての表示形式の数値 (以前の保存データ用。今は下の表示形式ごとのものを使う) */
     VALUE("数値"),
+    VALUE_ANALOG("数値 (アナログ)"),
+    VALUE_BAR("数値 (バー)"),
+    VALUE_DIGITAL("数値 (デジタル)"),
+    VALUE_LAMP("数値 (ランプ)"),
+    VALUE_TABLE("数値 (値テーブル)"),
+    VALUE_MONITOR("数値 (変動監視)"),
     NEEDLE("針"),
     ACCENT("値の弧・バー"),
     PEAK("最大値の印・文字"),
+    ;
+
+    companion object {
+        /** 表示形式ごとの数値 */
+        val VALUES: List<ColorPart> get() = listOf(VALUE_ANALOG, VALUE_BAR, VALUE_DIGITAL, VALUE_LAMP, VALUE_TABLE, VALUE_MONITOR)
+
+        /** 画面で選べるもの (旧「数値」は出さない) */
+        val SELECTABLE: List<ColorPart> get() = entries.filter { it != VALUE }
+
+        /** 旧「数値」を表示形式ごとの数値に置き換える */
+        fun normalize(parts: Collection<ColorPart>): Set<ColorPart> =
+            if (VALUE in parts) (parts - VALUE + VALUES).toSet() else parts.toSet()
+
+        /** 表示形式 [style] の数値の部分 */
+        fun valueOf(style: GaugeStyle): ColorPart? = when (style) {
+            GaugeStyle.ANALOG -> VALUE_ANALOG
+            GaugeStyle.BAR -> VALUE_BAR
+            GaugeStyle.DIGITAL -> VALUE_DIGITAL
+            GaugeStyle.LAMP -> VALUE_LAMP
+            GaugeStyle.TABLE -> VALUE_TABLE
+            GaugeStyle.MONITOR -> VALUE_MONITOR
+            else -> null
+        }
+    }
 }
 
 /** 数値の代わりに出す文字。計測値 x が条件 [condition] (例: `x == 0`) に合うとき、数値の代わりに [text] を出す */
@@ -347,7 +378,7 @@ data class GaugeDesign(
     /** 発光の ON / OFF ボタン: 発光 OFF のときの前景色 (null = 各メーターの色のまま) */
     val glowOffColor: Long? = null,
     /** 発光の ON / OFF ボタン: 前景色を変える部分 */
-    val colorParts: List<ColorPart> = listOf(ColorPart.TICKS, ColorPart.LABELS, ColorPart.NAME, ColorPart.UNIT, ColorPart.VALUE),
+    val colorParts: List<ColorPart> = listOf(ColorPart.TICKS, ColorPart.LABELS, ColorPart.NAME, ColorPart.UNIT) + ColorPart.VALUES,
     /** 数値の代わりに出す文字 (上から順に見て、最初に条件に合ったもの。例: ギアが 0 のとき N) */
     val valueTexts: List<ValueText> = emptyList(),
     /** 点灯時・消灯時の色 (null = 既定: 赤 / 暗い灰色) */

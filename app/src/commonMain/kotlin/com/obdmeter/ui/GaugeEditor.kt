@@ -1084,13 +1084,20 @@ private fun ButtonTab(
         ColorLine("発光 ON のときの前景色", d.glowOnColor, GaugeColors.Text) { c -> update { it.copy(glowOnColor = c) } }
         ColorLine("発光 OFF のときの前景色", d.glowOffColor, GaugeColors.Text) { c -> update { it.copy(glowOffColor = c) } }
         Text("前景色を変える部分", fontSize = 14.sp, modifier = Modifier.padding(top = 12.dp, bottom = 4.dp))
-        com.obdmeter.data.ColorPart.entries.chunked(4).forEach { row ->
-            Row(Modifier.horizontalScroll(rememberScrollState())) {
-                row.forEach { p ->
-                    val on = p in d.colorParts
-                    FilterChip(on, {
-                        update { it.copy(colorParts = if (on) it.colorParts - p else com.obdmeter.data.ColorPart.entries.filter { e -> e in it.colorParts || e == p }) }
-                    }, { Text((if (on) "✓ " else "") + p.label) }, Modifier.padding(end = 6.dp))
+        val parts = com.obdmeter.data.ColorPart.normalize(d.colorParts)
+        fun toggle(p: com.obdmeter.data.ColorPart) = update {
+            val cur = com.obdmeter.data.ColorPart.normalize(it.colorParts)
+            val next = if (p in cur) cur - p else cur + p
+            it.copy(colorParts = com.obdmeter.data.ColorPart.SELECTABLE.filter { e -> e in next })
+        }
+        val (values, others) = com.obdmeter.data.ColorPart.SELECTABLE.partition { it in com.obdmeter.data.ColorPart.VALUES }
+        listOf(others, values).forEach { group ->
+            group.chunked(4).forEach { row ->
+                Row(Modifier.horizontalScroll(rememberScrollState())) {
+                    row.forEach { p ->
+                        val on = p in parts
+                        FilterChip(on, { toggle(p) }, { Text((if (on) "✓ " else "") + p.label) }, Modifier.padding(end = 6.dp))
+                    }
                 }
             }
         }

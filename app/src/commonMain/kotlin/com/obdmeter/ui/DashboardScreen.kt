@@ -770,7 +770,7 @@ fun GaugeView(
             unsupported = isUnsupported(def, supported) && g.fallbackKey == null,
             look = g.look(def).let { if (noCard) it.copy(showCard = false) else it }
                 .let { if (glowOff) it.copy(glow = 0f, scaleGlow = 0f, needleGlow = 0f) else it }
-                .let { l -> if (foreground != null && g.style != GaugeStyle.BUTTON) l.withForeground(foreground.first, foreground.second) else l },
+                .let { l -> if (foreground != null && g.style != GaugeStyle.BUTTON) l.withForeground(foreground.first, foreground.second, g.style) else l },
             // 発光の ON / OFF ボタンは、発光している間ずっと点灯
             buttonOn = if (g.style == GaugeStyle.BUTTON && g.design.buttonAction == com.obdmeter.data.ButtonAction.TOGGLE_GLOW) !glowOff else null,
             modifier = Modifier.fillMaxSize(),
@@ -1103,18 +1103,25 @@ fun com.obdmeter.data.Dashboard.foreground(): Pair<Color, Set<com.obdmeter.data.
     val b = gauges.firstOrNull { it.style == GaugeStyle.BUTTON && it.design.buttonAction == com.obdmeter.data.ButtonAction.TOGGLE_GLOW }
         ?: return null
     val c = (if (glowOff) b.design.glowOffColor else b.design.glowOnColor) ?: return null
-    return Color(c) to b.design.colorParts.toSet()
+    return Color(c) to com.obdmeter.data.ColorPart.normalize(b.design.colorParts)
 }
 
 /** 前景色 [c] を、選んだ部分 [parts] にまとめて使う */
-fun com.obdmeter.ui.gauges.GaugeLook.withForeground(c: Color, parts: Set<com.obdmeter.data.ColorPart>): com.obdmeter.ui.gauges.GaugeLook {
+fun com.obdmeter.ui.gauges.GaugeLook.withForeground(
+    c: Color, parts: Set<com.obdmeter.data.ColorPart>, style: GaugeStyle,
+): com.obdmeter.ui.gauges.GaugeLook {
     var l = this
+    // 数値は表示形式ごとに選ぶ (このメーターの表示形式のものだけ見る)
+    val valuePart = com.obdmeter.data.ColorPart.valueOf(style)
     for (p in parts) l = when (p) {
         com.obdmeter.data.ColorPart.TICKS -> l.copy(tickColor = c)
         com.obdmeter.data.ColorPart.LABELS -> l.copy(labelColor = c)
         com.obdmeter.data.ColorPart.NAME -> l.copy(nameColor = c)
         com.obdmeter.data.ColorPart.UNIT -> l.copy(unitColor = c)
         com.obdmeter.data.ColorPart.VALUE -> l.copy(valueColor = c)
+        com.obdmeter.data.ColorPart.VALUE_ANALOG, com.obdmeter.data.ColorPart.VALUE_BAR, com.obdmeter.data.ColorPart.VALUE_DIGITAL,
+        com.obdmeter.data.ColorPart.VALUE_LAMP, com.obdmeter.data.ColorPart.VALUE_TABLE, com.obdmeter.data.ColorPart.VALUE_MONITOR ->
+            if (p == valuePart) l.copy(valueColor = c) else l
         com.obdmeter.data.ColorPart.NEEDLE -> l.copy(needleColor = c)
         com.obdmeter.data.ColorPart.ACCENT -> l.copy(accent = c)
         com.obdmeter.data.ColorPart.PEAK -> l.copy(peakColor = c, peakTextColor = c)
