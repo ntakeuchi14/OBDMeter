@@ -59,6 +59,11 @@ class AppCore(val platform: AppPlatform) {
         // 切り替わったときだけ変えるので、そのあとボタンで手で切り替えることもできる
         platform.displayLight?.let { light ->
             scope.launch {
+                settings.collect { s ->
+                    platform.watchSystemValue(if (s.glowLink == com.obdmeter.data.GlowLink.SYSTEM_VALUE) s.glowLinkKey else "")
+                }
+            }
+            scope.launch {
                 kotlinx.coroutines.flow.combine(light, settings) { l, s -> com.obdmeter.data.GlowLinkRule.lightOn(l, s) }
                     .distinctUntilChanged()
                     .collect { on ->

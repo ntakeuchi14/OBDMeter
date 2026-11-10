@@ -13,6 +13,8 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.TextButton
+import androidx.compose.runtime.rememberCoroutineScope
+import kotlinx.coroutines.launch
 import androidx.compose.foundation.horizontalScroll
 import com.obdmeter.data.ImportMode
 import androidx.compose.foundation.clickable
@@ -625,10 +627,78 @@ private fun GlowLinkSection(vm: MainViewModel) {
         )
         Text("ライト OFF のときと ON のときの「画面の明るさ」の間の値にしてください。", color = GaugeColors.SubText, fontSize = 12.sp)
     }
+    if (settings.glowLink == com.obdmeter.data.GlowLink.SYSTEM_VALUE) {
+        Text(
+            if (settings.glowLinkKey.isEmpty()) "まだ選んでいません。下の「ライトで変わる値を調べる」で選んでください。"
+            else "${settings.glowLinkKey} が「${settings.glowLinkValue}」のときライト ON (今: ${now.custom ?: "読めません"})",
+            fontSize = 13.sp, modifier = Modifier.padding(top = 6.dp),
+        )
+    }
+    GlowLinkProbe(vm)
     if (settings.glowLink != com.obdmeter.data.GlowLink.OFF) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text("逆にする (ライト ON で発光 OFF)", Modifier.weight(1f))
             Switch(settings.glowLinkInvert, { v -> vm.updateSettings { it.copy(glowLinkInvert = v) } })
+        }
+    }
+}
+
+
+/**
+ * ライト連動の調査: 30 秒の間、端末の設定値・システムの値を 1 秒ごとに読み、変わったものを並べる。
+ * その間にライトを ON / OFF してもらい、ライトに合わせて変わった値を選ぶ
+ */
+@Composable
+private fun GlowLinkProbe(vm: MainViewModel) {
+    val platform = vm.core.platform
+    val scope = rememberCoroutineScope()
+    var left by remember { mutableStateOf(0) }
+    var changes by remember { mutableStateOf<List<Pair<String, List<String>>>?>(null) }
+    OutlinedButton(
+        enabled = left == 0,
+        onClick = {
+            scope.launch {
+                val base = platform.systemValues() ?: return@launch
+                val seen = LinkedHashMap<String, MutableList<String>>()
+                for (i in 30 downTo 1) {
+                    left = i
+                    kotlinx.coroutines.delay(1000)
+                    val now = platform.systemValues() ?: break
+                    for ((k, v) in now) {
+                        val b = base[k] ?: ""
+                        if (v != b || k in seen) {
+                            val list = seen.getOrPut(k) { mutableListOf(b) }
+                            if (list.last() != v) list += v
+                        }
+                    }
+                }
+                left = 0
+                // 行ったり来たりした (2 種類の値の) ものほど上に
+                changes = seen.entries.map { it.key to it.value }
+                    .sortedWith(compareBy<Pair<String, List<String>>> { if (it.second.distinct().size == 2) 0 else 1 }.thenByDescending { it.second.size })
+            }
+        },
+        modifier = Modifier.padding(top = 8.dp),
+    ) { Text(if (left > 0) "調べています… ライトを ON / OFF してください (残り $left 秒)" else "ライトで変わる値を調べる (30 秒)") }
+    Text(
+        "押してから 30 秒の間に、ライトを 2〜3 回 ON / OFF してください。その間に変わった端末の値を下に並べます。" +
+            "ライトに合わせて変わったものを見つけたら、ライト ON のときの値を押すと、その値で連動します。",
+        color = GaugeColors.SubText, fontSize = 12.sp,
+    )
+    changes?.let { list ->
+        if (list.isEmpty()) Text("変わった値はありませんでした (この端末では、アプリから見える値ではライトが分かりません)", fontSize = 13.sp, modifier = Modifier.padding(top = 4.dp))
+        list.take(30).forEach { (key, values) ->
+            Column(Modifier.padding(top = 6.dp)) {
+                Text(key, fontSize = 13.sp, fontWeight = FontWeight.Medium)
+                Text(values.joinToString(" → ").take(200), fontSize = 12.sp, color = GaugeColors.SubText)
+                Row(Modifier.horizontalScroll(rememberScrollState())) {
+                    values.distinct().take(4).forEach { v ->
+                        TextButton(onClick = {
+                            vm.updateSettings { it.copy(glowLink = com.obdmeter.data.GlowLink.SYSTEM_VALUE, glowLinkKey = key, glowLinkValue = v) }
+                        }) { Text("「${v.take(20)}」のときライト ON") }
+                    }
+                }
+            }
         }
     }
 }

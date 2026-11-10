@@ -10,7 +10,12 @@ import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.flow.StateFlow
 
 /** 画面の夜用の状態。[nightMode] = Android のナイトモード、[brightness] = 画面の明るさの設定値 (0〜255。読めなければ null) */
-data class DisplayLight(val nightMode: Boolean = false, val brightness: Int? = null)
+data class DisplayLight(
+    val nightMode: Boolean = false,
+    val brightness: Int? = null,
+    /** 見ている端末の値 ([AppPlatform.watchSystemValue]) の今の値 */
+    val custom: String? = null,
+)
 
 /** 端末のセンサーの値 (傾き・加速度・テスト信号など) */
 interface DeviceSensorSource {
@@ -64,6 +69,12 @@ interface AppPlatform {
 
     /** 画面の夜用の状態 (ライト連動用。読めない環境は null) */
     val displayLight: StateFlow<DisplayLight>? get() = null
+
+    /** 端末の設定値・システムの値をすべて読む (ライト連動の調査用。名前は "system:…" など)。読めない環境は null */
+    suspend fun systemValues(): Map<String, String>? = null
+
+    /** [displayLight] の custom で見る端末の値 (空 = 見ない) */
+    fun watchSystemValue(key: String) {}
 
     /** 接続テスト (アダプターと車両の応答を順に確かめる)。できない環境なら例外 */
     suspend fun connectionTest(settings: AppSettings, log: CommLogger, out: (String) -> Unit) {

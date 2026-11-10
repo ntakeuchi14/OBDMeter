@@ -48,6 +48,8 @@ class DataStoreRepository(private val context: Context) : Repository {
         val GLOW_LINK = stringPreferencesKey("glow_link")
         val GLOW_LINK_BRIGHTNESS = intPreferencesKey("glow_link_brightness")
         val GLOW_LINK_INVERT = booleanPreferencesKey("glow_link_invert")
+        val GLOW_LINK_KEY = stringPreferencesKey("glow_link_key")
+        val GLOW_LINK_VALUE = stringPreferencesKey("glow_link_value")
         val DASHBOARDS = stringPreferencesKey("dashboards_json")
         val CUSTOM_PIDS = stringPreferencesKey("custom_pids_json")
         val FONTS = stringPreferencesKey("fonts_json")
@@ -115,6 +117,8 @@ class DataStoreRepository(private val context: Context) : Repository {
             p[Keys.GLOW_LINK] = s.glowLink.name
             p[Keys.GLOW_LINK_BRIGHTNESS] = s.glowLinkBrightness
             p[Keys.GLOW_LINK_INVERT] = s.glowLinkInvert
+            p[Keys.GLOW_LINK_KEY] = s.glowLinkKey
+            p[Keys.GLOW_LINK_VALUE] = s.glowLinkValue
             p[Keys.POLL_INTERVALS] = json.encodeToString(s.pollIntervalsMs)
         }
     }
@@ -156,6 +160,8 @@ class DataStoreRepository(private val context: Context) : Repository {
             glowLink = this[Keys.GLOW_LINK]?.let { n -> com.obdmeter.data.GlowLink.entries.firstOrNull { it.name == n } } ?: d.glowLink,
             glowLinkBrightness = this[Keys.GLOW_LINK_BRIGHTNESS] ?: d.glowLinkBrightness,
             glowLinkInvert = this[Keys.GLOW_LINK_INVERT] ?: d.glowLinkInvert,
+            glowLinkKey = this[Keys.GLOW_LINK_KEY] ?: d.glowLinkKey,
+            glowLinkValue = this[Keys.GLOW_LINK_VALUE] ?: d.glowLinkValue,
             pollIntervalsMs = this[Keys.POLL_INTERVALS]
                 ?.let { runCatching { json.decodeFromString<Map<String, Int>>(it) }.getOrNull() }
                 ?: d.pollIntervalsMs,

@@ -9,5 +9,6 @@ object GlowLinkRule {
         GlowLink.OFF -> null
         GlowLink.NIGHT_MODE -> l.nightMode
         GlowLink.BRIGHTNESS -> l.brightness?.let { it <= s.glowLinkBrightness }
+        GlowLink.SYSTEM_VALUE -> if (s.glowLinkKey.isEmpty()) null else l.custom?.let { it == s.glowLinkValue }
     }
 }

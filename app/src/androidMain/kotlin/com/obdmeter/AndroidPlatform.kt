@@ -50,6 +50,54 @@ class AndroidPlatform(context: Context) : AppPlatform {
         }
     }
 
+    @Volatile private var watchKey = ""
+
+    override fun watchSystemValue(key: String) {
+        watchKey = key
+        _displayLight.value = readDisplayLight()
+    }
+
+    override suspend fun systemValues(): Map<String, String> = withContext(Dispatchers.IO) {
+        val out = HashMap<String, String>()
+        val cr = context.contentResolver
+        for ((prefix, uri) in listOf(
+            "system" to android.provider.Settings.System.CONTENT_URI,
+            "global" to android.provider.Settings.Global.CONTENT_URI,
+            "secure" to android.provider.Settings.Secure.CONTENT_URI,
+        )) {
+            runCatching {
+                cr.query(uri, arrayOf("name", "value"), null, null, null)?.use { c ->
+                    while (c.moveToNext()) out["$prefix:${c.getString(0)}"] = c.getString(1) ?: ""
+                }
+            }
+        }
+        // システムのプロパティ (getprop の一覧)
+        runCatching {
+            val p = Runtime.getRuntime().exec("getprop")
+            p.inputStream.bufferedReader().useLines { lines ->
+                val re = Regex("""^\[(.*)]: \[(.*)]$""")
+                lines.forEach { l -> re.find(l)?.let { m -> out["prop:${m.groupValues[1]}"] = m.groupValues[2] } }
+            }
+            p.waitFor()
+        }
+        out
+    }
+
+    /** 端末の値を 1 つ読む ("system:名前" など) */
+    private fun readSystemValue(key: String): String? {
+        val name = key.substringAfter(':')
+        val cr = context.contentResolver
+        return runCatching {
+            when (key.substringBefore(':')) {
+                "system" -> android.provider.Settings.System.getString(cr, name)
+                "global" -> android.provider.Settings.Global.getString(cr, name)
+                "secure" -> android.provider.Settings.Secure.getString(cr, name)
+                "prop" -> Class.forName("android.os.SystemProperties").getMethod("get", String::class.java).invoke(null, name) as? String
+                else -> null
+            }
+        }.getOrNull()
+    }
+
     private fun readDisplayLight(): com.obdmeter.DisplayLight {
         val ui = context.getSystemService(Context.UI_MODE_SERVICE) as? android.app.UiModeManager
         val sysNight = (android.content.res.Resources.getSystem().configuration.uiMode and
@@ -58,7 +106,8 @@ class AndroidPlatform(context: Context) : AppPlatform {
         val brightness = runCatching {
             android.provider.Settings.System.getInt(context.contentResolver, android.provider.Settings.System.SCREEN_BRIGHTNESS)
         }.getOrNull()
-        return com.obdmeter.DisplayLight(night, brightness)
+        val key = watchKey
+        return com.obdmeter.DisplayLight(night, brightness, if (key.isEmpty()) null else readSystemValue(key))
     }
 
     override val appVersion: String

@@ -66,6 +66,10 @@ data class AppSettings(
     val glowLinkBrightness: Int = 100,
     /** 逆にする (ライト ON で発光 OFF) */
     val glowLinkInvert: Boolean = false,
+    /** 端末の値で判定するときの値の名前 ("system:名前" / "global:名前" / "secure:名前" / "prop:名前") */
+    val glowLinkKey: String = "",
+    /** 端末の値がこれのときライト ON */
+    val glowLinkValue: String = "",
     /** 項目ごとの取得周期 (項目キー → ミリ秒)。無い項目は毎回 (遅い項目は 8 回に 1 回) */
     val pollIntervalsMs: Map<String, Int> = emptyMap(),
     /** 最後に表示していたダッシュボードのページ (次の起動時にこのページから始める) */
@@ -109,6 +113,8 @@ enum class GlowLink(val label: String) {
     NIGHT_MODE("ナイトモード"),
     /** 画面の明るさの設定値が下がったらライト ON */
     BRIGHTNESS("画面の明るさ"),
+    /** 端末の設定値・システムの値のうち、調べて選んだもの ([AppSettings.glowLinkKey]) が決めた値になったらライト ON */
+    SYSTEM_VALUE("端末の値 (調べて選ぶ)"),
 }
 
 /** ボタンを押したときの動作 */
