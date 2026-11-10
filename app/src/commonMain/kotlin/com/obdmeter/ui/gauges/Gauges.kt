@@ -643,7 +643,7 @@ fun AnalogGauge(
                 shadow = glowShadow(vColor, look.glow, vSize))
             if (look.ghostDigits && !unsupported) {
                 // 消えている 7 セグ (8) を中央に置き、数値はその右端にそろえる
-                val ghost = tm.measure(ghostText(def), style.copy(color = look.valueColor.copy(alpha = look.ghostAlpha), shadow = null))
+                val ghost = tm.measure(ghostText(def), style.copy(color = look.valueColor.copy(alpha = look.ghostAlpha), shadow = androidx.compose.ui.graphics.Shadow.None))
                 val gx = valueX - ghost.size.width / 2f
                 val gy = valueY - ghost.size.height / 2f
                 drawTextHit(ghost, topLeft = Offset(gx, gy))
@@ -798,7 +798,7 @@ fun BarGauge(
             val valueRight = w - unitLayout.size.width - 10f + dx
             if (look.ghostDigits && !unsupported) {
                 // 消えている 7 セグ (8) を後ろにうっすら
-                val ghost = tm.measure(ghostText(def), valueStyle.copy(color = look.valueColor.copy(alpha = look.ghostAlpha), shadow = null))
+                val ghost = tm.measure(ghostText(def), valueStyle.copy(color = look.valueColor.copy(alpha = look.ghostAlpha), shadow = androidx.compose.ui.graphics.Shadow.None))
                 drawTextHit(ghost, topLeft = Offset(valueRight - ghost.size.width, valueY))
             }
             drawTextHit(valueLayout, topLeft = Offset(valueRight - valueLayout.size.width, valueY))
@@ -810,8 +810,9 @@ fun BarGauge(
 
 
 /** 発光のにじみ (文字の影) */
-internal fun glowShadow(color: Color, glow: Float, size: Float): androidx.compose.ui.graphics.Shadow? =
-    if (glow <= 0f) null else androidx.compose.ui.graphics.Shadow(color.copy(alpha = 0.9f), Offset.Zero, size * 0.12f * glow + 2f)
+// 発光なしは null ではなく Shadow.None にする (Android は null だと前に描いた文字の光が残ることがある)
+internal fun glowShadow(color: Color, glow: Float, size: Float): androidx.compose.ui.graphics.Shadow =
+    if (glow <= 0f) androidx.compose.ui.graphics.Shadow.None else androidx.compose.ui.graphics.Shadow(color.copy(alpha = 0.9f), Offset.Zero, size * 0.12f * glow + 2f)
 
 /**
  * バー本体。直線 (角度付き) か弧、実線か破線 (マス)、先細り、範囲ごとの色分け、発光に対応する。
@@ -1075,7 +1076,7 @@ fun DigitalGauge(
             val text = if (unsupported) "非対応" else look.formatValue(def, value)
             if (look.ghostDigits && !unsupported) {
                 // 消えている 7 セグ (8) を中央に置き、数値はその右端にそろえる
-                val gs = style.copy(color = look.valueColor.copy(alpha = look.ghostAlpha), shadow = null)
+                val gs = style.copy(color = look.valueColor.copy(alpha = look.ghostAlpha), shadow = androidx.compose.ui.graphics.Shadow.None)
                 var ghost = tm.measure(ghostText(def), gs)
                 var vs = style
                 val maxW = size.width * 0.96f
