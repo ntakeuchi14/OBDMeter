@@ -129,9 +129,33 @@ internal object BmwItems {
         }
     }
 
+    /** ライト連動で使う、FRM のイルミネーション (KL58G) の項目 */
+    const val FRM_LIGHT_KEY = "BMW_FRM_KL58G"
+
+    /**
+     * FRM2 (FRM_87.prg) のランプ出力の状態: KWP 30 02 01 (全 PWM 出力の調光値) を FRM (アドレス 72) に問い合わせる。
+     * 応答のデータ部はランプごとに 3 バイトで、先頭 2 バイト (調光値) が 0 でなければ点灯 (ジョブ STATUS_LAMPEN_DIGITAL)。
+     * 読むだけで書き込みはしない。FRM を何度も起こさないよう、ゆっくり (slow) 読む
+     */
+    private val frmLampRequest = PidRequest(0x30, intArrayOf(0x02, 0x01), header = "6F1", canExtAddress = "72")
+
+    private fun frmLamp(key: String, name: String, short: String, pos: Int) = PidDef(
+        key = key, name = "$name (BMW FRM)", shortName = short, unit = "", min = 0.0, max = 1.0,
+        kind = PidDef.Kind.REQUEST, request = frmLampRequest, minBytes = pos + 2, slow = true,
+        decode = { d -> if (((d[pos] shl 8) or d[pos + 1]) != 0) 1.0 else 0.0 },
+    )
+
+    private fun frmItems(): List<PidDef> = listOf(
+        frmLamp(FRM_LIGHT_KEY, "ライト点灯 (イルミネーション KL58G)", "ライト", 88),
+        frmLamp("BMW_FRM_BEGRL", "スモール (車幅灯 左)", "スモール", 13),
+        frmLamp("BMW_FRM_AL", "ロービーム (左)", "ロービーム", 7),
+        frmLamp("BMW_FRM_FL", "ハイビーム (左)", "ハイビーム", 1),
+        frmLamp("BMW_FRM_NSW", "フォグ (左)", "フォグ", 19),
+    )
+
     /** BMW 固有の項目すべて (手で調整した項目 → 測定値一覧 → 状態読み出し → 計算項目) */
     val ALL: List<PidDef> by lazy {
-        listOf(oilLevelNow(), exhaustFlap()) + (1..6).map { misfireLife(it) } + listOf(
+        listOf(oilLevelNow(), exhaustFlap()) + (1..6).map { misfireLife(it) } + frmItems() + listOf(
             bmw("OIL_LEVEL_LONG", "オイルレベル 長期平均 (BMW)", "オイル量平均", "mm", 0.0, 75.0, 0x4400, 1, decimals = 1) { it[0] * OIL_LEVEL_STEP },
             bmw("BMW_COOLANT", "水温 (BMW)", "水温", "°C", 40.0, 130.0, 0x581F, 1, warnAbove = 112.0) { it[0] * 0.75 - 48 },
             bmw("BMW_BATTERY", "バッテリー電圧 (BMW)", "電圧", "V", 10.0, 16.0, 0x460A, 2, decimals = 1, warnBelow = 12.0) { u16(it) * 0.015 },

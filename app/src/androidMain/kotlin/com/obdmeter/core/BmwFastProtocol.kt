@@ -85,7 +85,9 @@ class BmwFastProtocol(
      * BMW 独自の値は Mode 22 (ReadDataByIdentifier) や Mode 21 で読めることが多い。
      */
     override fun query(request: PidRequest): IntArray? {
+        // 宛先: ヘッダーが 1 バイトのアドレスならそれ、BMW 方式 (6F1 + 拡張アドレス) なら拡張アドレス (例: 72 = FRM)
         val target = request.header.takeIf { it.isNotEmpty() }?.toIntOrNull(16)?.takeIf { it in 0..0xFF }
+            ?: request.canExtAddress.takeIf { request.header.equals("6F1", true) }?.toIntOrNull(16)?.takeIf { it in 0..0xFF }
             ?: options.targetAddress
         // 読む前の準備 (測定値ブロックの登録など)。BMW-FAST は長い要求もそのまま送れる
         val key = request.setup.joinToString(";") { Hex.of(it) }

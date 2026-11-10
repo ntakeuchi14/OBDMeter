@@ -54,28 +54,6 @@ class AppCore(val platform: AppPlatform) {
         repo.settings.stateIn(scope, SharingStarted.Eagerly, AppSettings())
     val dashboards: StateFlow<List<Dashboard>> =
         repo.dashboards.stateIn(scope, SharingStarted.Eagerly, Defaults.dashboards)
-    init {
-        // ライト連動: ナビがライトの点灯で画面を夜用にしたら、全ページの発光を ON にする (消えたら OFF)。
-        // 切り替わったときだけ変えるので、そのあとボタンで手で切り替えることもできる
-        platform.displayLight?.let { light ->
-            scope.launch {
-                settings.collect { s ->
-                    platform.watchSystemValue(if (s.glowLink == com.obdmeter.data.GlowLink.SYSTEM_VALUE) s.glowLinkKey else "")
-                }
-            }
-            scope.launch {
-                kotlinx.coroutines.flow.combine(light, settings) { l, s -> com.obdmeter.data.GlowLinkRule.lightOn(l, s) }
-                    .distinctUntilChanged()
-                    .collect { on ->
-                        if (on == null) return@collect
-                        val glowOff = !on xor settings.value.glowLinkInvert
-                        val pages = repo.dashboards.first()
-                        if (pages.any { it.glowOff != glowOff }) repo.saveDashboards(pages.map { it.copy(glowOff = glowOff) })
-                    }
-            }
-        }
-    }
-
     val customPids: StateFlow<List<CustomPid>> =
         repo.customPids.stateIn(scope, SharingStarted.Eagerly, emptyList())
     val fonts: StateFlow<List<FontEntry>> =
@@ -98,6 +76,31 @@ class AppCore(val platform: AppPlatform) {
         val car = if (st.connectionType == com.obdmeter.data.ConnectionType.SIMULATOR) demoClamp(car0) else car0
         if (dev.isEmpty()) car else car + dev
     }.stateIn(scope, SharingStarted.Eagerly, emptyMap())
+
+    init {
+        // ※ values より後ろに置く (前に置くと、まだ作られていない values を読んで落ちる)
+        // ライト連動: ナビがライトの点灯で画面を夜用にしたら、全ページの発光を ON にする (消えたら OFF)。
+        // 切り替わったときだけ変えるので、そのあとボタンで手で切り替えることもできる
+        platform.displayLight?.let { light ->
+            scope.launch {
+                settings.collect { s ->
+                    platform.watchSystemValue(if (s.glowLink == com.obdmeter.data.GlowLink.SYSTEM_VALUE) s.glowLinkKey else "")
+                }
+            }
+            scope.launch {
+                kotlinx.coroutines.flow.combine(light, settings, values) { l, s, v ->
+                    com.obdmeter.data.GlowLinkRule.lightOn(l, s, v[com.obdmeter.core.BmwItems.FRM_LIGHT_KEY])
+                }
+                    .distinctUntilChanged()
+                    .collect { on ->
+                        if (on == null) return@collect
+                        val glowOff = !on xor settings.value.glowLinkInvert
+                        val pages = repo.dashboards.first()
+                        if (pages.any { it.glowOff != glowOff }) repo.saveDashboards(pages.map { it.copy(glowOff = glowOff) })
+                    }
+            }
+        }
+    }
 
     private fun demoClamp(v: Map<String, Double>): Map<String, Double> {
         val ranges = com.obdmeter.core.SimulatorRanges.ranges
@@ -179,7 +182,11 @@ class AppCore(val platform: AppPlatform) {
         // 画面に出ているページ (アプリ / フロート) の項目だけを読み出す
         scope.launch {
             combine(dashboards, catalog, appVisible, appPage, floatPage) { pages, cat, visible, app, float ->
-                ReadPlan.activeItems(ReadPlan.shownPages(pages, visible, app, float), cat)
+                ReadPlan.activeItems(ReadPlan.shownPages(pages, visible, app, float), cat) to cat
+            }.combine(settings) { (r, cat), st ->
+                // ライト連動で車のライトを使うときは、FRM のランプの状態も読む
+                val extra = if (st.glowLink == com.obdmeter.data.GlowLink.CAR_LIGHT) listOfNotNull(cat.get(com.obdmeter.core.BmwItems.FRM_LIGHT_KEY)) else emptyList()
+                (r.first + extra).distinctBy { it.key } to r.second
             }.collect { (pids, fallbacks) ->
                 // 端末のセンサーの項目は車に問い合わせない
                 session.activePids = pids.filter { !DeviceItems.isDevice(it) }

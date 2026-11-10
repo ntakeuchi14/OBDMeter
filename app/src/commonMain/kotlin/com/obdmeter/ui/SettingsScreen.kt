@@ -634,6 +634,18 @@ private fun GlowLinkSection(vm: MainViewModel) {
             fontSize = 13.sp, modifier = Modifier.padding(top = 6.dp),
         )
     }
+    if (settings.glowLink == com.obdmeter.data.GlowLink.CAR_LIGHT) {
+        val values by vm.core.values.collectAsStateWithLifecycle()
+        val v = values[com.obdmeter.core.BmwItems.FRM_LIGHT_KEY]
+        Text(
+            "車のライト (FRM の KL58G): " + when { v == null -> "まだ読めていません (車と接続中に読みます)"; v >= 0.5 -> "ON"; else -> "OFF" },
+            fontSize = 13.sp, modifier = Modifier.padding(top = 6.dp),
+        )
+        Text(
+            "FRM (FRM2 / FRM_87) にランプの状態を問い合わせて読みます (読むだけで書き込みはしません。数回に 1 回のゆっくりした間隔で読みます)。",
+            color = GaugeColors.SubText, fontSize = 12.sp,
+        )
+    }
     GlowLinkProbe(vm)
     if (settings.glowLink != com.obdmeter.data.GlowLink.OFF) {
         Row(verticalAlignment = Alignment.CenterVertically) {

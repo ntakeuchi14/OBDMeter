@@ -115,6 +115,8 @@ enum class GlowLink(val label: String) {
     BRIGHTNESS("画面の明るさ"),
     /** 端末の設定値・システムの値のうち、調べて選んだもの ([AppSettings.glowLinkKey]) が決めた値になったらライト ON */
     SYSTEM_VALUE("端末の値 (調べて選ぶ)"),
+    /** 車の FRM (フットウェルモジュール) からライト (イルミネーション = KL58G) の状態を読む */
+    CAR_LIGHT("車のライト (FRM)"),
 }
 
 /** ボタンを押したときの動作 */
