@@ -1464,7 +1464,10 @@ object ButtonActions {
 
 /** 文字を描いて、その範囲を [TextHits] に残す (通常表示中のタップで、文字の部分も「見えている部分」にするため) */
 internal fun DrawScope.drawTextHit(layout: androidx.compose.ui.text.TextLayoutResult, topLeft: Offset) {
-    drawText(layout, topLeft = topLeft)
+    // 色と光 (影) は毎回はっきり指定する。文字の配置は大きさ・フォントが同じなら使い回されるので、
+    // 指定しないと前に描いたときの色・光が残ることがある (発光を OFF にしても光が残るなど)
+    val st = layout.layoutInput.style
+    drawText(layout, color = st.color, topLeft = topLeft, shadow = st.shadow ?: androidx.compose.ui.graphics.Shadow.None)
     TextHits.current?.add(androidx.compose.ui.geometry.Rect(topLeft, androidx.compose.ui.geometry.Size(layout.size.width.toFloat(), layout.size.height.toFloat())))
 }
 
