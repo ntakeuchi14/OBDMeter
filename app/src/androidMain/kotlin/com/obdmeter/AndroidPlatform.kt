@@ -38,6 +38,8 @@ class AndroidPlatform(context: Context) : AppPlatform {
     override val minCycleMs: Long = 0
 
     /** 画面の夜用の状態 (ナイトモード・画面の明るさ)。ナビによって知らせ方が違うので 1 秒ごとに読む */
+    // ※ readDisplayLight() より前に初期化しておく (後ろに書くと、最初に読むときにまだ null で落ちる)
+    @Volatile private var watchKey: String = ""
     private val _displayLight = kotlinx.coroutines.flow.MutableStateFlow(readDisplayLight())
     override val displayLight: kotlinx.coroutines.flow.StateFlow<com.obdmeter.DisplayLight> = _displayLight
 
@@ -49,8 +51,6 @@ class AndroidPlatform(context: Context) : AppPlatform {
             }
         }
     }
-
-    @Volatile private var watchKey = ""
 
     override fun watchSystemValue(key: String) {
         watchKey = key
