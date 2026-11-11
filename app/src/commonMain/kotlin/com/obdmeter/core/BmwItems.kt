@@ -133,24 +133,26 @@ internal object BmwItems {
     const val FRM_LIGHT_KEY = "BMW_FRM_KL58G"
 
     /**
-     * FRM2 (FRM_87.prg) のランプ出力の状態: KWP 30 02 01 (全 PWM 出力の調光値) を FRM (アドレス 72) に問い合わせる。
-     * 応答のデータ部はランプごとに 3 バイトで、先頭 2 バイト (調光値) が 0 でなければ点灯 (ジョブ STATUS_LAMPEN_DIGITAL)。
+     * FRM のランプ出力の状態 (FRM_70.prg のジョブ STATUS_LAMPEN_DIGITAL): KWP 30 08 01 を FRM (アドレス 72) に問い合わせる。
+     * 応答のデータ部はランプごとに 1 バイトで、0 でなければ点灯。
+     * (E90 2008 年式の FRM で、30 02 01 がアナログ入力 20 バイトを返したことから FRM_70 の並びと判断。FRM_87 の並びとは違う)
      * 読むだけで書き込みはしない。FRM を何度も起こさないよう、ゆっくり (slow) 読む
      */
-    private val frmLampRequest = PidRequest(0x30, intArrayOf(0x02, 0x01), header = "6F1", canExtAddress = "72")
+    private val frmLampRequest = PidRequest(0x30, intArrayOf(0x08, 0x01), header = "6F1", canExtAddress = "72")
 
     private fun frmLamp(key: String, name: String, short: String, pos: Int) = PidDef(
         key = key, name = "$name (BMW FRM)", shortName = short, unit = "", min = 0.0, max = 1.0,
-        kind = PidDef.Kind.REQUEST, request = frmLampRequest, minBytes = pos + 2, slow = true,
-        decode = { d -> if (((d[pos] shl 8) or d[pos + 1]) != 0) 1.0 else 0.0 },
+        kind = PidDef.Kind.REQUEST, request = frmLampRequest, minBytes = pos + 1, slow = true,
+        decode = { d -> if (d[pos] != 0) 1.0 else 0.0 },
     )
 
+    // 位置 = ジョブの中の応答の位置 (サービス ID から数える) − 3
     private fun frmItems(): List<PidDef> = listOf(
-        frmLamp(FRM_LIGHT_KEY, "ライト点灯 (イルミネーション KL58G)", "ライト", 88),
-        frmLamp("BMW_FRM_BEGRL", "スモール (車幅灯 左)", "スモール", 13),
-        frmLamp("BMW_FRM_AL", "ロービーム (左)", "ロービーム", 7),
-        frmLamp("BMW_FRM_FL", "ハイビーム (左)", "ハイビーム", 1),
-        frmLamp("BMW_FRM_NSW", "フォグ (左)", "フォグ", 19),
+        frmLamp(FRM_LIGHT_KEY, "ライト点灯 (イルミネーション KL58G)", "ライト", 31),
+        frmLamp("BMW_FRM_BEGRL", "スモール (車幅灯 左)", "スモール", 4),
+        frmLamp("BMW_FRM_AL", "ロービーム (左)", "ロービーム", 2),
+        frmLamp("BMW_FRM_FL", "ハイビーム (左)", "ハイビーム", 0),
+        frmLamp("BMW_FRM_DRL", "デイライト (左)", "デイライト", 29),
     )
 
     /** BMW 固有の項目すべて (手で調整した項目 → 測定値一覧 → 状態読み出し → 計算項目) */

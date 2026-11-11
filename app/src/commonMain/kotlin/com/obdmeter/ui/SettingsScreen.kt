@@ -642,7 +642,7 @@ private fun GlowLinkSection(vm: MainViewModel) {
             fontSize = 13.sp, modifier = Modifier.padding(top = 6.dp),
         )
         Text(
-            "FRM (FRM2 / FRM_87) にランプの状態を問い合わせて読みます (読むだけで書き込みはしません。数回に 1 回のゆっくりした間隔で読みます)。",
+            "FRM にランプの状態を問い合わせて読みます (読むだけで書き込みはしません。数回に 1 回のゆっくりした間隔で読みます)。",
             color = GaugeColors.SubText, fontSize = 12.sp,
         )
     }
