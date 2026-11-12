@@ -1282,6 +1282,15 @@ private fun ImageTab(g: GaugeConfig, update: ((GaugeDesign) -> GaugeDesign) -> U
 
     if (d.backgroundImage != null) {
         SliderLine("画像の大きさ", d.imageScale * 100, 30f..200f, "%.0f%%") { v -> update { it.copy(imageScale = snap(v, 1f) / 100f) } }
+        SliderLine("画像の明るさ (0 = そのまま)", d.imageBrightness * 100, -100f..100f, "%.0f%%") { v ->
+            update { it.copy(imageBrightness = snap(v, 1f) / 100f) }
+        }
+        SliderLine("画像のコントラスト (100% = そのまま)", d.imageContrast * 100, 0f..200f, "%.0f%%") { v ->
+            update { it.copy(imageContrast = snap(v, 1f) / 100f) }
+        }
+        if (d.imageBrightness != 0f || d.imageContrast != 1f) {
+            TextButton(onClick = { update { it.copy(imageBrightness = 0f, imageContrast = 1f) } }) { Text("明るさ・コントラストを元に戻す") }
+        }
         SliderLine("画像の横位置 (右が +)", d.imageOffsetX * 100, -50f..50f, "%.0f%%") { v ->
             update { it.copy(imageOffsetX = snap(v, 1f) / 100f) }
         }

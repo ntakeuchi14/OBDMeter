@@ -109,7 +109,7 @@ internal fun LampGauge(
         drawFace(look)
         image?.let {
             drawImageFit(it, Offset(size.width * (0.5f + look.imageOffsetX), size.height * (0.5f + look.imageOffsetY)),
-                max(size.width, size.height) * look.imageScale)
+                max(size.width, size.height) * look.imageScale, look.imageFilter())
         }
         val nameH = if (look.showName) size.height * 0.2f else 0f
         val valueH = if (look.showValue) size.height * 0.2f else 0f

@@ -184,6 +184,8 @@ fun GaugeDesign.toLook(def: PidDef, style: GaugeStyle): GaugeLook {
         showUnit = showUnit,
         image = backgroundImage,
         imageScale = imageScale.coerceIn(0.3f, 2f),
+        imageBrightness = imageBrightness.coerceIn(-1f, 1f),
+        imageContrast = imageContrast.coerceIn(0f, 2f),
         valueFont = valueFont,
         labelFont = labelFont,
         showCard = showCard,

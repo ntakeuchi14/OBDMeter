@@ -218,6 +218,8 @@ data class GaugeLook(
     val showUnit: Boolean = true,
     val image: String? = null,
     val imageScale: Float = 1f,
+    val imageBrightness: Float = 0f,
+    val imageContrast: Float = 1f,
     val showCard: Boolean = true,
     /** 取り込んだフォントの id (null = 既定) */
     val valueFont: String? = null,
@@ -419,7 +421,21 @@ private fun animated(def: PidDef, value: Double?, smoothing: Float = 0.5f): Floa
 }
 
 /** 画像を縦横比を保ったまま、[center] を中心に一辺 [box] の正方形に収めて描く */
-internal fun DrawScope.drawImageFit(image: ImageBitmap, center: Offset, box: Float) {
+/** 背景画像の明るさ・コントラストの色の変換 (そのままなら null) */
+internal fun GaugeLook.imageFilter(): androidx.compose.ui.graphics.ColorFilter? {
+    if (imageBrightness == 0f && imageContrast == 1f) return null
+    val c = imageContrast
+    // コントラストは中間の灰色 (128) を中心に広げ、明るさはそのあと全体に足す
+    val t = 128f * (1f - c) + 255f * imageBrightness
+    return androidx.compose.ui.graphics.ColorFilter.colorMatrix(androidx.compose.ui.graphics.ColorMatrix(floatArrayOf(
+        c, 0f, 0f, 0f, t,
+        0f, c, 0f, 0f, t,
+        0f, 0f, c, 0f, t,
+        0f, 0f, 0f, 1f, 0f,
+    )))
+}
+
+internal fun DrawScope.drawImageFit(image: ImageBitmap, center: Offset, box: Float, filter: androidx.compose.ui.graphics.ColorFilter? = null) {
     val iw = image.width.toFloat()
     val ih = image.height.toFloat()
     val scale = min(box / iw, box / ih)
@@ -431,6 +447,7 @@ internal fun DrawScope.drawImageFit(image: ImageBitmap, center: Offset, box: Flo
         srcSize = IntSize(image.width, image.height),
         dstOffset = IntOffset((center.x - w / 2f).roundToInt(), (center.y - h / 2f).roundToInt()),
         dstSize = IntSize(w, h),
+        colorFilter = filter,
     )
 }
 
@@ -503,7 +520,7 @@ fun AnalogGauge(
             drawPanel(Path().apply { addOval(rect) }, rect, look.panelStyle, look.panelDepth, look.panelGloss)
         }
         if (image != null) {
-            drawImageFit(image, Offset(center.x + d * look.imageOffsetX, center.y + d * look.imageOffsetY), d * look.imageScale)
+            drawImageFit(image, Offset(center.x + d * look.imageOffsetX, center.y + d * look.imageOffsetY), d * look.imageScale, look.imageFilter())
         }
 
         // 外周リング
@@ -769,7 +786,7 @@ fun BarGauge(
         val h = size.height
         val w = size.width
         drawFace(look)
-        image?.let { drawImageFit(it, Offset(w / 2 + w * look.imageOffsetX, h / 2 + h * look.imageOffsetY), max(w, h) * look.imageScale) }
+        image?.let { drawImageFit(it, Offset(w / 2 + w * look.imageOffsetX, h / 2 + h * look.imageOffsetY), max(w, h) * look.imageScale, look.imageFilter()) }
         val unit = min(h, w * 0.5f)
         if (look.showName) {
             val name = tm.measure(def.shortName,
@@ -1056,7 +1073,7 @@ fun DigitalGauge(
         drawFace(look)
         image?.let {
             drawImageFit(it, Offset(size.width * (0.5f + look.imageOffsetX), size.height * (0.5f + look.imageOffsetY)),
-                max(size.width, size.height) * look.imageScale)
+                max(size.width, size.height) * look.imageScale, look.imageFilter())
         }
         val unit = min(size.height, size.width * 0.6f)
         if (look.showName) {

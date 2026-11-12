@@ -312,6 +312,10 @@ data class GaugeDesign(
     val backgroundImage: String? = null,
     /** 背景画像の大きさ (1.0 = メーター枠いっぱい) */
     val imageScale: Float = 1f,
+    /** 背景画像の明るさ (0 = そのまま、-1 = 真っ黒〜+1 = 真っ白) */
+    val imageBrightness: Float = 0f,
+    /** 背景画像のコントラスト (1 = そのまま、0 = 灰色一色〜2 = 2 倍) */
+    val imageContrast: Float = 1f,
     /** 名前・単位の位置のずれ (メーターの大きさに対する比率。右・下が正) と色 (null = 文字の色と同じ) */
     val nameOffsetX: Float = 0f,
     val nameOffsetY: Float = 0f,
