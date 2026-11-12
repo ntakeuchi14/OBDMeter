@@ -765,7 +765,8 @@ fun GaugeView(
         GaugeCard(
             def = def,
             // メインの値が無いときは代替項目の値を出す (イグニッション OFF 時など)
-            value = values[def.key] ?: g.fallbackKey?.let { values[it] },
+            // 接続時のスイープ中は、目盛りの範囲を振る
+            value = sweepValue(g, def) ?: values[def.key] ?: g.fallbackKey?.let { values[it] },
             style = g.style,
             unsupported = isUnsupported(def, supported) && g.fallbackKey == null,
             look = g.look(def).let { if (noCard) it.copy(showCard = false) else it }
@@ -777,8 +778,9 @@ fun GaugeView(
             peakResetKey = peakResetKey,
             peakKey = g.id.toString(),
             // 「エンジン停止中は最大値を記録しない」: 回転数が読めていて 400 rpm 以上のときだけ記録する
-            peakAllowed = !(g.design.showPeak && g.design.peakEngineRunningOnly) ||
-                (values[com.obdmeter.data.ReadPlan.engineRpmKey(g.pidKey)]?.let { it >= com.obdmeter.core.BmwItems.ENGINE_RUNNING_RPM } == true),
+            // スイープ中は記録しない
+            peakAllowed = com.obdmeter.ui.gauges.Sweep.progress == null && (!(g.design.showPeak && g.design.peakEngineRunningOnly) ||
+                (values[com.obdmeter.data.ReadPlan.engineRpmKey(g.pidKey)]?.let { it >= com.obdmeter.core.BmwItems.ENGINE_RUNNING_RPM } == true)),
             series = if (g.style == GaugeStyle.CHART || g.style == GaugeStyle.TABLE || g.style == GaugeStyle.MONITOR) chartSeries(g, def, values, catalog) else emptyList(),
             interactive = interactive,
             historySlot = historySlot,
@@ -1127,4 +1129,14 @@ fun com.obdmeter.ui.gauges.GaugeLook.withForeground(
         com.obdmeter.data.ColorPart.PEAK -> l.copy(peakColor = c, peakTextColor = c)
     }
     return l
+}
+
+
+/** 接続時のスイープ中の値 (アナログ・バー・デジタルだけ)。スイープ中でなければ null */
+private fun sweepValue(g: GaugeConfig, def: PidDef): Double? {
+    val p = com.obdmeter.ui.gauges.Sweep.progress ?: return null
+    if (g.style != GaugeStyle.ANALOG && g.style != GaugeStyle.BAR && g.style != GaugeStyle.DIGITAL) return null
+    val lo = g.design.min ?: def.min
+    val hi = g.design.max ?: def.max
+    return lo + (hi - lo) * p
 }

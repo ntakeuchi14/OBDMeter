@@ -31,6 +31,7 @@ class DataStoreRepository(private val context: Context) : Repository {
         val AUTO_RECONNECT = booleanPreferencesKey("auto_reconnect")
         val AUTO_CONNECT = booleanPreferencesKey("auto_connect")
         val ALWAYS_TOOLBAR = booleanPreferencesKey("always_show_toolbar")
+        val SWEEP_ON_CONNECT = booleanPreferencesKey("sweep_on_connect")
         val WAIT_FOR_VEHICLE = booleanPreferencesKey("wait_for_vehicle")
         val WAIT_TIMEOUT = intPreferencesKey("wait_timeout_min")
         val KEEP_SCREEN_ON = booleanPreferencesKey("keep_screen_on")
@@ -101,6 +102,7 @@ class DataStoreRepository(private val context: Context) : Repository {
             p[Keys.AUTO_RECONNECT] = s.autoReconnect
             p[Keys.AUTO_CONNECT] = s.autoConnect
             p[Keys.ALWAYS_TOOLBAR] = s.alwaysShowToolbar
+            p[Keys.SWEEP_ON_CONNECT] = s.sweepOnConnect
             p[Keys.WAIT_FOR_VEHICLE] = s.waitForVehicle
             p[Keys.WAIT_TIMEOUT] = s.waitTimeoutMin
             p[Keys.KEEP_SCREEN_ON] = s.keepScreenOn
@@ -142,6 +144,7 @@ class DataStoreRepository(private val context: Context) : Repository {
             autoReconnect = this[Keys.AUTO_RECONNECT] ?: d.autoReconnect,
             autoConnect = this[Keys.AUTO_CONNECT] ?: d.autoConnect,
             alwaysShowToolbar = this[Keys.ALWAYS_TOOLBAR] ?: d.alwaysShowToolbar,
+            sweepOnConnect = this[Keys.SWEEP_ON_CONNECT] ?: d.sweepOnConnect,
             waitForVehicle = this[Keys.WAIT_FOR_VEHICLE] ?: d.waitForVehicle,
             waitTimeoutMin = this[Keys.WAIT_TIMEOUT] ?: d.waitTimeoutMin,
             keepScreenOn = this[Keys.KEEP_SCREEN_ON] ?: d.keepScreenOn,

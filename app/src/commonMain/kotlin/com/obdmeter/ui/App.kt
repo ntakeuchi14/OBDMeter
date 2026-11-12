@@ -51,6 +51,15 @@ fun App(vm: MainViewModel, onKeepScreenOn: (Boolean) -> Unit) {
         onKeepScreenOn(settings.keepScreenOn && connection !is ConnectionState.Disconnected)
     }
 
+    // 接続したときにメーターをスイープ (切断・接続中 → 接続済みに変わったときだけ)
+    val sweepScope = androidx.compose.runtime.rememberCoroutineScope()
+    val wasConnected = androidx.compose.runtime.remember { booleanArrayOf(false) }
+    LaunchedEffect(connection) {
+        val now = connection is ConnectionState.Connected
+        if (now && !wasConnected[0] && settings.sweepOnConnect) com.obdmeter.ui.gauges.Sweep.start(sweepScope)
+        wasConnected[0] = now
+    }
+
     val back: () -> Unit = {
         screen = if (screen == Screen.CUSTOM_PIDS) customReturnTo else Screen.DASHBOARD
     }

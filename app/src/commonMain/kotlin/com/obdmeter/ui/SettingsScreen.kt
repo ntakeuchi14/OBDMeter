@@ -179,6 +179,11 @@ fun SettingsScreen(vm: MainViewModel, onBack: () -> Unit, onOpenCustomPids: () -
                 s.keyPageNav,
             ) { v -> vm.updateSettings { it.copy(keyPageNav = v) } }
             SwitchRow(
+                "接続時にメーターをスイープ",
+                "車と接続したときに、アナログ・バー・デジタルのメーターを最小 → 最大 → 最小と一度振ります (約 2 秒。その間は最大値を記録しません)",
+                s.sweepOnConnect,
+            ) { v -> vm.updateSettings { it.copy(sweepOnConnect = v) } }
+            SwitchRow(
                 "ダッシュボードのバーを常に表示",
                 "OFF のときは、接続状態や編集・設定のボタンを隠してメーターを全画面に表示し、右上のボタンで呼び出します",
                 s.alwaysShowToolbar,

@@ -29,6 +29,8 @@ data class AppSettings(
     val dcanEcho: Boolean = true,
     // --- 共通 ---
     val autoReconnect: Boolean = true,
+    /** 接続したときに、メーターの針・数値を最小 → 最大 → 最小と一度振る (スイープ) */
+    val sweepOnConnect: Boolean = false,
     /** アプリ起動時に自動で接続する */
     val autoConnect: Boolean = false,
     /** ダッシュボード上部のバーを常に表示する (OFF なら右上のボタンで呼び出す) */

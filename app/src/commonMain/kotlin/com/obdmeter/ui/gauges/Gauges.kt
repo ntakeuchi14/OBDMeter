@@ -1501,3 +1501,35 @@ object TextHits {
     fun hit(id: String, x: Float, y: Float, slop: Float): Boolean =
         byGauge[id]?.any { r -> x >= r.left - slop && x <= r.right + slop && y >= r.top - slop && y <= r.bottom + slop } == true
 }
+
+
+/** 接続時のスイープ (メーターを最小 → 最大 → 最小と振る)。[progress] = 0〜1 (null = スイープしていない) */
+object Sweep {
+    var progress by androidx.compose.runtime.mutableStateOf<Float?>(null)
+        private set
+    private var job: kotlinx.coroutines.Job? = null
+
+    fun start(scope: kotlinx.coroutines.CoroutineScope, upMs: Long = 900, holdMs: Long = 150, downMs: Long = 900) {
+        job?.cancel()
+        job = scope.launch {
+            try {
+                suspend fun ramp(from: Float, to: Float, ms: Long) {
+                    val t0 = com.obdmeter.util.nowMs()
+                    while (true) {
+                        val f = ((com.obdmeter.util.nowMs() - t0).toFloat() / ms).coerceIn(0f, 1f)
+                        // ゆっくり出てゆっくり止まる
+                        val e = f * f * (3f - 2f * f)
+                        progress = from + (to - from) * e
+                        if (f >= 1f) break
+                        androidx.compose.runtime.withFrameMillis { }
+                    }
+                }
+                ramp(0f, 1f, upMs)
+                kotlinx.coroutines.delay(holdMs)
+                ramp(1f, 0f, downMs)
+            } finally {
+                progress = null
+            }
+        }
+    }
+}
