@@ -119,7 +119,12 @@ class PidRequest(
      * 読み出しが否定応答になったら、次の読み出しの前にもう一度送る
      */
     val setup: List<IntArray> = emptyList(),
+    /** 応答で繰り返される PID のバイト数 (既定 = すべて)。例: 31 23 01 の応答は 71 23 なので 1 */
+    val echoPidBytes: Int = Int.MAX_VALUE,
 ) {
+    /** 正常な応答の先頭 (モード + 0x40 と、繰り返される PID) */
+    val echo: IntArray get() = intArrayOf(mode + 0x40) + pid.take(echoPidBytes)
+
     val isPlainMode01: Boolean get() = mode == 0x01 && pid.size == 1 && header.isEmpty() && canExtAddress.isEmpty()
 
     /** "01 0C" / "22 1234 @7E0" のようなログ用表記 */

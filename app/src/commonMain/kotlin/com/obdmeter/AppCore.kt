@@ -77,6 +77,35 @@ class AppCore(val platform: AppPlatform) {
         if (dev.isEmpty()) car else car + dev
     }.stateIn(scope, SharingStarted.Eagerly, emptyMap())
 
+    /**
+     * 車のメーターパネル (KOMBI) のセルフテストを 1 回動かす (針が最大まで振れて戻る)。
+     * 安全のため、メーターパネルの車速が 0 km/h のときだけ。結果を文章で返す
+     */
+    suspend fun sweepCluster(): String {
+        val sp = session.testQuery(com.obdmeter.core.BmwItems.kombiSpeedRequest)
+        val d = sp.data ?: return "メーターパネルの車速が読めないので動かしません (${sp.error ?: "応答なし"})"
+        if (d.size < 2) return "メーターパネルの車速が読めないので動かしません (応答が短い)"
+        val speed = (d[0] shl 8) or d[1]
+        if (speed != 0) return "走行中 ($speed km/h) なのでメーターパネルは動かしません"
+        val r = session.testQuery(com.obdmeter.core.BmwItems.kombiSelfTestRequest)
+        return if (r.data != null) "メーターパネルのセルフテストを始めました" else "メーターパネルのセルフテストが通りませんでした (${r.error})"
+    }
+
+    init {
+        // 接続したら (設定していれば) 車のメーターパネルもスイープする
+        scope.launch {
+            var was = false
+            session.state.collect { st ->
+                val now = st is ConnectionState.Connected
+                val s = settings.value
+                if (now && !was && s.sweepOnConnect && s.sweepCluster && s.connectionType != com.obdmeter.data.ConnectionType.SIMULATOR) {
+                    launch { log.log(com.obdmeter.core.CommLogger.Direction.INFO, "スイープ: " + sweepCluster()) }
+                }
+                was = now
+            }
+        }
+    }
+
     init {
         // ※ values より後ろに置く (前に置くと、まだ作られていない values を読んで落ちる)
         // ライト連動: ナビがライトの点灯で画面を夜用にしたら、全ページの発光を ON にする (消えたら OFF)。

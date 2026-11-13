@@ -108,7 +108,7 @@ class BmwFastProtocol(
         val resp = request(intArrayOf(request.mode) + request.pid, target)
             ?: run { lastFailure = "応答なし"; lastResponded = false; return null }
         lastResponded = resp.isNotEmpty() && resp[0] == 0x7F
-        val echo = intArrayOf(request.mode + 0x40) + request.pid
+        val echo = request.echo
         if (resp.size >= echo.size && echo.indices.all { resp[it] == echo[it] }) {
             lastFailure = null
             return resp.copyOfRange(echo.size, resp.size)

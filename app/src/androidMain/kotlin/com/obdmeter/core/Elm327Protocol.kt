@@ -229,7 +229,7 @@ class Elm327Protocol(
         if (currentCea.isNotEmpty()) {
             // 拡張アドレス付き (ヘッダー表示 ON): フレームを自前でつなげる
             val msg = ValueSearch.assemble(lines)
-            val echo = intArrayOf(request.mode + 0x40) + request.pid
+            val echo = request.echo
             if (msg != null && msg.size >= echo.size && echo.indices.all { msg[it] == echo[it] }) {
                 return ok(msg.copyOfRange(echo.size, msg.size))
             }

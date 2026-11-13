@@ -55,6 +55,7 @@ private data class WebSettings(
     // 以前の版は別の場所 (obd.screen) に保存していた
     val screenSize: String = LocalStore.get("obd.screen").orEmpty(),
     val sweepOnConnect: Boolean = false,
+    val sweepCluster: Boolean = false,
 )
 
 /** 設定とページをブラウザーの保存領域 (localStorage) に保存する */
@@ -83,6 +84,7 @@ class WebRepository : Repository {
         autoReconnect = true,
         alwaysShowToolbar = alwaysShowToolbar,
         sweepOnConnect = sweepOnConnect,
+        sweepCluster = sweepCluster,
         lastPageId = lastPageId,
         gridStep = gridStep,
         pollIntervalsMs = pollIntervalsMs,
@@ -106,7 +108,7 @@ class WebRepository : Repository {
     override suspend fun updateSettings(transform: (AppSettings) -> AppSettings) {
         val s = transform(settingsState.value).copy(connectionType = ConnectionType.SIMULATOR)
         settingsState.value = s
-        save("obd.settings", json.encodeToString(WebSettings(s.alwaysShowToolbar, s.lastPageId, s.gridStep, s.pollIntervalsMs, s.screenSize, s.sweepOnConnect)))
+        save("obd.settings", json.encodeToString(WebSettings(s.alwaysShowToolbar, s.lastPageId, s.gridStep, s.pollIntervalsMs, s.screenSize, s.sweepOnConnect, s.sweepCluster)))
     }
 
     override suspend fun saveDashboards(list: List<Dashboard>) {

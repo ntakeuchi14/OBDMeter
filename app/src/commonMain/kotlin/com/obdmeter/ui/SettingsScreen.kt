@@ -183,6 +183,29 @@ fun SettingsScreen(vm: MainViewModel, onBack: () -> Unit, onOpenCustomPids: () -
                 "車と接続したときに、アナログ・バー・デジタルのメーターを最小 → 最大 → 最小と一度振ります (約 2 秒。その間は最大値を記録しません)",
                 s.sweepOnConnect,
             ) { v -> vm.updateSettings { it.copy(sweepOnConnect = v) } }
+            if (s.sweepOnConnect) {
+                SwitchRow(
+                    "車のメーターパネルも振る (BMW E8x / E9x)",
+                    "K+DCAN などで接続したとき、メーターパネルのセルフテストで針を振ります (ランプも点きます)。" +
+                        "安全のため、メーターパネルの車速が 0 km/h のときだけ動かします。結果は通信ログに出ます",
+                    s.sweepCluster,
+                ) { v -> vm.updateSettings { it.copy(sweepCluster = v) } }
+                if (s.sweepCluster) {
+                    val scope = androidx.compose.runtime.rememberCoroutineScope()
+                    var msg by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf("") }
+                    androidx.compose.foundation.layout.Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                        androidx.compose.material3.OutlinedButton(onClick = {
+                            msg = "実行中…"
+                            scope.launch {
+                                com.obdmeter.ui.gauges.Sweep.start(scope)
+                                msg = vm.core.sweepCluster()
+                            }
+                        }) { androidx.compose.material3.Text("今すぐ試す") }
+                        androidx.compose.foundation.layout.Spacer(androidx.compose.ui.Modifier.width(12.dp))
+                        androidx.compose.material3.Text(msg, style = androidx.compose.material3.MaterialTheme.typography.bodySmall)
+                    }
+                }
+            }
             SwitchRow(
                 "ダッシュボードのバーを常に表示",
                 "OFF のときは、接続状態や編集・設定のボタンを隠してメーターを全画面に表示し、右上のボタンで呼び出します",

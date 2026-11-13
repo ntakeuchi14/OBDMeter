@@ -138,6 +138,11 @@ internal object BmwItems {
      * (E90 2008 年式の FRM で、30 02 01 がアナログ入力 20 バイトを返したことから FRM_70 の並びと判断。FRM_87 の並びとは違う)
      * 読むだけで書き込みはしない。FRM を何度も起こさないよう、ゆっくり (slow) 読む
      */
+    /** メーターパネル (KOMBI、KOMB87: E8x / E9x): 表示中の車速 (21 05 → km/h、2 バイト) */
+    val kombiSpeedRequest = PidRequest(0x21, intArrayOf(0x05), header = "6F1", canExtAddress = "60")
+    /** メーターパネルのセルフテストを 1 回 (針が振れてランプが点く。KOMB87 の STEUERN_SELBSTTEST_EIN 1) */
+    val kombiSelfTestRequest = PidRequest(0x31, intArrayOf(0x23, 0x01), header = "6F1", canExtAddress = "60", echoPidBytes = 1)
+
     private val frmLampRequest = PidRequest(0x30, intArrayOf(0x08, 0x01), header = "6F1", canExtAddress = "72")
 
     private fun frmLamp(key: String, name: String, short: String, pos: Int) = PidDef(
