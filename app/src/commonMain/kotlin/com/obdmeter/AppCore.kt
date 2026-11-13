@@ -26,6 +26,8 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.async
 import kotlin.concurrent.Volatile
 
 /**
@@ -87,8 +89,50 @@ class AppCore(val platform: AppPlatform) {
         if (d.size < 2) return "メーターパネルの車速が読めないので動かしません (応答が短い)"
         val speed = (d[0] shl 8) or d[1]
         if (speed != 0) return "走行中 ($speed km/h) なのでメーターパネルは動かしません"
-        val r = session.testQuery(com.obdmeter.core.BmwItems.kombiSelfTestRequest)
-        return if (r.data != null) "メーターパネルのセルフテストを始めました" else "メーターパネルのセルフテストが通りませんでした (${r.error})"
+        val k = com.obdmeter.core.BmwItems
+        // 速度計・回転計の目盛りの最大と換算を読む
+        val tInfo = session.testQuery(k.kombiTachoInfoRequest)
+        val rInfo = session.testQuery(k.kombiRpmInfoRequest)
+        val tacho = tInfo.data?.let(k::kombiTachoScale)
+        val rpm = rInfo.data?.let(k::kombiRpmScale)
+        if (tacho == null && rpm == null) {
+            val st = session.testQuery(k.kombiSelfTestRequest)
+            return if (st.data != null) "メーターパネルのセルフテストを始めました"
+            else "メーターパネルの設定が読めず (${tInfo.error ?: "換算できない応答"})、セルフテストも通りませんでした (${st.error})"
+        }
+        // アプリのスイープと同じ動き (0 → 最大 → 0) で針を動かす
+        var err: String? = null
+        try {
+            coroutineScope {
+                val t0 = com.obdmeter.util.nowMs()
+                val up = 900L; val hold = 150L; val down = 900L
+                while (true) {
+                    val t = com.obdmeter.util.nowMs() - t0
+                    if (t > up + hold + down) break
+                    val f = when {
+                        t < up -> t.toFloat() / up
+                        t < up + hold -> 1f
+                        else -> 1f - (t - up - hold).toFloat() / down
+                    }.coerceIn(0f, 1f)
+                    val p = (f * f * (3f - 2f * f)).toDouble()
+                    // 2 つを同時に頼む (同じ合間にまとめて送られる)
+                    val a = tacho?.let { s -> async { session.testQuery(k.kombiTachoRequest(s.raw(s.limit * p))) } }
+                    val b = rpm?.let { s -> async { session.testQuery(k.kombiRpmRequest(s.raw(s.limit * p))) } }
+                    val ra = a?.await(); val rb = b?.await()
+                    val e = ra?.error ?: rb?.error
+                    if (e != null) { err = e; break }
+                    kotlinx.coroutines.delay(30)
+                }
+            }
+        } finally {
+            // 必ず元に戻す (車の値で動くようにする)
+            kotlinx.coroutines.withContext(kotlinx.coroutines.NonCancellable) {
+                if (tacho != null) session.testQuery(k.kombiTachoOffRequest)
+                if (rpm != null) session.testQuery(k.kombiRpmOffRequest)
+            }
+        }
+        val what = listOfNotNull(tacho?.let { "速度計 (最大 ${it.limit} km/h)" }, rpm?.let { "回転計 (最大 ${it.limit} rpm)" }).joinToString("・")
+        return if (err == null) "メーターパネルの${what}を振りました" else "メーターパネルの${what}を動かせませんでした ($err)"
     }
 
     init {

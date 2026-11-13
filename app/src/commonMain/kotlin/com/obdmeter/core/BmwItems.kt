@@ -143,6 +143,45 @@ internal object BmwItems {
     /** メーターパネルのセルフテストを 1 回 (針が振れてランプが点く。KOMB87 の STEUERN_SELBSTTEST_EIN 1) */
     val kombiSelfTestRequest = PidRequest(0x31, intArrayOf(0x23, 0x01), header = "6F1", canExtAddress = "60", echoPidBytes = 1)
 
+    /** メーターパネルの速度計の設定 (目盛りの最大と針の換算。KOMB87 の STEUERN_TACHO が読む 22 31 00) */
+    val kombiTachoInfoRequest = PidRequest(0x22, intArrayOf(0x31, 0x00), header = "6F1", canExtAddress = "60")
+    /** メーターパネルの回転計の設定 (STEUERN_DREHZAHL が読む 22 31 03) */
+    val kombiRpmInfoRequest = PidRequest(0x22, intArrayOf(0x31, 0x03), header = "6F1", canExtAddress = "60")
+    /** 速度計の針を [raw] にする (30 20 06 HH LL)。raw = [KombiScale.raw] */
+    fun kombiTachoRequest(raw: Int) =
+        PidRequest(0x30, intArrayOf(0x20, 0x06, (raw shr 8) and 0xFF, raw and 0xFF), header = "6F1", canExtAddress = "60", echoPidBytes = 1)
+    /** 回転計の針を [raw] にする (30 21 06 HH LL) */
+    fun kombiRpmRequest(raw: Int) =
+        PidRequest(0x30, intArrayOf(0x21, 0x06, (raw shr 8) and 0xFF, raw and 0xFF), header = "6F1", canExtAddress = "60", echoPidBytes = 1)
+    /** 速度計・回転計の針の操作をやめる (30 20 00 / 30 21 00) */
+    val kombiTachoOffRequest = PidRequest(0x30, intArrayOf(0x20, 0x00), header = "6F1", canExtAddress = "60", echoPidBytes = 1)
+    val kombiRpmOffRequest = PidRequest(0x30, intArrayOf(0x21, 0x00), header = "6F1", canExtAddress = "60", echoPidBytes = 1)
+
+    /**
+     * 針の換算 (KOMB87 のジョブと同じ計算): 送る値 = 表示したい値 × [factor] ÷ [limit]。
+     * [limit] = 目盛りの最大 (km/h または 1/min)
+     */
+    class KombiScale(val limit: Int, val factor: Int) {
+        fun raw(value: Double): Int =
+            if (limit <= 0) 0 else (value.coerceIn(0.0, limit.toDouble()) * factor / limit).toInt().coerceIn(0, 0xFFFF)
+    }
+
+    /** 22 31 00 の応答 (62 31 00 の後ろ) から速度計の換算。ジョブの位置 − 3、下位バイトが先 */
+    fun kombiTachoScale(d: IntArray): KombiScale? {
+        if (d.size < 33) return null
+        val limit = ((d[22] shl 8) or d[21]) / 10
+        val factor = (d[32] shl 8) or d[31]
+        return KombiScale(limit, factor).takeIf { limit in 100..400 && factor > 0 }
+    }
+
+    /** 22 31 03 の応答から回転計の換算 */
+    fun kombiRpmScale(d: IntArray): KombiScale? {
+        if (d.size < 23) return null
+        val limit = (d[12] shl 8) or d[11]
+        val factor = (d[22] shl 8) or d[21]
+        return KombiScale(limit, factor).takeIf { limit in 3000..12000 && factor > 0 }
+    }
+
     private val frmLampRequest = PidRequest(0x30, intArrayOf(0x08, 0x01), header = "6F1", canExtAddress = "72")
 
     private fun frmLamp(key: String, name: String, short: String, pos: Int) = PidDef(
