@@ -58,11 +58,16 @@ fun GaugeDesign.toLook(def: PidDef, style: GaugeStyle): GaugeLook {
         else -> null
     }
 
+    // 時計: 12 時から 1 周、目盛りは 12 等分、弧とレッドゾーンは無し
+    val clock = clockMode && style == GaugeStyle.ANALOG
+    fun hand(h: com.obdmeter.data.ClockHand) = if (!h.show) null else
+        HandLook(h.color?.let { Color(it) }, h.length.coerceIn(0.1f, 1.3f), h.width.coerceIn(0.1f, 5f))
     return GaugeLook(
         accent = accent,
-        startAngle = s - 90f,
-        sweep = sweep,
-        majorDivisions = majorDivisions?.takeIf { it in 1..40 },
+        startAngle = if (clock) -90f else s - 90f,
+        sweep = if (clock) 360f else sweep,
+        majorDivisions = if (clock) 12 else majorDivisions?.takeIf { it in 1..40 },
+        clock = if (clock) ClockLook(hand(clockHour), hand(clockMinute), hand(clockSecond), clockSecondSmooth) else null,
         minorDivisions = minorDivisions.coerceIn(0, 9),
         midTick = midTick,
         midTickLength = midTickLength.coerceIn(0.3f, 1f),
@@ -74,9 +79,9 @@ fun GaugeDesign.toLook(def: PidDef, style: GaugeStyle): GaugeLook {
         ring = ring,
         ringColor = ringColor.color(GaugeColors.Ring),
         showTrack = showTrack,
-        showValueArc = showValueArc,
+        showValueArc = showValueArc && !clock,
         arcWidth = arcWidth.coerceIn(0f, 3f),
-        redZone = zone,
+        redZone = if (clock) null else zone,
         redZoneColor = redZoneColor.color(GaugeColors.WarnZone),
         showNeedle = showNeedle,
         needleColor = needleColor.color(GaugeColors.Text),

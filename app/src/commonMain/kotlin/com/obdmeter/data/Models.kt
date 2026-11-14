@@ -178,6 +178,10 @@ enum class ColorPart(val label: String) {
 @Serializable
 data class ValueText(val condition: String = "", val text: String = "")
 
+/** アナログ時計の針 1 本 ([length] は目盛りまでの長さに対する比率、[width] は針の太さの倍率。[color] = null は針の色) */
+@Serializable
+data class ClockHand(val show: Boolean = true, val color: Long? = null, val length: Float = 1f, val width: Float = 1f)
+
 /**
  * メーター 1 個ごとの見た目の上書き設定。null の項目は PID 定義の既定値を使う。
  */
@@ -376,6 +380,13 @@ data class GaugeDesign(
     val scaleGlow: Float = 0f,
     /** アナログ: 針の発光の強さ (0 = なし〜1) */
     val needleGlow: Float = 0f,
+    /** アナログ: 時計にする (目盛りは 1〜12、項目「現在時刻」の値で時・分・秒の針を動かす) */
+    val clockMode: Boolean = false,
+    val clockHour: ClockHand = ClockHand(length = 0.55f, width = 1.6f),
+    val clockMinute: ClockHand = ClockHand(length = 0.85f, width = 1.1f),
+    val clockSecond: ClockHand = ClockHand(color = 0xFFE53935, length = 0.95f, width = 0.45f),
+    /** 秒針をなめらかに動かす (OFF = 1 秒ごとに進む) */
+    val clockSecondSmooth: Boolean = false,
     /** 数値の後ろに消えている 7 セグ (8) をうっすら出す */
     val ghostDigits: Boolean = false,
     val ghostAlpha: Float = 0.15f,

@@ -88,7 +88,15 @@ object GaugeColors {
  * メーター 1 個の見た目をすべてまとめたもの (保存形式の GaugeDesign から作る)。
  * 角度は Compose の向き (3 時 = 0°、時計回り) に変換済み。
  */
+/** 時計の針 1 本 ([color] = null は針の色) */
+data class HandLook(val color: Color?, val length: Float, val width: Float)
+
+/** アナログ時計 (針は表示しないものは null) */
+data class ClockLook(val hour: HandLook?, val minute: HandLook?, val second: HandLook?, val secondSmooth: Boolean)
+
 data class GaugeLook(
+    /** アナログ時計にする (null = ふつうのメーター) */
+    val clock: ClockLook? = null,
     val accent: Color = GaugeColors.Accent,
     val startAngle: Float = 150f,
     val sweep: Float = 240f,
@@ -470,6 +478,8 @@ fun AnalogGauge(
     /** 本体と針の層で針の位置を共有する (本体が書き、針の層が読む) */
     needleState: MutableFloatState? = null,
 ) {
+    // 時計のときは目盛りを 0〜12 (時) にする
+    val def = if (look.clock != null) def.copy(min = 0.0, max = 12.0) else def
     // くぼみ・ガラスの反射は重いので、一度画像に描いておき、毎回はその画像を貼るだけにする
     val fx = remember { GaugeFxCache() }
     val tm = rememberTextMeasurer()
@@ -576,6 +586,8 @@ fun AnalogGauge(
         }
         val drawScale: DrawScope.() -> Unit = {
         for ((i, t) in majors.withIndex()) {
+            // 時計の 12 は 0 と同じ場所なので、0 を「12」として描き、最後の 12 は描かない
+            if (look.clock != null && i == majors.lastIndex && t >= def.max) continue
             val a = com.obdmeter.util.toRadians((start + sweep * fraction(def, t)).toDouble())
             if (look.showTicks) tick(
                 Offset(pc.x + (tickOuter - majorLen) * cos(a).toFloat(), pc.y + q * (tickOuter - majorLen) * sin(a).toFloat()),
@@ -583,13 +595,13 @@ fun AnalogGauge(
                 d * 0.012f)
             if (look.showLabels) {
                 val labelR = tickOuter - majorLen - d * 0.06f * look.labelSize
-                drawCenteredText(tm, scale.label(t),
+                drawCenteredText(tm, if (look.clock != null && t == 0.0) "12" else scale.label(t),
                     Offset(pc.x + labelR * cos(a).toFloat(), pc.y + q * labelR * sin(a).toFloat()),
                     TextStyle(color = look.labelColor, fontFamily = fonts.label, fontSize = labelSize,
                         shadow = glowShadow(look.labelColor, look.scaleGlow, d * 0.07f * look.labelSize)))
             }
             // 小目盛り
-            if (look.showTicks && look.minorDivisions > 0 && i < majors.lastIndex) {
+            if (look.showTicks && look.minorDivisions > 0 && (i < majors.lastIndex)) {
                 val next = majors[i + 1]
                 // 小目盛りの数が奇数なら、真ん中 (主目盛りの中間の値) を長めに描ける
                 val mid = if (look.midTick && look.minorDivisions % 2 == 1) (look.minorDivisions + 1) / 2 else -1
@@ -689,19 +701,18 @@ fun AnalogGauge(
         // 針 (根元が太く先が細い形) と中心のノブ。数値などより手前に描く
         if (layer != GaugeLayer.BODY) {
         if (shifted) { drawContext.canvas.save(); drawContext.canvas.clipPath(innerCircle) }
-        if (value != null && look.showNeedle) {
-            val a = com.obdmeter.util.toRadians((start + sweep * f).toDouble())
+        fun hand(frac: Float, lengthMul: Float, widthMul: Float, color: Color, tailMul: Float) {
+            val a = com.obdmeter.util.toRadians((start + sweep * frac).toDouble())
             // 楕円の目盛りのときは、針は目盛りの点の向きに向け、長さも目盛りまでに合わせる
             val ux = cos(a).toFloat()
             val uy = q * sin(a).toFloat()
             val un = kotlin.math.sqrt(ux * ux + uy * uy).coerceAtLeast(1e-6f)
             val ca = ux / un
             val sa = uy / un
-            val len = tickOuter * look.needleLength * un
-            val tail = tickOuter * look.needleLength * look.needleTail
-            val baseW = d * 0.016f * look.needleWidth
+            val len = tickOuter * lengthMul * un
+            val tail = tickOuter * lengthMul * tailMul
+            val baseW = d * 0.016f * widthMul
             val tipW = baseW * 0.35f
-            val color = if (warn) GaugeColors.Warn else look.needleColor
             val needle = Path().apply {
                 // 尾の端 → 根元 → 先端 → 根元 → 尾の端 (針の向きに垂直な方向へ幅を取る)
                 moveTo(pc.x - tail * ca - baseW * sa, pc.y - tail * sa + baseW * ca)
@@ -721,6 +732,20 @@ fun AnalogGauge(
                 drawPath(needle, color.copy(alpha = 0.35f * g), style = Stroke(d * 0.012f * g + 1f, join = StrokeJoin.Round, cap = StrokeCap.Round))
             }
             drawPath(needle, color)
+        }
+        val clock = look.clock
+        if (value != null && look.showNeedle && clock != null) {
+            // 時計: 値はその日の 0 時からの秒数。時・分針はなめらかに、秒針は設定で 1 秒ごと
+            val sec = ((value % 60.0) + 60.0) % 60.0
+            val hf = (((value / 3600.0) % 12.0 + 12.0) % 12.0 / 12.0).toFloat()
+            val mf = ((((value / 60.0) % 60.0) + 60.0) % 60.0 / 60.0).toFloat()
+            val sf = ((if (clock.secondSmooth) sec else kotlin.math.floor(sec)) / 60.0).toFloat()
+            for ((h, fr) in listOf(clock.hour to hf, clock.minute to mf, clock.second to sf)) {
+                if (h == null) continue
+                hand(fr, h.length * look.needleLength, h.width * look.needleWidth, h.color ?: look.needleColor, look.needleTail)
+            }
+        } else if (value != null && look.showNeedle) {
+            hand(f, look.needleLength, look.needleWidth, if (warn) GaugeColors.Warn else look.needleColor, look.needleTail)
         }
         if (look.showNeedle && look.knobSize > 0f) {
             val kr = d * 0.035f * look.knobSize

@@ -33,6 +33,9 @@ data class PidDef(
     /** BMW_BLOCK: DME の測定値 ID とバイト数 ([decode] にはこの項目のバイトだけを渡す) */
     val blockId: Int = 0,
     val blockSize: Int = 0,
+    /** 数値ではなく文字で出す項目 (時刻・日付) の書式と、その桁の形 (例: "00:00:00") */
+    val textFormat: ((Double) -> String)? = null,
+    val textTemplate: String? = null,
 ) {
     /**
      * MODE01: 標準 PID / ADAPTER_VOLTAGE: アダプター測定 / DERIVED: 計算値 /
@@ -45,6 +48,7 @@ data class PidDef(
 
     fun format(value: Double?): String {
         if (value == null) return blankText()
+        textFormat?.let { return it(value) }
         val t = "%.${decimals}f".format(value)
         // -0.04 を小数 1 桁にすると "-0.0" になるので、0 に丸まったときはマイナスを付けない
         return if (t.startsWith("-") && t.drop(1).all { it == '0' || it == '.' }) t.drop(1) else t
@@ -55,6 +59,7 @@ data class PidDef(
      * 最小・最大の絶対値の大きいほうの桁数で、マイナス記号は数えない
      */
     fun digitTemplate(): String {
+        textTemplate?.let { return it }
         val m = maxOf(kotlin.math.abs(min), kotlin.math.abs(max))
         return "%.${decimals}f".format(m).map { if (it.isDigit()) '0' else it }.joinToString("")
     }

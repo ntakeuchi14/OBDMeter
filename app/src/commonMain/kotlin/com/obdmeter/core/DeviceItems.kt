@@ -25,6 +25,10 @@ object DeviceItems {
     const val BATTERY_VOLT = "DEV_BATTERY_VOLT"
     const val SINE = "DEV_TEST_SINE"
     const val SAW = "DEV_TEST_SAW"
+    /** 現在時刻 (日本時間、その日の 0 時からの秒数) */
+    const val TIME = "DEV_TIME"
+    /** 日付 (日本時間、yyyyMMdd の数) */
+    const val DATE = "DEV_DATE"
     /** ボタン (値は無い) */
     const val BUTTON = "APP_BUTTON"
 
@@ -46,14 +50,55 @@ object DeviceItems {
         dev(BATTERY_VOLT, "バッテリー電圧", "電池電圧", "V", 3.0, 4.5, decimals = 2),
         dev(SINE, "テスト信号 サイン波 (10 秒周期)", "サイン波", "", 0.0, 100.0),
         dev(SAW, "テスト信号 のこぎり波 (10 秒周期)", "のこぎり波", "", 0.0, 100.0),
+        PidDef(TIME, "現在時刻 (日本時間)", "時刻", "", 0.0, 86400.0, kind = PidDef.Kind.DEVICE,
+            textFormat = ::formatTime, textTemplate = "00:00:00"),
+        PidDef(DATE, "日付 (日本時間)", "日付", "", 0.0, 99991231.0, kind = PidDef.Kind.DEVICE,
+            textFormat = ::formatDate, textTemplate = "0000/00/00"),
         // 値は無い。メーターの追加でこれを選ぶと「ボタン」を置く
         PidDef(BUTTON, "ボタン (最大値のリセットなど)", "リセット", "", 0.0, 1.0, kind = PidDef.Kind.DEVICE),
     )
 
     fun isDevice(d: PidDef): Boolean = d.kind == PidDef.Kind.DEVICE
 
-    /** テスト信号の値 (時刻 [t] ミリ秒、周期 [periodMs]) */
+    private const val JST_MS = 9 * 3600_000L
+    private const val DAY_MS = 86_400_000L
+
+    /** 日本時間のその日の 0 時からの秒数 (ミリ秒まで) */
+    fun jstSecondsOfDay(t: Long): Double = (t + JST_MS).mod(DAY_MS) / 1000.0
+
+    /** 日本時間の日付 (yyyyMMdd の数) */
+    fun jstDate(t: Long): Int {
+        // 1970-01-01 からの日数 → 年月日 (Howard Hinnant の civil_from_days)
+        val z = (t + JST_MS).floorDiv(DAY_MS) + 719468
+        val era = z.floorDiv(146097L)
+        val doe = z - era * 146097
+        val yoe = (doe - doe / 1460 + doe / 36524 - doe / 146096) / 365
+        val doy = doe - (365 * yoe + yoe / 4 - yoe / 100)
+        val mp = (5 * doy + 2) / 153
+        val d = doy - (153 * mp + 2) / 5 + 1
+        val m = if (mp < 10) mp + 3 else mp - 9
+        val y = yoe + era * 400 + if (m <= 2) 1 else 0
+        return (y * 10000 + m * 100 + d).toInt()
+    }
+
+    /** 秒数 → "HH:mm:ss" */
+    fun formatTime(v: Double): String {
+        val s = kotlin.math.floor(v).toLong().mod(86400L)
+        return "${two(s / 3600)}:${two(s / 60 % 60)}:${two(s % 60)}"
+    }
+
+    /** yyyyMMdd → "yyyy/MM/dd" */
+    fun formatDate(v: Double): String {
+        val n = kotlin.math.round(v).toLong()
+        return "${n / 10000}/${two(n / 100 % 100)}/${two(n % 100)}"
+    }
+
+    private fun two(n: Long) = if (n < 10) "0$n" else "$n"
+
+    /** テスト信号・時刻・日付の値 (時刻 [t] ミリ秒、周期 [periodMs]) */
     fun testSignal(key: String, t: Long, periodMs: Long = 10_000L): Double? {
+        if (key == TIME) return jstSecondsOfDay(t)
+        if (key == DATE) return jstDate(t).toDouble()
         val phase = (t % periodMs).toDouble() / periodMs
         return when (key) {
             SINE -> 50.0 + 50.0 * kotlin.math.sin(phase * 2 * kotlin.math.PI)

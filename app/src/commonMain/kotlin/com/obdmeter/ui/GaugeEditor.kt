@@ -533,6 +533,7 @@ private fun PlaceTab(
 @Composable
 private fun ScaleTab(g: GaugeConfig, update: ((GaugeDesign) -> GaugeDesign) -> Unit) {
     val d = g.design
+    if (g.style == GaugeStyle.ANALOG) ClockSection(g, update)
     Head("シンプルな扇形")
     Hint("針・目盛りを消して、端の丸い太い弧と中央の大きな数値だけのシンプルなメーターにします (あとから個別に調整できます)。")
     OutlinedButton(onClick = {
@@ -2099,5 +2100,42 @@ internal fun PageBackgroundDialog(
                 dismissButton = { TextButton(onClick = { confirmAll = false }) { Text("キャンセル") } },
             )
         }
+    }
+}
+
+
+/** アナログ時計 (時・分・秒の針) */
+@Composable
+private fun ClockSection(g: GaugeConfig, update: ((GaugeDesign) -> GaugeDesign) -> Unit) {
+    val d = g.design
+    Head("時計")
+    SwitchLine(
+        "アナログ時計にする",
+        "目盛りを 1〜12 にして、時・分・秒の針で時刻を表します。項目は「現在時刻 (日本時間)」を選んでください",
+        d.clockMode,
+    ) { v ->
+        update {
+            if (v) it.copy(clockMode = true, minorDivisions = 4, midTick = false, showName = false, showUnit = false, showValue = false)
+            else it.copy(clockMode = false)
+        }
+    }
+    if (!d.clockMode) return
+    if (g.pidKey != com.obdmeter.core.DeviceItems.TIME) {
+        Hint("※ いまの項目は「現在時刻」ではないので、針が時刻になりません。「項目」タブで「現在時刻 (日本時間)」を選んでください")
+    }
+    Hint("針全体の長さ・太さ・色・発光は下の「針 (ポインター)」の設定も掛け合わされます。")
+    @Composable
+    fun HandEditor(title: String, h: com.obdmeter.data.ClockHand, set: (GaugeDesign, com.obdmeter.data.ClockHand) -> GaugeDesign) {
+        SwitchLine(title, null, h.show) { v -> update { set(it, h.copy(show = v)) } }
+        if (!h.show) return
+        ColorLine("$title の色 (既定 = 針の色)", h.color, d.needleColor?.let { Color(it) } ?: GaugeColors.Text) { c -> update { set(it, h.copy(color = c)) } }
+        SliderLine("$title の長さ", h.length * 100, 10f..130f, "%.0f%%") { v -> update { set(it, h.copy(length = snap(v, 5f) / 100f)) } }
+        SliderLine("$title の太さ", h.width * 100, 10f..500f, "%.0f%%") { v -> update { set(it, h.copy(width = snap(v, 5f) / 100f)) } }
+    }
+    HandEditor("時針", d.clockHour) { x, h -> x.copy(clockHour = h) }
+    HandEditor("分針", d.clockMinute) { x, h -> x.copy(clockMinute = h) }
+    HandEditor("秒針", d.clockSecond) { x, h -> x.copy(clockSecond = h) }
+    if (d.clockSecond.show) {
+        SwitchLine("秒針をなめらかに動かす", "OFF なら 1 秒ごとに進みます", d.clockSecondSmooth) { v -> update { it.copy(clockSecondSmooth = v) } }
     }
 }
