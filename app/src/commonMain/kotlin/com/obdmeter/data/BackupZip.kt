@@ -18,11 +18,18 @@ object BackupZip {
     /** zip のデータと、入れた画像の数を返す */
     suspend fun build(platform: AppPlatform, manifest: BackupManifest): Pair<ByteArray, Int> {
         val entries = ArrayList<Zip.Entry>()
-        entries += Zip.Entry(MANIFEST, BackupLogic.encode(manifest).encodeToByteArray())
-        var images = 0
+        val all = LinkedHashMap<String, ByteArray>()
         for (name in BackupLogic.referencedImages(manifest.dashboards)) {
             if (!BackupLogic.SAFE_IMAGE_NAME.matches(name)) continue
-            val bytes = platform.imageBytes(name) ?: continue
+            all[name] = platform.imageBytes(name) ?: continue
+        }
+        // 名前が違うだけで中身が同じ画像は 1 つにまとめ、ページの参照もそちらに付け替える
+        val dup = BackupLogic.duplicateImages(all)
+        val m = if (dup.isEmpty()) manifest else manifest.copy(dashboards = BackupLogic.renameImages(manifest.dashboards, dup))
+        entries += Zip.Entry(MANIFEST, BackupLogic.encode(m).encodeToByteArray())
+        var images = 0
+        for ((name, bytes) in all) {
+            if (name in dup) continue
             entries += Zip.Entry(IMAGE_DIR + name, bytes)
             images++
         }

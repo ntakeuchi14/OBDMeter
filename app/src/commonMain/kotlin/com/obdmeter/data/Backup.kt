@@ -90,6 +90,33 @@ object BackupLogic {
         return m
     }
 
+    /**
+     * 中身が同じ画像 (大きさと CRC32 が同じ) を 1 つにまとめる。
+     * @return 「まとめて消える名前 → 残す名前」(名前順で最初のものを残す)
+     */
+    fun duplicateImages(images: Map<String, ByteArray>): Map<String, String> {
+        val first = HashMap<Pair<Int, Int>, String>()
+        val out = LinkedHashMap<String, String>()
+        for (name in images.keys.sorted()) {
+            val bytes = images.getValue(name)
+            val key = bytes.size to com.obdmeter.util.Zip.crc32(bytes)
+            val kept = first[key]
+            if (kept == null) first[key] = name else out[name] = kept
+        }
+        return out
+    }
+
+    /** ページの画像の参照を [rename] で付け替える (載っていない名前はそのまま) */
+    fun renameImages(dashboards: List<Dashboard>, rename: Map<String, String>): List<Dashboard> {
+        if (rename.isEmpty()) return dashboards
+        fun r(n: String?) = n?.let { rename[it] ?: it }
+        return dashboards.map { d ->
+            d.copy(background = d.background.copy(image = r(d.background.image)), gauges = d.gauges.map { g ->
+                g.copy(design = g.design.copy(backgroundImage = r(g.design.backgroundImage), tableValueImage = r(g.design.tableValueImage)))
+            })
+        }
+    }
+
     /** ダッシュボードが参照している背景画像の名前 */
     fun referencedImages(dashboards: List<Dashboard>): Set<String> =
         dashboards.flatMap { it.imageNames() }.toSet()

@@ -213,4 +213,21 @@ class BackupTest {
         assertEquals(mapOf(newKey to false), g.chartAxis)
         assertEquals("今の設定が優先、ファイルにだけある項目を追加", mapOf("RPM" to 200, newKey to 5_000), r.pollIntervalsMs)
     }
+
+    @Test
+    fun duplicateImagesAreMergedByContent() {
+        val a = byteArrayOf(1, 2, 3)
+        val images = mapOf("b.png" to a.copyOf(), "a.png" to a, "c.png" to byteArrayOf(1, 2, 4))
+        val dup = BackupLogic.duplicateImages(images)
+        assertEquals(mapOf("b.png" to "a.png"), dup)
+
+        val pages = listOf(Dashboard(1, "p", gauges = listOf(
+            GaugeConfig("RPM", id = 1, design = GaugeDesign(backgroundImage = "b.png")),
+            GaugeConfig("RPM", id = 2, design = GaugeDesign(backgroundImage = "c.png")),
+        ), background = PageBackground(image = "b.png")))
+        val fixed = BackupLogic.renameImages(pages, dup)
+        assertEquals("a.png", fixed[0].background.image)
+        assertEquals("a.png", fixed[0].gauges[0].design.backgroundImage)
+        assertEquals("c.png", fixed[0].gauges[1].design.backgroundImage)
+    }
 }
