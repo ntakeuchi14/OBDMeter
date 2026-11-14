@@ -61,13 +61,13 @@ fun GaugeDesign.toLook(def: PidDef, style: GaugeStyle): GaugeLook {
     // 時計: 12 時から 1 周、目盛りは 12 等分、弧とレッドゾーンは無し
     val clock = clockMode && style == GaugeStyle.ANALOG
     fun hand(h: com.obdmeter.data.ClockHand) = if (!h.show) null else
-        HandLook(h.color?.let { Color(it) }, h.length.coerceIn(0.1f, 1.3f), h.width.coerceIn(0.1f, 5f))
+        com.obdmeter.ui.gauges.HandLook(h.color?.let { Color(it) }, h.length.coerceIn(0.1f, 1.3f), h.width.coerceIn(0.1f, 5f))
     return GaugeLook(
         accent = accent,
         startAngle = if (clock) -90f else s - 90f,
         sweep = if (clock) 360f else sweep,
         majorDivisions = if (clock) 12 else majorDivisions?.takeIf { it in 1..40 },
-        clock = if (clock) ClockLook(hand(clockHour), hand(clockMinute), hand(clockSecond), clockSecondSmooth) else null,
+        clock = if (clock) com.obdmeter.ui.gauges.ClockLook(hand(clockHour), hand(clockMinute), hand(clockSecond), clockSecondSmooth) else null,
         minorDivisions = minorDivisions.coerceIn(0, 9),
         midTick = midTick,
         midTickLength = midTickLength.coerceIn(0.3f, 1f),
