@@ -325,7 +325,9 @@ fun GaugeCard(
         Box(modifier.padding(if (look.showCard) 8.dp else 2.dp)) {
             val fonts = rememberGaugeFonts(look)
             if (style == GaugeStyle.ANALOG) {
-                AnalogGauge(def, if (unsupported) null else value, unsupported, look, null, Modifier.fillMaxSize(), null, fonts,
+                // 最大値針も針の層に描く (本体の層が置いた値を使う)
+                val peakNeedle = needleState?.let { PeakNeedles.values[it] }
+                AnalogGauge(def, if (unsupported) null else value, unsupported, look, null, Modifier.fillMaxSize(), peakNeedle, fonts,
                     GaugeLayer.NEEDLE, needleState)
             }
         }
@@ -363,8 +365,19 @@ fun GaugeCard(
         androidx.compose.runtime.LaunchedEffect(at, holdMs) {
             val left = at + holdMs - com.obdmeter.util.nowMs()
             if (left > 0) kotlinx.coroutines.delay(left)
+            // 時間が過ぎたら最大値もリセットする (次の値からまた記録する)
+            if (peakAt[0] == at) {
+                peakHolder[0] = Double.NaN
+                keepKey?.let { PeakStore.values.remove(it); PeakStore.times.remove(it) }
+            }
             holdTick++
         }
+    }
+    // 最大値針は針の層 (ほかのメーターより手前、本当の針の 1 つ奥) に描くので、その層へ値を渡す
+    if (needleState != null) {
+        val pn = peak?.takeIf { look.peakNeedle && peakMarkVisible && style == GaugeStyle.ANALOG }
+        SideEffect { if (pn != null) PeakNeedles.values[needleState] = pn else PeakNeedles.values.remove(needleState) }
+        androidx.compose.runtime.DisposableEffect(needleState) { onDispose { PeakNeedles.values.remove(needleState) } }
     }
     Box(
         // メーター自体の影 (カード、なければ文字盤・背景色の形)
@@ -689,12 +702,6 @@ fun AnalogGauge(
             val pp = Offset(pc.x + arcR * cos(pa).toFloat(), pc.y + q * arcR * sin(pa).toFloat())
             drawCircle(look.peakColor, stroke * 0.32f, pp)
         }
-        // 最大値の針 (最大値の位置に残す針。本当の針より奥に描く)
-        if (peak != null && look.peakNeedle && look.clock == null && peakMarkVisible) {
-            if (shifted) { drawContext.canvas.save(); drawContext.canvas.clipPath(innerCircle) }
-            hand(fraction(def, peak), look.needleLength, look.needleWidth, look.peakNeedleColor, look.needleTail)
-            if (shifted) drawContext.canvas.restore()
-        }
         // ピーク値の印 (目盛りの外側から内側に向いた三角形)
         if (peak != null && look.peakMark && peakMarkVisible && !(look.arcTipDot && stroke > 0f)) {
             val pa = com.obdmeter.util.toRadians((start + sweep * fraction(def, peak)).toDouble())
@@ -765,6 +772,10 @@ fun AnalogGauge(
         // 針 (根元が太く先が細い形) と中心のノブ。数値などより手前に描く
         if (layer != GaugeLayer.BODY) {
         if (shifted) { drawContext.canvas.save(); drawContext.canvas.clipPath(innerCircle) }
+        // 最大値の針 (最大値の位置に残す針。本当の針の 1 つ奥)
+        if (peak != null && look.peakNeedle && look.clock == null && peakMarkVisible) {
+            hand(fraction(def, peak), look.needleLength, look.needleWidth, look.peakNeedleColor, look.needleTail)
+        }
         val clock = look.clock
         if (value != null && look.showNeedle && clock != null) {
             // 時計: 値はその日の 0 時からの秒数。時・分針はなめらかに、秒針は設定で 1 秒ごと
@@ -1502,6 +1513,11 @@ internal class GaugeFxCache {
 
 
 /** ページを切り替えても維持するピーク値 (項目キー → 値。維持する設定のメーターどうしで共有)。アプリを終了すると消える */
+/** 最大値針の値 (本体の層が置き、針の層が読む。キーは本体と針の層で共有する針の位置) */
+internal object PeakNeedles {
+    val values = androidx.compose.runtime.mutableStateMapOf<Any, Double>()
+}
+
 internal object PeakStore {
     val values = HashMap<String, Double>()
     /** 最大値を更新した時刻 (印・針を描く時間を数えるため) */
