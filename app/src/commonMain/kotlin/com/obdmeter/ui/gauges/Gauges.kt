@@ -81,6 +81,8 @@ object GaugeColors {
     val Warn = Color(0xFFFF5A36)
     val WarnZone = Color(0x66FF5A36)
     val Ring = Color(0xFFB0B6BE)
+    /** ベゼル (太い艶消しのリング) の既定の色 */
+    val Bezel = Color(0xFF2E3034)
     val Peak = Color(0xFFFFCA28)
 }
 
@@ -1303,6 +1305,7 @@ internal fun ringWidthFor(look: GaugeLook, d: Float): Float = when (look.ring) {
     RingStyle.LINE -> d * 0.012f
     RingStyle.BOLD -> d * 0.035f
     RingStyle.METAL -> d * 0.05f
+    RingStyle.BEZEL -> d * 0.09f
 } * look.ringThickness
 
 internal fun DrawScope.drawRing(look: GaugeLook, center: Offset, outer: Float, w: Float) {
@@ -1325,6 +1328,35 @@ internal fun DrawScope.drawRing(look: GaugeLook, center: Offset, outer: Float, w
                     outer - w / 2, center, style = Stroke(w),
                 )
             }
+        }
+        RingStyle.BEZEL -> {
+            // 太い艶消しのベゼル: 断面が丸い (中ほどが少し明るい)。外縁に細い明るい縁、内側は文字盤へ落ち込む
+            val inner = outer - w
+            val r0 = (inner / outer).coerceIn(0f, 0.999f)
+            fun at(t: Float) = r0 + (1f - r0) * t
+            drawCircle(
+                Brush.radialGradient(
+                    0f to Color.Transparent,
+                    at(0f) to lerp(c, Color.Black, 0.65f * depth),
+                    at(0.15f) to lerp(c, Color.Black, 0.3f * depth),
+                    at(0.5f) to lerp(c, Color.White, 0.1f * depth),
+                    at(0.86f) to lerp(c, Color.Black, 0.2f * depth),
+                    at(0.94f) to lerp(c, Color.White, 0.3f * depth),
+                    1f to lerp(c, Color.Black, 0.55f * depth),
+                    center = center, radius = outer,
+                ),
+                outer - w / 2, center, style = Stroke(w),
+            )
+            // 光は左上から (上がうっすら明るく、下が暗い)
+            drawCircle(
+                Brush.linearGradient(
+                    listOf(Color.White.copy(alpha = 0.16f * depth), Color.Transparent, Color.Black.copy(alpha = 0.3f * depth)),
+                    start = top, end = bottom,
+                ),
+                outer - w / 2, center, style = Stroke(w),
+            )
+            // 文字盤との境目の細い影
+            drawCircle(Color.Black.copy(alpha = 0.6f * depth), inner + w * 0.02f, center, style = Stroke(max(1f, w * 0.05f)))
         }
         RingStyle.METAL -> {
             val innerW = w * look.ringInner.coerceIn(0f, 0.8f)

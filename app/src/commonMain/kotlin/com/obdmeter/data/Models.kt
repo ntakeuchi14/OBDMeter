@@ -517,6 +517,8 @@ enum class RingStyle(val label: String) {
     LINE("細線"),
     BOLD("太線"),
     METAL("メタル"),
+    /** 太い艶消しのベゼル (外縁が少し明るく、文字盤に向かって落ち込む) */
+    BEZEL("ベゼル"),
 }
 
 /**

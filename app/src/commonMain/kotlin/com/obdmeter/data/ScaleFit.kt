@@ -17,6 +17,7 @@ object ScaleFit {
         RingStyle.LINE -> 0.012f
         RingStyle.BOLD -> 0.035f
         RingStyle.METAL -> 0.05f
+        RingStyle.BEZEL -> 0.09f
     } * d.ringThickness.coerceIn(0.2f, 4f)
 
     /**

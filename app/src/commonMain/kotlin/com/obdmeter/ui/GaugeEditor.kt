@@ -901,11 +901,11 @@ private fun RingSection(d: GaugeDesign, update: ((GaugeDesign) -> GaugeDesign) -
         }
     }
     if (d.ring != RingStyle.NONE) {
-        ColorLine("リングの色", d.ringColor, GaugeColors.Ring) { c -> update { it.copy(ringColor = c) } }
+        ColorLine("リングの色", d.ringColor, if (d.ring == RingStyle.BEZEL) GaugeColors.Bezel else GaugeColors.Ring) { c -> update { it.copy(ringColor = c) } }
         SliderLine("リングの太さ", d.ringThickness * 100, 30f..300f, "%.0f%%") { v ->
             update { it.copy(ringThickness = snap(v, 5f) / 100f) }
         }
-        if (d.ring == RingStyle.METAL || d.ring == RingStyle.BOLD) {
+        if (d.ring == RingStyle.METAL || d.ring == RingStyle.BOLD || d.ring == RingStyle.BEZEL) {
             SliderLine("立体感 (陰影の強さ)", d.ringDepth * 100, 0f..100f, "%.0f%%") { v ->
                 update { it.copy(ringDepth = snap(v, 5f) / 100f) }
             }
