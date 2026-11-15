@@ -941,7 +941,7 @@ private fun PeakSection(g: GaugeConfig, update: ((GaugeDesign) -> GaugeDesign) -
         if (g.style != GaugeStyle.DIGITAL) {
             SwitchLine("最大値の位置に印を描く", null, d.peakMarkShow) { v -> update { it.copy(peakMarkShow = v) } }
             if (g.style == GaugeStyle.ANALOG) {
-                SwitchLine("最大値の位置に針を残す (最大値針)", "針と同じ形で、本当の針より奥に描きます", d.peakNeedle) { v -> update { it.copy(peakNeedle = v) } }
+                SwitchLine("最大値の位置に針を残す (最大値針)", "針と同じ形で、本当の針のすぐ奥に描きます", d.peakNeedle) { v -> update { it.copy(peakNeedle = v) } }
                 if (d.peakNeedle) {
                     val dflt = (d.peakColor?.let { Color(it) } ?: GaugeColors.Peak).copy(alpha = 0.55f)
                     ColorLine("最大値針の色 (既定 = 印の色を半透明に)", d.peakNeedleColor, dflt) { c -> update { it.copy(peakNeedleColor = c) } }
@@ -949,7 +949,7 @@ private fun PeakSection(g: GaugeConfig, update: ((GaugeDesign) -> GaugeDesign) -
             }
             if (d.peakMarkShow || d.peakNeedle) {
                 SliderLine("印・針を描く時間 (0 = ずっと)", d.peakHoldSec, 0f..60f, "%.0f 秒") { v -> update { it.copy(peakHoldSec = snap(v, 1f)) } }
-                Hint("時間を決めると、最大値を更新してからその時間だけ印・針を描いて消します。描いている間に最大値を超えたら、そこから数え直します。数字の MAX は消えません")
+                Hint("時間を決めると、最大値を更新してからその時間が過ぎたら、印・針をゆっくり今の針の位置へ戻して最大値をリセットします。その間に最大値を超えたら、そこから数え直します")
             }
             SwitchLine("最大値を数字でも表示", null, d.showPeakValue) { v -> update { it.copy(showPeakValue = v) } }
             ColorLine("印の色", d.peakColor, GaugeColors.Peak) { c -> update { it.copy(peakColor = c) } }

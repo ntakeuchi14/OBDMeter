@@ -328,7 +328,7 @@ fun GaugeCard(
                 // 最大値針も針の層に描く (本体の層が置いた値を使う)
                 val peakNeedle = needleState?.let { PeakNeedles.values[it] }
                 AnalogGauge(def, if (unsupported) null else value, unsupported, look, null, Modifier.fillMaxSize(), peakNeedle, fonts,
-                    GaugeLayer.NEEDLE, needleState)
+                    GaugeLayer.NEEDLE, needleState, needleState?.let { PeakNeedles.returns[it] } ?: 0f)
             }
         }
         return
@@ -356,28 +356,35 @@ fun GaugeCard(
         keepKey?.let { PeakStore.values[it] = value; PeakStore.times[it] = peakAt[0] }
     }
     val peak = peakHolder[0].takeIf { look.showPeak && !it.isNaN() }
-    // 描く時間を決めていれば、最大値を更新してからその時間が過ぎたら印・針を消す (数字の MAX は残す)
+    // 描く時間を決めていれば、最大値を更新してからその時間が過ぎたら、印・針をゆっくり今の針の位置へ戻し、
+    // 戻りきったら最大値もリセットする (次の値からまた記録する)。その間に最大値を超えたら、そこから数え直す
     val holdMs = (look.peakHoldSec * 1000).toLong()
-    var holdTick by remember { androidx.compose.runtime.mutableIntStateOf(0) }
-    val peakMarkVisible = holdMs <= 0L || run { holdTick; com.obdmeter.util.nowMs() - peakAt[0] < holdMs }
+    val peakReturn = remember { androidx.compose.animation.core.Animatable(0f) }
     if (holdMs > 0L && peak != null) {
         val at = peakAt[0]
         androidx.compose.runtime.LaunchedEffect(at, holdMs) {
+            peakReturn.snapTo(0f)
             val left = at + holdMs - com.obdmeter.util.nowMs()
             if (left > 0) kotlinx.coroutines.delay(left)
-            // 時間が過ぎたら最大値もリセットする (次の値からまた記録する)
+            peakReturn.animateTo(1f, androidx.compose.animation.core.tween(PEAK_RETURN_MS, easing = androidx.compose.animation.core.FastOutSlowInEasing))
             if (peakAt[0] == at) {
                 peakHolder[0] = Double.NaN
                 keepKey?.let { PeakStore.values.remove(it); PeakStore.times.remove(it) }
             }
-            holdTick++
+            peakReturn.snapTo(0f)
         }
+    } else if (holdMs <= 0L && peakReturn.value != 0f) {
+        androidx.compose.runtime.LaunchedEffect(Unit) { peakReturn.snapTo(0f) }
     }
+    val ret = peakReturn.value
     // 最大値針は針の層 (ほかのメーターより手前、本当の針の 1 つ奥) に描くので、その層へ値を渡す
     if (needleState != null) {
-        val pn = peak?.takeIf { look.peakNeedle && peakMarkVisible && style == GaugeStyle.ANALOG }
-        SideEffect { if (pn != null) PeakNeedles.values[needleState] = pn else PeakNeedles.values.remove(needleState) }
-        androidx.compose.runtime.DisposableEffect(needleState) { onDispose { PeakNeedles.values.remove(needleState) } }
+        val pn = peak?.takeIf { look.peakNeedle && style == GaugeStyle.ANALOG }
+        SideEffect {
+            if (pn != null) { PeakNeedles.values[needleState] = pn; PeakNeedles.returns[needleState] = ret }
+            else { PeakNeedles.values.remove(needleState); PeakNeedles.returns.remove(needleState) }
+        }
+        androidx.compose.runtime.DisposableEffect(needleState) { onDispose { PeakNeedles.values.remove(needleState); PeakNeedles.returns.remove(needleState) } }
     }
     Box(
         // メーター自体の影 (カード、なければ文字盤・背景色の形)
@@ -397,8 +404,8 @@ fun GaugeCard(
         val fonts = rememberGaugeFonts(look)
         when (style) {
             GaugeStyle.ANALOG -> AnalogGauge(def, v, unsupported, look, image, Modifier.fillMaxSize(), peak, fonts,
-                if (layer == GaugeLayer.BODY) GaugeLayer.BODY else GaugeLayer.ALL, needleState, peakMarkVisible)
-            GaugeStyle.BAR -> BarGauge(def, v, unsupported, look, image, Modifier.fillMaxSize(), peak, fonts, peakMarkVisible)
+                if (layer == GaugeLayer.BODY) GaugeLayer.BODY else GaugeLayer.ALL, needleState, ret)
+            GaugeStyle.BAR -> BarGauge(def, v, unsupported, look, image, Modifier.fillMaxSize(), peak, fonts, ret)
             GaugeStyle.DIGITAL -> DigitalGauge(def, v, unsupported, look, image, Modifier.fillMaxSize(), peak, fonts)
             // ランプは条件判定をならし前の値で行う
             GaugeStyle.LAMP -> LampGauge(def, if (unsupported) null else value, unsupported, look, image, Modifier.fillMaxSize(), fonts)
@@ -514,8 +521,8 @@ fun AnalogGauge(
     layer: GaugeLayer = GaugeLayer.ALL,
     /** 本体と針の層で針の位置を共有する (本体が書き、針の層が読む) */
     needleState: MutableFloatState? = null,
-    /** 最大値の印・針を描くか (描画時間を過ぎたら false) */
-    peakMarkVisible: Boolean = true,
+    /** 最大値の印・針を今の針の位置へ戻している割合 (0 = 最大値の位置、1 = 今の針の位置) */
+    peakReturn: Float = 0f,
 ) {
     // 時計のときは目盛りを 0〜12 (時) にする
     val def = if (look.clock != null) def.copy(min = 0.0, max = 12.0) else def
@@ -524,6 +531,8 @@ fun AnalogGauge(
     val tm = rememberTextMeasurer()
     val f = if (layer == GaugeLayer.NEEDLE && needleState != null) needleState.floatValue else animated(def, value, look.smoothing)
     if (layer == GaugeLayer.BODY && needleState != null) SideEffect { needleState.floatValue = f }
+    // 最大値の印・針の位置 (戻している間は今の針の位置へ近づける)
+    val pf = peak?.let { val p = fraction(def, it); p + (f - p) * peakReturn.coerceIn(0f, 1f) }
     val warn = isWarn(def, value)
     Canvas(modifier) {
         val d = min(size.width, size.height)
@@ -637,7 +646,7 @@ fun AnalogGauge(
             drawArc(arcColor, start, sweep * f, false,
                 arcTopLeft, arcSize, style = Stroke(stroke, cap = cap))
             // 弧の先の丸い点 (ピーク値を出すときは、点をピーク値の位置に置いて印にする)
-            if (look.arcTipDot && !(peak != null && look.peakMark && peakMarkVisible)) {
+            if (look.arcTipDot && !(peak != null && look.peakMark)) {
                 val ta = com.obdmeter.util.toRadians((start + sweep * f).toDouble())
                 val tp = Offset(pc.x + arcR * cos(ta).toFloat(), pc.y + q * arcR * sin(ta).toFloat())
                 drawCircle(look.arcTipColor, stroke * 0.32f, tp)
@@ -697,14 +706,14 @@ fun AnalogGauge(
         } else drawScale()
 
         // 弧の先の丸い点を付けるときは、その点をピーク値の印にする (弧の上、ピーク値の位置)
-        if (peak != null && look.peakMark && peakMarkVisible && look.arcTipDot && stroke > 0f) {
-            val pa = com.obdmeter.util.toRadians((start + sweep * fraction(def, peak)).toDouble())
+        if (pf != null && look.peakMark && look.arcTipDot && stroke > 0f) {
+            val pa = com.obdmeter.util.toRadians((start + sweep * pf).toDouble())
             val pp = Offset(pc.x + arcR * cos(pa).toFloat(), pc.y + q * arcR * sin(pa).toFloat())
             drawCircle(look.peakColor, stroke * 0.32f, pp)
         }
         // ピーク値の印 (目盛りの外側から内側に向いた三角形)
-        if (peak != null && look.peakMark && peakMarkVisible && !(look.arcTipDot && stroke > 0f)) {
-            val pa = com.obdmeter.util.toRadians((start + sweep * fraction(def, peak)).toDouble())
+        if (pf != null && look.peakMark && !(look.arcTipDot && stroke > 0f)) {
+            val pa = com.obdmeter.util.toRadians((start + sweep * pf).toDouble())
             // 楕円の上の点の向き
             val ux = cos(pa).toFloat()
             val uy = q * sin(pa).toFloat()
@@ -773,8 +782,8 @@ fun AnalogGauge(
         if (layer != GaugeLayer.BODY) {
         if (shifted) { drawContext.canvas.save(); drawContext.canvas.clipPath(innerCircle) }
         // 最大値の針 (最大値の位置に残す針。本当の針の 1 つ奥)
-        if (peak != null && look.peakNeedle && look.clock == null && peakMarkVisible) {
-            hand(fraction(def, peak), look.needleLength, look.needleWidth, look.peakNeedleColor, look.needleTail)
+        if (pf != null && look.peakNeedle && look.clock == null) {
+            hand(pf, look.needleLength, look.needleWidth, look.peakNeedleColor, look.needleTail)
         }
         val clock = look.clock
         if (value != null && look.showNeedle && clock != null) {
@@ -846,7 +855,7 @@ fun BarGauge(
     modifier: Modifier = Modifier,
     peak: Double? = null,
     fonts: GaugeFontSet = GaugeFontSet(FontFamily.Monospace, null),
-    peakMarkVisible: Boolean = true,
+    peakReturn: Float = 0f,
 ) {
     val tm = rememberTextMeasurer()
     val f = animated(def, value, look.smoothing)
@@ -890,7 +899,7 @@ fun BarGauge(
             drawTextHit(valueLayout, topLeft = Offset(valueRight - valueLayout.size.width, valueY))
         }
 
-        drawBar(def, value, f, warn, look, peak, tm, fonts, unit, peakMarkVisible)
+        drawBar(def, value, f, warn, look, peak, tm, fonts, unit, peakReturn)
     }
 }
 
@@ -906,7 +915,7 @@ internal fun glowShadow(color: Color, glow: Float, size: Float): androidx.compos
  */
 private fun DrawScope.drawBar(
     def: PidDef, value: Double?, f: Float, warn: Boolean, look: GaugeLook, peak: Double?,
-    tm: TextMeasurer, fonts: GaugeFontSet, unit: Float, peakMarkVisible: Boolean = true,
+    tm: TextMeasurer, fonts: GaugeFontSet, unit: Float, peakReturn: Float = 0f,
 ) {
     val w = size.width
     val h = size.height
@@ -1101,7 +1110,7 @@ private fun DrawScope.drawBar(
         }
     }
     if (peak != null) {
-        val pp = fraction(def, peak)
+        val pp = fraction(def, peak).let { p -> p + (f - p) * peakReturn.coerceIn(0f, 1f) }
         // 印はその位置のバーの太さに合わせる (先細りの細いところでは短く・細く)
         val h = max(th(pp), 2f)
         val o = if (taper > 0f) 0f else (thick - baseThick) / 2
@@ -1110,7 +1119,7 @@ private fun DrawScope.drawBar(
         val half = h * 0.85f * look.peakMarkLength
         val a = pointAt(pp, center - half)
         val b = pointAt(pp, center + half)
-        if (look.peakMark && peakMarkVisible) drawLine(look.peakColor, a, b, max(1f, max(2f, h * 0.25f) * look.peakMarkWidth))
+        if (look.peakMark) drawLine(look.peakColor, a, b, max(1f, max(2f, h * 0.25f) * look.peakMarkWidth))
         if (look.showPeakValue) {
             val t = tm.measure("MAX " + def.format(peak),
                 TextStyle(color = look.peakTextColor, fontSize = (unit * 0.12f * look.peakTextSize).toSp(), fontFamily = fonts.value))
@@ -1516,7 +1525,12 @@ internal class GaugeFxCache {
 /** 最大値針の値 (本体の層が置き、針の層が読む。キーは本体と針の層で共有する針の位置) */
 internal object PeakNeedles {
     val values = androidx.compose.runtime.mutableStateMapOf<Any, Double>()
+    /** 今の針の位置へ戻している割合 */
+    val returns = androidx.compose.runtime.mutableStateMapOf<Any, Float>()
 }
+
+/** 最大値の印・針を今の針の位置へ戻す時間 (ミリ秒) */
+private const val PEAK_RETURN_MS = 1200
 
 internal object PeakStore {
     val values = HashMap<String, Double>()
