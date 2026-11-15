@@ -282,6 +282,14 @@ data class GaugeDesign(
     val showPeak: Boolean = false,
     /** ピーク値 (最大値) を、ページを切り替えても覚えておく (アプリを終了すると消える) */
     val peakKeep: Boolean = false,
+    /** 最大値の位置に印を描く */
+    val peakMarkShow: Boolean = true,
+    /** アナログ: 最大値の位置に針を残す */
+    val peakNeedle: Boolean = false,
+    /** 最大値の針の色 (null = 印の色を半透明に) */
+    val peakNeedleColor: Long? = null,
+    /** 最大値の印・針を描く時間 (秒、0 = ずっと)。描いている間に最大値を超えたら、そこから数え直す */
+    val peakHoldSec: Float = 0f,
     /** エンジンが止まっている間 (回転数 400 rpm 未満) は最大値を記録しない */
     val peakEngineRunningOnly: Boolean = false,
     val peakColor: Long? = null,

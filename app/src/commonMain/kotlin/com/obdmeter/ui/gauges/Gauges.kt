@@ -210,6 +210,13 @@ data class GaugeLook(
     val chartColors: List<Color?> = emptyList(),
     val showPeak: Boolean = false,
     val peakKeep: Boolean = false,
+    /** 最大値の位置に印を描く */
+    val peakMark: Boolean = true,
+    /** 最大値の位置に針を残す (アナログ) */
+    val peakNeedle: Boolean = false,
+    val peakNeedleColor: Color = GaugeColors.Peak.copy(alpha = 0.55f),
+    /** 最大値の印・針を描く時間 (秒、0 = ずっと)。最大値が更新されるとまたこの時間だけ描く */
+    val peakHoldSec: Float = 0f,
     val peakColor: Color = GaugeColors.Peak,
     val peakMarkWidth: Float = 1f,
     val peakMarkLength: Float = 1f,
@@ -337,11 +344,28 @@ fun GaugeCard(
     val peakHolder = remember(def.key, peakResetKey, def.min, def.max, keepKey, PeakStore.generation) {
         doubleArrayOf(keepKey?.let { PeakStore.values[it] } ?: Double.NaN)
     }
+    // 最大値を更新した時刻 (印・針を描く時間を数える)
+    val peakAt = remember(def.key, peakResetKey, def.min, def.max, keepKey, PeakStore.generation) {
+        longArrayOf(keepKey?.let { PeakStore.times[it] } ?: com.obdmeter.util.nowMs())
+    }
     if (look.showPeak && peakAllowed && value != null && !unsupported && (peakHolder[0].isNaN() || value > peakHolder[0])) {
         peakHolder[0] = value
-        keepKey?.let { PeakStore.values[it] = value }
+        peakAt[0] = com.obdmeter.util.nowMs()
+        keepKey?.let { PeakStore.values[it] = value; PeakStore.times[it] = peakAt[0] }
     }
     val peak = peakHolder[0].takeIf { look.showPeak && !it.isNaN() }
+    // 描く時間を決めていれば、最大値を更新してからその時間が過ぎたら印・針を消す (数字の MAX は残す)
+    val holdMs = (look.peakHoldSec * 1000).toLong()
+    var holdTick by remember { androidx.compose.runtime.mutableIntStateOf(0) }
+    val peakMarkVisible = holdMs <= 0L || run { holdTick; com.obdmeter.util.nowMs() - peakAt[0] < holdMs }
+    if (holdMs > 0L && peak != null) {
+        val at = peakAt[0]
+        androidx.compose.runtime.LaunchedEffect(at, holdMs) {
+            val left = at + holdMs - com.obdmeter.util.nowMs()
+            if (left > 0) kotlinx.coroutines.delay(left)
+            holdTick++
+        }
+    }
     Box(
         // メーター自体の影 (カード、なければ文字盤・背景色の形)
         (if (look.objectShadow) modifier.drawBehind { drawObjectShadow(style, look) } else modifier).let { m ->
@@ -360,8 +384,8 @@ fun GaugeCard(
         val fonts = rememberGaugeFonts(look)
         when (style) {
             GaugeStyle.ANALOG -> AnalogGauge(def, v, unsupported, look, image, Modifier.fillMaxSize(), peak, fonts,
-                if (layer == GaugeLayer.BODY) GaugeLayer.BODY else GaugeLayer.ALL, needleState)
-            GaugeStyle.BAR -> BarGauge(def, v, unsupported, look, image, Modifier.fillMaxSize(), peak, fonts)
+                if (layer == GaugeLayer.BODY) GaugeLayer.BODY else GaugeLayer.ALL, needleState, peakMarkVisible)
+            GaugeStyle.BAR -> BarGauge(def, v, unsupported, look, image, Modifier.fillMaxSize(), peak, fonts, peakMarkVisible)
             GaugeStyle.DIGITAL -> DigitalGauge(def, v, unsupported, look, image, Modifier.fillMaxSize(), peak, fonts)
             // ランプは条件判定をならし前の値で行う
             GaugeStyle.LAMP -> LampGauge(def, if (unsupported) null else value, unsupported, look, image, Modifier.fillMaxSize(), fonts)
@@ -477,6 +501,8 @@ fun AnalogGauge(
     layer: GaugeLayer = GaugeLayer.ALL,
     /** 本体と針の層で針の位置を共有する (本体が書き、針の層が読む) */
     needleState: MutableFloatState? = null,
+    /** 最大値の印・針を描くか (描画時間を過ぎたら false) */
+    peakMarkVisible: Boolean = true,
 ) {
     // 時計のときは目盛りを 0〜12 (時) にする
     val def = if (look.clock != null) def.copy(min = 0.0, max = 12.0) else def
@@ -518,6 +544,38 @@ fun AnalogGauge(
         val cap = if (look.arcRoundCap) StrokeCap.Round else StrokeCap.Butt
         // 目盛りの位置 (レッドゾーンを内側に描くときにも使う)
         val tickOuter = gaugeR - stroke - d * 0.008f
+        fun hand(frac: Float, lengthMul: Float, widthMul: Float, color: Color, tailMul: Float) {
+            val a = com.obdmeter.util.toRadians((start + sweep * frac).toDouble())
+            // 楕円の目盛りのときは、針は目盛りの点の向きに向け、長さも目盛りまでに合わせる
+            val ux = cos(a).toFloat()
+            val uy = q * sin(a).toFloat()
+            val un = kotlin.math.sqrt(ux * ux + uy * uy).coerceAtLeast(1e-6f)
+            val ca = ux / un
+            val sa = uy / un
+            val len = tickOuter * lengthMul * un
+            val tail = tickOuter * lengthMul * tailMul
+            val baseW = d * 0.016f * widthMul
+            val tipW = baseW * 0.35f
+            val needle = Path().apply {
+                // 尾の端 → 根元 → 先端 → 根元 → 尾の端 (針の向きに垂直な方向へ幅を取る)
+                moveTo(pc.x - tail * ca - baseW * sa, pc.y - tail * sa + baseW * ca)
+                lineTo(pc.x + len * ca - tipW * sa, pc.y + len * sa + tipW * ca)
+                lineTo(pc.x + len * ca + tipW * sa, pc.y + len * sa - tipW * ca)
+                lineTo(pc.x - tail * ca + baseW * sa, pc.y - tail * sa - baseW * ca)
+                close()
+            }
+            // 針の影 (文字盤から少し浮いているように、右下へずらしてぼかす)
+            if (look.needleShadow) drawSoftShadow(needle, d * 0.012f, d * 0.02f, d * 0.012f, 0.45f * look.shadowStrength)
+            // 針の発光 (針の色で、外側ほど薄く広げる。ぼかしを使わないので軽い)
+            if (look.needleGlow > 0f) {
+                val g = look.needleGlow
+                drawPath(needle, color.copy(alpha = 0.08f * g), style = Stroke(d * 0.09f * g + 2f, join = StrokeJoin.Round, cap = StrokeCap.Round))
+                drawPath(needle, color.copy(alpha = 0.14f * g), style = Stroke(d * 0.055f * g + 2f, join = StrokeJoin.Round, cap = StrokeCap.Round))
+                drawPath(needle, color.copy(alpha = 0.22f * g), style = Stroke(d * 0.03f * g + 2f, join = StrokeJoin.Round, cap = StrokeCap.Round))
+                drawPath(needle, color.copy(alpha = 0.35f * g), style = Stroke(d * 0.012f * g + 1f, join = StrokeJoin.Round, cap = StrokeCap.Round))
+            }
+            drawPath(needle, color)
+        }
 
         if (layer != GaugeLayer.NEEDLE) {
 
@@ -566,7 +624,7 @@ fun AnalogGauge(
             drawArc(arcColor, start, sweep * f, false,
                 arcTopLeft, arcSize, style = Stroke(stroke, cap = cap))
             // 弧の先の丸い点 (ピーク値を出すときは、点をピーク値の位置に置いて印にする)
-            if (look.arcTipDot && peak == null) {
+            if (look.arcTipDot && !(peak != null && look.peakMark && peakMarkVisible)) {
                 val ta = com.obdmeter.util.toRadians((start + sweep * f).toDouble())
                 val tp = Offset(pc.x + arcR * cos(ta).toFloat(), pc.y + q * arcR * sin(ta).toFloat())
                 drawCircle(look.arcTipColor, stroke * 0.32f, tp)
@@ -626,13 +684,19 @@ fun AnalogGauge(
         } else drawScale()
 
         // 弧の先の丸い点を付けるときは、その点をピーク値の印にする (弧の上、ピーク値の位置)
-        if (peak != null && look.arcTipDot && stroke > 0f) {
+        if (peak != null && look.peakMark && peakMarkVisible && look.arcTipDot && stroke > 0f) {
             val pa = com.obdmeter.util.toRadians((start + sweep * fraction(def, peak)).toDouble())
             val pp = Offset(pc.x + arcR * cos(pa).toFloat(), pc.y + q * arcR * sin(pa).toFloat())
             drawCircle(look.peakColor, stroke * 0.32f, pp)
         }
+        // 最大値の針 (最大値の位置に残す針。本当の針より奥に描く)
+        if (peak != null && look.peakNeedle && look.clock == null && peakMarkVisible) {
+            if (shifted) { drawContext.canvas.save(); drawContext.canvas.clipPath(innerCircle) }
+            hand(fraction(def, peak), look.needleLength, look.needleWidth, look.peakNeedleColor, look.needleTail)
+            if (shifted) drawContext.canvas.restore()
+        }
         // ピーク値の印 (目盛りの外側から内側に向いた三角形)
-        if (peak != null && !(look.arcTipDot && stroke > 0f)) {
+        if (peak != null && look.peakMark && peakMarkVisible && !(look.arcTipDot && stroke > 0f)) {
             val pa = com.obdmeter.util.toRadians((start + sweep * fraction(def, peak)).toDouble())
             // 楕円の上の点の向き
             val ux = cos(pa).toFloat()
@@ -701,38 +765,6 @@ fun AnalogGauge(
         // 針 (根元が太く先が細い形) と中心のノブ。数値などより手前に描く
         if (layer != GaugeLayer.BODY) {
         if (shifted) { drawContext.canvas.save(); drawContext.canvas.clipPath(innerCircle) }
-        fun hand(frac: Float, lengthMul: Float, widthMul: Float, color: Color, tailMul: Float) {
-            val a = com.obdmeter.util.toRadians((start + sweep * frac).toDouble())
-            // 楕円の目盛りのときは、針は目盛りの点の向きに向け、長さも目盛りまでに合わせる
-            val ux = cos(a).toFloat()
-            val uy = q * sin(a).toFloat()
-            val un = kotlin.math.sqrt(ux * ux + uy * uy).coerceAtLeast(1e-6f)
-            val ca = ux / un
-            val sa = uy / un
-            val len = tickOuter * lengthMul * un
-            val tail = tickOuter * lengthMul * tailMul
-            val baseW = d * 0.016f * widthMul
-            val tipW = baseW * 0.35f
-            val needle = Path().apply {
-                // 尾の端 → 根元 → 先端 → 根元 → 尾の端 (針の向きに垂直な方向へ幅を取る)
-                moveTo(pc.x - tail * ca - baseW * sa, pc.y - tail * sa + baseW * ca)
-                lineTo(pc.x + len * ca - tipW * sa, pc.y + len * sa + tipW * ca)
-                lineTo(pc.x + len * ca + tipW * sa, pc.y + len * sa - tipW * ca)
-                lineTo(pc.x - tail * ca + baseW * sa, pc.y - tail * sa - baseW * ca)
-                close()
-            }
-            // 針の影 (文字盤から少し浮いているように、右下へずらしてぼかす)
-            if (look.needleShadow) drawSoftShadow(needle, d * 0.012f, d * 0.02f, d * 0.012f, 0.45f * look.shadowStrength)
-            // 針の発光 (針の色で、外側ほど薄く広げる。ぼかしを使わないので軽い)
-            if (look.needleGlow > 0f) {
-                val g = look.needleGlow
-                drawPath(needle, color.copy(alpha = 0.08f * g), style = Stroke(d * 0.09f * g + 2f, join = StrokeJoin.Round, cap = StrokeCap.Round))
-                drawPath(needle, color.copy(alpha = 0.14f * g), style = Stroke(d * 0.055f * g + 2f, join = StrokeJoin.Round, cap = StrokeCap.Round))
-                drawPath(needle, color.copy(alpha = 0.22f * g), style = Stroke(d * 0.03f * g + 2f, join = StrokeJoin.Round, cap = StrokeCap.Round))
-                drawPath(needle, color.copy(alpha = 0.35f * g), style = Stroke(d * 0.012f * g + 1f, join = StrokeJoin.Round, cap = StrokeCap.Round))
-            }
-            drawPath(needle, color)
-        }
         val clock = look.clock
         if (value != null && look.showNeedle && clock != null) {
             // 時計: 値はその日の 0 時からの秒数。時・分針はなめらかに、秒針は設定で 1 秒ごと
@@ -803,6 +835,7 @@ fun BarGauge(
     modifier: Modifier = Modifier,
     peak: Double? = null,
     fonts: GaugeFontSet = GaugeFontSet(FontFamily.Monospace, null),
+    peakMarkVisible: Boolean = true,
 ) {
     val tm = rememberTextMeasurer()
     val f = animated(def, value, look.smoothing)
@@ -846,7 +879,7 @@ fun BarGauge(
             drawTextHit(valueLayout, topLeft = Offset(valueRight - valueLayout.size.width, valueY))
         }
 
-        drawBar(def, value, f, warn, look, peak, tm, fonts, unit)
+        drawBar(def, value, f, warn, look, peak, tm, fonts, unit, peakMarkVisible)
     }
 }
 
@@ -862,7 +895,7 @@ internal fun glowShadow(color: Color, glow: Float, size: Float): androidx.compos
  */
 private fun DrawScope.drawBar(
     def: PidDef, value: Double?, f: Float, warn: Boolean, look: GaugeLook, peak: Double?,
-    tm: TextMeasurer, fonts: GaugeFontSet, unit: Float,
+    tm: TextMeasurer, fonts: GaugeFontSet, unit: Float, peakMarkVisible: Boolean = true,
 ) {
     val w = size.width
     val h = size.height
@@ -1066,7 +1099,7 @@ private fun DrawScope.drawBar(
         val half = h * 0.85f * look.peakMarkLength
         val a = pointAt(pp, center - half)
         val b = pointAt(pp, center + half)
-        drawLine(look.peakColor, a, b, max(1f, max(2f, h * 0.25f) * look.peakMarkWidth))
+        if (look.peakMark && peakMarkVisible) drawLine(look.peakColor, a, b, max(1f, max(2f, h * 0.25f) * look.peakMarkWidth))
         if (look.showPeakValue) {
             val t = tm.measure("MAX " + def.format(peak),
                 TextStyle(color = look.peakTextColor, fontSize = (unit * 0.12f * look.peakTextSize).toSp(), fontFamily = fonts.value))
@@ -1471,12 +1504,15 @@ internal class GaugeFxCache {
 /** ページを切り替えても維持するピーク値 (項目キー → 値。維持する設定のメーターどうしで共有)。アプリを終了すると消える */
 internal object PeakStore {
     val values = HashMap<String, Double>()
+    /** 最大値を更新した時刻 (印・針を描く時間を数えるため) */
+    val times = HashMap<String, Long>()
 
     /** 全部のメーターの最大値をリセットした回数 (変わると、表示中のメーターも最大値をやり直す) */
     var generation by androidx.compose.runtime.mutableIntStateOf(0)
 
     fun resetAll() {
         values.clear()
+        times.clear()
         generation++
     }
 }
