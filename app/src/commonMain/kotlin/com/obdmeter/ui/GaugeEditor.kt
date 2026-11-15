@@ -945,6 +945,8 @@ private fun PeakSection(g: GaugeConfig, update: ((GaugeDesign) -> GaugeDesign) -
                 if (d.peakNeedle) {
                     val dflt = (d.peakColor?.let { Color(it) } ?: GaugeColors.Peak).copy(alpha = 0.55f)
                     ColorLine("最大値針の色 (既定 = 印の色を半透明に)", d.peakNeedleColor, dflt) { c -> update { it.copy(peakNeedleColor = c) } }
+                    SliderLine("最大値針の長さ (針に対して)", d.peakNeedleLength * 100, 10f..150f, "%.0f%%") { v -> update { it.copy(peakNeedleLength = snap(v, 5f) / 100f) } }
+                    SliderLine("最大値針の太さ (針に対して)", d.peakNeedleWidth * 100, 10f..500f, "%.0f%%") { v -> update { it.copy(peakNeedleWidth = snap(v, 5f) / 100f) } }
                 }
             }
             if (d.peakMarkShow || d.peakNeedle) {

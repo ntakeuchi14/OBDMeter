@@ -176,6 +176,8 @@ fun GaugeDesign.toLook(def: PidDef, style: GaugeStyle): GaugeLook {
         peakNeedle = peakNeedle && style == GaugeStyle.ANALOG,
         peakNeedleColor = peakNeedleColor?.let { Color(it) } ?: peakColor.color(GaugeColors.Peak).copy(alpha = 0.55f),
         peakHoldSec = peakHoldSec.coerceIn(0f, 600f),
+        peakNeedleLength = peakNeedleLength.coerceIn(0.1f, 1.5f),
+        peakNeedleWidth = peakNeedleWidth.coerceIn(0.1f, 5f),
         peakColor = peakColor.color(GaugeColors.Peak),
         peakMarkWidth = peakMarkWidth.coerceIn(0.2f, 6f),
         peakMarkLength = peakMarkLength.coerceIn(0.2f, 6f),

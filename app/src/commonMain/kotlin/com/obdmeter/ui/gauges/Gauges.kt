@@ -215,6 +215,9 @@ data class GaugeLook(
     /** 最大値の位置に針を残す (アナログ) */
     val peakNeedle: Boolean = false,
     val peakNeedleColor: Color = GaugeColors.Peak.copy(alpha = 0.55f),
+    /** 最大値の針の長さ・太さ (針の設定に対する倍率) */
+    val peakNeedleLength: Float = 1f,
+    val peakNeedleWidth: Float = 1f,
     /** 最大値の印・針を描く時間 (秒、0 = ずっと)。最大値が更新されるとまたこの時間だけ描く */
     val peakHoldSec: Float = 0f,
     val peakColor: Color = GaugeColors.Peak,
@@ -783,7 +786,7 @@ fun AnalogGauge(
         if (shifted) { drawContext.canvas.save(); drawContext.canvas.clipPath(innerCircle) }
         // 最大値の針 (最大値の位置に残す針。本当の針の 1 つ奥)
         if (pf != null && look.peakNeedle && look.clock == null) {
-            hand(pf, look.needleLength, look.needleWidth, look.peakNeedleColor, look.needleTail)
+            hand(pf, look.needleLength * look.peakNeedleLength, look.needleWidth * look.peakNeedleWidth, look.peakNeedleColor, look.needleTail)
         }
         val clock = look.clock
         if (value != null && look.showNeedle && clock != null) {
