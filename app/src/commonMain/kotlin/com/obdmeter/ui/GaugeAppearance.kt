@@ -77,7 +77,7 @@ fun GaugeDesign.toLook(def: PidDef, style: GaugeStyle): GaugeLook {
         labelColor = labelColor.color(GaugeColors.SubText),
         labelSize = labelSize.coerceIn(0.4f, 2.5f),
         ring = ring,
-        ringColor = ringColor.color(if (ring == RingStyle.BEZEL) GaugeColors.Bezel else GaugeColors.Ring),
+        ringColor = ringColor.color(if (ring == com.obdmeter.data.RingStyle.BEZEL) GaugeColors.Bezel else GaugeColors.Ring),
         showTrack = showTrack,
         showValueArc = showValueArc && !clock,
         arcWidth = arcWidth.coerceIn(0f, 3f),
