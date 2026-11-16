@@ -668,7 +668,12 @@ fun AnalogGauge(
         // 目盛り (主・小) と数字。発光させるときは光のにじみが重いので、一度画像に描いておく
         val scale = TickScale.of(def.min, def.max, look.majorDivisions)
         val labelSize = (d * 0.07f * look.labelSize).toSp()
-        val majors = scale.values(def.max)
+        // 最大値が主目盛りの切れ目に来ないときも、最大値に目盛りと数字を必ず入れる
+        val regular = scale.values(def.max)
+        val endExtra = regular.isNotEmpty() && def.max - regular.last() > scale.step * 0.01
+        val majors = if (endExtra) regular + def.max else regular
+        // 最大値のすぐ手前の主目盛りは、数字が重なるので数字を出さない (目盛りは描く)
+        val hideLabelAt = if (endExtra && def.max - regular.last() < scale.step * 0.5) regular.lastIndex else -1
         fun DrawScope.tick(a: Offset, b: Offset, w: Float) {
             if (look.scaleGlow > 0f) {
                 drawLine(look.tickColor.copy(alpha = 0.16f * look.scaleGlow), a, b, strokeWidth = w + d * 0.03f * look.scaleGlow, cap = StrokeCap.Round)
@@ -697,7 +702,7 @@ fun AnalogGauge(
                 Offset(pc.x + (tickOuter - majorLen) * cos(a).toFloat(), pc.y + q * (tickOuter - majorLen) * sin(a).toFloat()),
                 Offset(pc.x + tickOuter * cos(a).toFloat(), pc.y + q * tickOuter * sin(a).toFloat()),
                 d * 0.012f)
-            if (look.showLabels) {
+            if (look.showLabels && i != hideLabelAt) {
                 // 数字は主目盛りの内側 (主目盛りを描かないときも、標準の長さの位置を基準にする)
                 val labelR = tickOuter - (if (look.showTicks) majorLen else d * 0.05f) - d * 0.06f * look.labelSize - d * look.labelGap
                 drawCenteredText(tm, if (look.clock != null && t == 0.0) "12" else scale.label(t),
@@ -710,8 +715,11 @@ fun AnalogGauge(
                 val next = majors[i + 1]
                 // 小目盛りの数が奇数なら、真ん中 (主目盛りの中間の値) を長めに描ける
                 val mid = if (look.midTick && look.minorDivisions % 2 == 1) (look.minorDivisions + 1) / 2 else -1
+                // 最大値までの半端な区間は、ほかの区間と同じ間隔で、最大値の手前まで描く
+                val seg = if (endExtra && i == majors.lastIndex - 1) scale.step else next - t
                 for (k in 1..look.minorDivisions) {
-                    val tv = t + (next - t) * k / (look.minorDivisions + 1)
+                    val tv = t + seg * k / (look.minorDivisions + 1)
+                    if (tv >= next - seg * 1e-6) break
                     val b = com.obdmeter.util.toRadians((start + sweep * fraction(def, tv)).toDouble())
                     val len = if (k == mid) max(minorLen, majorLen * look.midTickLength) else minorLen
                     tick(
