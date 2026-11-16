@@ -106,6 +106,8 @@ data class GaugeLook(
     val minorDivisions: Int = 0,
     val midTick: Boolean = false,
     val midTickLength: Float = 0.7f,
+    /** 目盛りの外側に最小から最大まで線を引く */
+    val scaleOutline: Boolean = false,
     val showLabels: Boolean = true,
     val tickRadius: Float = 1f,
     val tickColor: Color = GaugeColors.Tick,
@@ -670,6 +672,18 @@ fun AnalogGauge(
             drawLine(look.tickColor, a, b, strokeWidth = w)
         }
         val drawScale: DrawScope.() -> Unit = {
+        // 目盛りの外側の線 (最小 → 最大。外側の縁を目盛りの外端にそろえる)
+        if (look.scaleOutline) {
+            val lw = d * 0.008f
+            val r = tickOuter - lw / 2
+            val tl = Offset(pc.x - r, pc.y - r * q)
+            val sz = Size(r * 2, r * 2 * q)
+            if (look.scaleGlow > 0f) {
+                drawArc(look.tickColor.copy(alpha = 0.16f * look.scaleGlow), start, sweep, false, tl, sz, style = Stroke(lw + d * 0.03f * look.scaleGlow, cap = StrokeCap.Round))
+                drawArc(look.tickColor.copy(alpha = 0.30f * look.scaleGlow), start, sweep, false, tl, sz, style = Stroke(lw + d * 0.012f * look.scaleGlow, cap = StrokeCap.Round))
+            }
+            drawArc(look.tickColor, start, sweep, false, tl, sz, style = Stroke(lw, cap = StrokeCap.Butt))
+        }
         for ((i, t) in majors.withIndex()) {
             // 時計の 12 は 0 と同じ場所なので、0 を「12」として描き、最後の 12 は描かない
             if (look.clock != null && i == majors.lastIndex && t >= def.max) continue
@@ -704,7 +718,7 @@ fun AnalogGauge(
         }
         if (look.scaleGlow > 0f) {
             fx.scale.draw(this, listOf(
-                look.tickColor, look.labelColor, look.majorDivisions, look.minorDivisions, look.midTick, look.midTickLength,
+                look.tickColor, look.labelColor, look.majorDivisions, look.minorDivisions, look.midTick, look.midTickLength, look.scaleOutline,
                 look.labelSize, look.showTicks, look.showLabels, look.scaleGlow, start, sweep, def.min, def.max, pc, q, tickOuter,
                 fonts.label, d,
             ), drawScale)

@@ -71,6 +71,7 @@ fun GaugeDesign.toLook(def: PidDef, style: GaugeStyle): GaugeLook {
         minorDivisions = minorDivisions.coerceIn(0, 9),
         midTick = midTick,
         midTickLength = midTickLength.coerceIn(0.3f, 1f),
+        scaleOutline = scaleOutline,
         showLabels = showLabels,
         tickRadius = tickRadius.coerceIn(0.3f, 2f),
         tickColor = tickColor.color(GaugeColors.Tick),

@@ -216,6 +216,8 @@ data class GaugeDesign(
     val midTick: Boolean = false,
     /** 真ん中の小目盛りの長さ (主目盛りの長さに対する比率) */
     val midTickLength: Float = 0.7f,
+    /** アナログ: 目盛りの外側に、最小から最大まで線を引く (色は目盛りと同じ) */
+    val scaleOutline: Boolean = false,
     val showLabels: Boolean = true,
     /** 目盛りを描く位置 (外周 = 1.0)。背景画像の枠の内側に合わせる */
     val tickRadius: Float = 1f,

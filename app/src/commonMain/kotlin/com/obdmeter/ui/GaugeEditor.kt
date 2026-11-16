@@ -564,6 +564,11 @@ private fun ScaleTab(g: GaugeConfig, update: ((GaugeDesign) -> GaugeDesign) -> U
     }
     if (d.minorDivisions > 0) {
         SwitchLine(
+            "目盛りの外側に線を引く",
+            "最小から最大まで、目盛りの外端に沿って線を引きます (色は目盛りと同じ)",
+            d.scaleOutline,
+        ) { v -> update { it.copy(scaleOutline = v) } }
+        SwitchLine(
             "中間の目盛りを長くする",
             "主目盛りと主目盛りの真ん中 (例: 1000 と 2000 の間の 1500) の小目盛りを長めの線で描きます。小目盛りの数が奇数 (1・3・5・7・9) のときに使えます",
             d.midTick,
