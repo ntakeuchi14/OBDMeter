@@ -108,6 +108,11 @@ data class GaugeLook(
     val midTickLength: Float = 0.7f,
     /** 目盛りの外側に最小から最大まで線を引く */
     val scaleOutline: Boolean = false,
+    /** 主目盛り・小目盛りの長さ (標準 = 1.0) */
+    val majorTickLength: Float = 1f,
+    val minorTickLength: Float = 1f,
+    /** 数字と目盛りの距離の増減 (直径に対する比率) */
+    val labelGap: Float = 0f,
     val showLabels: Boolean = true,
     val tickRadius: Float = 1f,
     val tickColor: Color = GaugeColors.Tick,
@@ -629,8 +634,8 @@ fun AnalogGauge(
         if (look.showTrack && stroke > 0f) {
             drawArc(look.trackColor ?: GaugeColors.Track, start, sweep, false, arcTopLeft, arcSize, style = Stroke(stroke, cap = cap))
         }
-        val majorLen = d * 0.05f
-        val minorLen = d * 0.025f
+        val majorLen = d * 0.05f * look.majorTickLength
+        val minorLen = d * 0.025f * look.minorTickLength
         val zoneInsideW = d * 0.025f
         look.redZone?.let { z ->
             val s = fraction(def, z.start)
@@ -693,7 +698,8 @@ fun AnalogGauge(
                 Offset(pc.x + tickOuter * cos(a).toFloat(), pc.y + q * tickOuter * sin(a).toFloat()),
                 d * 0.012f)
             if (look.showLabels) {
-                val labelR = tickOuter - majorLen - d * 0.06f * look.labelSize
+                // 数字は主目盛りの内側 (主目盛りを描かないときも、標準の長さの位置を基準にする)
+                val labelR = tickOuter - (if (look.showTicks) majorLen else d * 0.05f) - d * 0.06f * look.labelSize - d * look.labelGap
                 drawCenteredText(tm, if (look.clock != null && t == 0.0) "12" else scale.label(t),
                     Offset(pc.x + labelR * cos(a).toFloat(), pc.y + q * labelR * sin(a).toFloat()),
                     TextStyle(color = look.labelColor, fontFamily = fonts.label, fontSize = labelSize,
@@ -719,6 +725,7 @@ fun AnalogGauge(
         if (look.scaleGlow > 0f) {
             fx.scale.draw(this, listOf(
                 look.tickColor, look.labelColor, look.majorDivisions, look.minorDivisions, look.midTick, look.midTickLength, look.scaleOutline,
+                look.majorTickLength, look.minorTickLength, look.labelGap,
                 look.labelSize, look.showTicks, look.showLabels, look.scaleGlow, start, sweep, def.min, def.max, pc, q, tickOuter,
                 fonts.label, d,
             ), drawScale)

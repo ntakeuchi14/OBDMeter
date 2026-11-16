@@ -562,12 +562,24 @@ private fun ScaleTab(g: GaugeConfig, update: ((GaugeDesign) -> GaugeDesign) -> U
     SliderLine("小目盛り (主目盛りの間)", d.minorDivisions.toFloat(), 0f..9f, "%.0f") { v ->
         update { it.copy(minorDivisions = v.roundToInt()) }
     }
+    SwitchLine(
+        "目盛りの外側に線を引く",
+        "最小から最大まで、目盛りの外端に沿って線を引きます (色は目盛りと同じ)",
+        d.scaleOutline,
+    ) { v -> update { it.copy(scaleOutline = v) } }
+    SliderLine("主目盛りの長さ", d.majorTickLength * 100, 20f..300f, "%.0f%%") { v ->
+        update { it.copy(majorTickLength = snap(v, 5f) / 100f) }
+    }
     if (d.minorDivisions > 0) {
-        SwitchLine(
-            "目盛りの外側に線を引く",
-            "最小から最大まで、目盛りの外端に沿って線を引きます (色は目盛りと同じ)",
-            d.scaleOutline,
-        ) { v -> update { it.copy(scaleOutline = v) } }
+        SliderLine("小目盛りの長さ", d.minorTickLength * 100, 20f..300f, "%.0f%%") { v ->
+            update { it.copy(minorTickLength = snap(v, 5f) / 100f) }
+        }
+    }
+    SliderLine("数字と目盛りの距離", d.labelGap * 1000, -50f..150f, "%+.0f") { v ->
+        update { it.copy(labelGap = snap(v, 5f) / 1000f) }
+    }
+    Hint("数字と目盛りの距離は 0 が標準です。+ で数字が中心寄りに離れ、- で目盛りに近づきます。")
+    if (d.minorDivisions > 0) {
         SwitchLine(
             "中間の目盛りを長くする",
             "主目盛りと主目盛りの真ん中 (例: 1000 と 2000 の間の 1500) の小目盛りを長めの線で描きます。小目盛りの数が奇数 (1・3・5・7・9) のときに使えます",
