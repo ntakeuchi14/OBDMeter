@@ -56,6 +56,8 @@ private data class WebSettings(
     val screenSize: String = LocalStore.get("obd.screen").orEmpty(),
     val sweepOnConnect: Boolean = false,
     val sweepCluster: Boolean = false,
+    /** [gridStep] の単位 (以前の版は 1/4 マス単位で、この項目が無い) */
+    val gridUnit: Int = Layout.OLD_SCALE,
 )
 
 /** 設定とページをブラウザーの保存領域 (localStorage) に保存する */
@@ -86,7 +88,7 @@ class WebRepository : Repository {
         sweepOnConnect = sweepOnConnect,
         sweepCluster = sweepCluster,
         lastPageId = lastPageId,
-        gridStep = gridStep,
+        gridStep = gridStep * Layout.SCALE / gridUnit.coerceAtLeast(1),
         pollIntervalsMs = pollIntervalsMs,
         screenSize = screenSize,
     )
@@ -108,7 +110,7 @@ class WebRepository : Repository {
     override suspend fun updateSettings(transform: (AppSettings) -> AppSettings) {
         val s = transform(settingsState.value).copy(connectionType = ConnectionType.SIMULATOR)
         settingsState.value = s
-        save("obd.settings", json.encodeToString(WebSettings(s.alwaysShowToolbar, s.lastPageId, s.gridStep, s.pollIntervalsMs, s.screenSize, s.sweepOnConnect, s.sweepCluster)))
+        save("obd.settings", json.encodeToString(WebSettings(s.alwaysShowToolbar, s.lastPageId, s.gridStep, s.pollIntervalsMs, s.screenSize, s.sweepOnConnect, s.sweepCluster, Layout.SCALE)))
     }
 
     override suspend fun saveDashboards(list: List<Dashboard>) {

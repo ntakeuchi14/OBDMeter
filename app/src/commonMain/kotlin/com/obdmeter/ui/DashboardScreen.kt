@@ -194,9 +194,15 @@ fun DashboardScreen(vm: MainViewModel, onNavigate: (Screen) -> Unit, onCreateCus
                     color = GaugeColors.Peak, fontSize = 13.sp, modifier = Modifier.weight(1f),
                     maxLines = 2, overflow = TextOverflow.Ellipsis)
             } else if (editing) {
-                Text("レイアウト編集中: ドラッグで移動、右下の ◢ でサイズ変更、タップで設定、長押しでコピー。動かしたものは右のパッドで 1/4 マスずつ微調整、「一覧」で隠れたものも選べます",
+                Text("レイアウト編集中: ドラッグで移動、右下の ◢ でサイズ変更、タップで設定、長押しでコピー。動かしたものはパッドで微調整、「一覧」で隠れたものも選べます",
                     color = GaugeColors.Accent, fontSize = 13.sp, modifier = Modifier.weight(1f),
                     maxLines = 2, overflow = TextOverflow.Ellipsis)
+                val canUndo by vm.canUndo.collectAsStateWithLifecycle()
+                val canRedo by vm.canRedo.collectAsStateWithLifecycle()
+                OutlinedButton(onClick = { vm.undo() }, enabled = canUndo) { Text("元に戻す") }
+                Spacer(Modifier.width(6.dp))
+                OutlinedButton(onClick = { vm.redo() }, enabled = canRedo) { Text("やり直す") }
+                Spacer(Modifier.width(6.dp))
                 Box {
                     OutlinedButton(onClick = { gridMenu = true }) {
                         Text("グリッド " + (Layout.GRID_STEPS.firstOrNull { it.first == settings.gridStep }?.second ?: ""))
@@ -284,6 +290,7 @@ fun DashboardScreen(vm: MainViewModel, onNavigate: (Screen) -> Unit, onCreateCus
                     onSelect = { g -> focusId = g.id },
                     onToggleHidden = { g -> editHidden = if (g.id in editHidden) editHidden - g.id else editHidden + g.id },
                     onMoveZ = { g, delta -> vm.moveZ(current.id, g.id, delta) },
+                    onSettings = { g -> focusId = g.id; settingsFor = g.id },
                     onClose = { listOpen = false },
                     modifier = inset.align(if (padLeft) Alignment.CenterEnd else Alignment.CenterStart),
                 )

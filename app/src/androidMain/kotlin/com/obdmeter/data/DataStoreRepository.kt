@@ -45,7 +45,10 @@ class DataStoreRepository(private val context: Context) : Repository {
         val START_IN_FLOAT = booleanPreferencesKey("start_in_float")
         val LAST_PAGE = longPreferencesKey("last_page")
         val KEY_PAGE_NAV = booleanPreferencesKey("key_page_nav")
+        /** 以前の版の吸着の間隔 (1/4 マス単位) */
         val GRID_STEP = intPreferencesKey("grid_step")
+        /** 吸着の間隔 ([Layout.SCALE] 単位) */
+        val GRID_STEP_UNITS = intPreferencesKey("grid_step_units")
         val SCREEN_SIZE = stringPreferencesKey("screen_size")
         val GLOW_LINK = stringPreferencesKey("glow_link")
         val GLOW_LINK_BRIGHTNESS = intPreferencesKey("glow_link_brightness")
@@ -116,7 +119,7 @@ class DataStoreRepository(private val context: Context) : Repository {
             p[Keys.START_IN_FLOAT] = s.startInFloat
             s.lastPageId?.let { p[Keys.LAST_PAGE] = it } ?: p.remove(Keys.LAST_PAGE)
             p[Keys.KEY_PAGE_NAV] = s.keyPageNav
-            p[Keys.GRID_STEP] = s.gridStep
+            p[Keys.GRID_STEP_UNITS] = s.gridStep
             p[Keys.SCREEN_SIZE] = s.screenSize
             p[Keys.GLOW_LINK] = s.glowLink.name
             p[Keys.GLOW_LINK_BRIGHTNESS] = s.glowLinkBrightness
@@ -161,7 +164,7 @@ class DataStoreRepository(private val context: Context) : Repository {
             startInFloat = this[Keys.START_IN_FLOAT] ?: d.startInFloat,
             lastPageId = this[Keys.LAST_PAGE],
             keyPageNav = this[Keys.KEY_PAGE_NAV] ?: d.keyPageNav,
-            gridStep = this[Keys.GRID_STEP] ?: d.gridStep,
+            gridStep = this[Keys.GRID_STEP_UNITS] ?: this[Keys.GRID_STEP]?.let { it * (Layout.SCALE / Layout.OLD_SCALE) } ?: d.gridStep,
             screenSize = this[Keys.SCREEN_SIZE] ?: d.screenSize,
             glowLink = this[Keys.GLOW_LINK]?.let { n -> com.obdmeter.data.GlowLink.entries.firstOrNull { it.name == n } } ?: d.glowLink,
             glowLinkBrightness = this[Keys.GLOW_LINK_BRIGHTNESS] ?: d.glowLinkBrightness,

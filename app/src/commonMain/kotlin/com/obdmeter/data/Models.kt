@@ -684,15 +684,17 @@ fun List<Dashboard>.shownPages(editing: Boolean): List<Dashboard> =
     if (editing) this else filterNot { it.hidden }.ifEmpty { this }
 
 object Layout {
-    /** 旧来の 1 マス (横 24 × 縦 12 分割) を、さらに何分割して位置・大きさを持つか */
-    const val SCALE = 4
-    /** ページの横・縦の単位数 (96 × 48) */
+    /** 旧来の 1 マス (横 24 × 縦 12 分割) を、さらに何分割して位置・大きさを持つか (1/16 マスまで微調整できる) */
+    const val SCALE = 16
+    /** 以前の版の単位 (1/4 マス)。設定の吸着の間隔をこの単位で保存していた */
+    const val OLD_SCALE = 4
+    /** ページの横・縦の単位数 (384 × 192) */
     const val COLS = 24 * SCALE
     const val ROWS = 12 * SCALE
     /** メーターの最小の大きさ (単位。1/2 マス。ランプ・ボタンなどを小さく置けるように) */
     const val MIN_SIZE = SCALE / 2
     /** 移動・大きさ変更の吸着の間隔の選択肢 (単位)。4 = 旧来の 1 マス */
-    val GRID_STEPS = listOf(1 to "1/4 マス", 2 to "1/2 マス", 4 to "1 マス", 8 to "2 マス")
+    val GRID_STEPS = listOf(SCALE / 16 to "1/16 マス", SCALE / 4 to "1/4 マス", SCALE / 2 to "1/2 マス", SCALE to "1 マス", SCALE * 2 to "2 マス")
 
     /** [v] を [step] の倍数に丸める */
     fun snap(v: Int, step: Int): Int = if (step <= 1) v else kotlin.math.floor(v.toDouble() / step + 0.5).toInt() * step
@@ -819,7 +821,9 @@ object Layout {
 
     /** 新しいメーターを置く空き場所を探す。見つからなければ左上に重ねる */
     fun findFreeSpot(existing: List<GaugeConfig>, w: Int, h: Int): Pair<Int, Int> {
-        for (y in 0..ROWS - h) for (x in 0..COLS - w) {
+        // 1/4 マスごとに探す (細かい単位すべては探さない)
+        val st = maxOf(1, SCALE / 4)
+        for (y in 0..ROWS - h step st) for (x in 0..COLS - w step st) {
             val overlaps = existing.any { g ->
                 x < g.x + g.w && g.x < x + w && y < g.y + g.h && g.y < y + h
             }

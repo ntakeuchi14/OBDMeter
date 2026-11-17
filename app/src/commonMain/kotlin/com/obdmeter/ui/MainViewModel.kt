@@ -390,14 +390,73 @@ class MainViewModel(val core: AppCore) : ViewModel() {
      * 編集は保存済みの最新状態に対して 1 件ずつ順番に適用する。
      * (ドラッグ直後に別の編集をしても、古い状態で上書きしないように)
      */
-    private fun editDashboards(transform: (List<Dashboard>) -> List<Dashboard>) {
+    private fun editDashboards(coalesce: String? = null, transform: (List<Dashboard>) -> List<Dashboard>) {
         viewModelScope.launch {
-            editLock.withLock { repo.saveDashboards(transform(repo.dashboards.first())) }
+            editLock.withLock {
+                val before = repo.dashboards.first()
+                val after = transform(before)
+                if (after == before) return@withLock
+                pushUndo(before, coalesce)
+                repo.saveDashboards(after)
+            }
         }
     }
 
-    private fun editDashboard(id: Long, transform: (Dashboard) -> Dashboard) =
-        editDashboards { list -> list.map { if (it.id == id) transform(it) else it } }
+    private fun editDashboard(id: Long, coalesce: String? = null, transform: (Dashboard) -> Dashboard) =
+        editDashboards(coalesce) { list -> list.map { if (it.id == id) transform(it) else it } }
+
+    // ---- 元に戻す・やり直す (ページ・メーターの編集) ----
+
+    private val undoStack = ArrayDeque<List<Dashboard>>()
+    private val redoStack = ArrayDeque<List<Dashboard>>()
+    private var lastCoalesce: String? = null
+    private var lastEditAt = 0L
+    private val _canUndo = MutableStateFlow(false)
+    private val _canRedo = MutableStateFlow(false)
+    val canUndo: StateFlow<Boolean> = _canUndo
+    val canRedo: StateFlow<Boolean> = _canRedo
+
+    /**
+     * 編集前の状態を積む。同じもの ([coalesce]) を続けて少しずつ変えているとき
+     * (微調整ボタンの連打・設定のスライダー) は、1 回の編集にまとめる
+     */
+    private fun pushUndo(before: List<Dashboard>, coalesce: String?) {
+        val now = nowMs()
+        val merge = coalesce != null && coalesce == lastCoalesce && now - lastEditAt < UNDO_MERGE_MS && undoStack.isNotEmpty()
+        if (!merge) {
+            undoStack.addLast(before)
+            while (undoStack.size > UNDO_LIMIT) undoStack.removeFirst()
+        }
+        lastCoalesce = coalesce
+        lastEditAt = now
+        redoStack.clear()
+        updateUndoFlags()
+    }
+
+    private fun updateUndoFlags() {
+        _canUndo.value = undoStack.isNotEmpty()
+        _canRedo.value = redoStack.isNotEmpty()
+    }
+
+    fun undo() = viewModelScope.launch {
+        editLock.withLock {
+            val prev = undoStack.removeLastOrNull() ?: return@withLock
+            redoStack.addLast(repo.dashboards.first())
+            lastCoalesce = null
+            repo.saveDashboards(prev)
+            updateUndoFlags()
+        }
+    }
+
+    fun redo() = viewModelScope.launch {
+        editLock.withLock {
+            val next = redoStack.removeLastOrNull() ?: return@withLock
+            undoStack.addLast(repo.dashboards.first())
+            lastCoalesce = null
+            repo.saveDashboards(next)
+            updateUndoFlags()
+        }
+    }
 
     fun addDashboard(name: String): Long {
         val id = nowMs()
@@ -444,7 +503,7 @@ class MainViewModel(val core: AppCore) : ViewModel() {
     }
 
     fun updateGauge(dashboardId: Long, gaugeId: Long, transform: (GaugeConfig) -> GaugeConfig) =
-        editDashboard(dashboardId) { d ->
+        editDashboard(dashboardId, "gauge:$gaugeId") { d ->
             d.copy(gauges = d.gauges.map { if (it.id == gaugeId) transform(it) else it })
         }
 
@@ -508,7 +567,7 @@ class MainViewModel(val core: AppCore) : ViewModel() {
     }
 
     /** 微調整: メーターを (dx, dy) 単位動かす・大きさを変える (保存済みの最新の配置から計算する) */
-    fun nudgeGauge(dashboardId: Long, gaugeId: Long, dx: Int, dy: Int, resize: Boolean) = editDashboard(dashboardId) { d ->
+    fun nudgeGauge(dashboardId: Long, gaugeId: Long, dx: Int, dy: Int, resize: Boolean) = editDashboard(dashboardId, "nudge:$gaugeId") { d ->
         val p = Layout.nudge(d.gauges, gaugeId, dx, dy, resize)
         d.copy(gauges = d.gauges.map { g -> p[g.id]?.let { r -> g.copy(x = r[0], y = r[1], w = r[2], h = r[3]) } ?: g })
     }
@@ -563,3 +622,8 @@ private fun <T> List<T>.moved(index: Int, delta: Int): List<T> {
     if (index !in indices || target !in indices) return this
     return toMutableList().apply { add(target, removeAt(index)) }
 }
+
+/** 元に戻せる回数 */
+private const val UNDO_LIMIT = 50
+/** 同じものを続けて変えたとき、1 回の編集にまとめる間隔 (ミリ秒) */
+private const val UNDO_MERGE_MS = 1500L
