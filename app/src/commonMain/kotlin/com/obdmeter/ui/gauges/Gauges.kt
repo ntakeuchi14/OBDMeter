@@ -250,6 +250,9 @@ data class GaugeLook(
     val imageFlipH: Boolean = false,
     val imageFlipV: Boolean = false,
     val imageKeepAspect: Boolean = true,
+    /** 画像オブジェクトの影の距離・ぼかし (短い辺に対する比率) */
+    val imageShadowDistance: Float = 0.04f,
+    val imageShadowBlur: Float = 0.03f,
     val imageBrightness: Float = 0f,
     val imageContrast: Float = 1f,
     val showCard: Boolean = true,
@@ -1717,6 +1720,35 @@ fun PictureObject(look: GaugeLook, image: ImageBitmap?, modifier: Modifier = Mod
             iw * k to ih * k
         } else (w * sc) to (h * sc)
         val c = Offset(w / 2 + w * look.imageOffsetX, h / 2 + h * look.imageOffsetY)
+        val dst = IntOffset((c.x - dw / 2).roundToInt(), (c.y - dh / 2).roundToInt())
+        val dstSize = IntSize(dw.roundToInt().coerceAtLeast(1), dh.roundToInt().coerceAtLeast(1))
+        // 影: 画像の形 (透明な部分は落とさない) を黒く塗って右下へずらし、少しずつずらして重ねてぼかす
+        if (look.objectShadow && look.shadowStrength > 0f) {
+            val m = min(w, h)
+            val dist = m * look.imageShadowDistance
+            val blur = m * look.imageShadowBlur
+            val taps = if (blur < 0.5f) listOf(Offset.Zero) else buildList {
+                add(Offset.Zero)
+                for (ring in 1..2) for (k in 0 until 8) {
+                    val a = k * kotlin.math.PI / 4 + ring * 0.4
+                    val r = blur * ring / 2
+                    add(Offset((kotlin.math.cos(a) * r).toFloat(), (kotlin.math.sin(a) * r).toFloat()))
+                }
+            }
+            val alpha = (0.6f * look.shadowStrength).coerceIn(0f, 1f)
+            // 重ねると濃くなるので、1 枚ずつは薄く (重なった中心が [alpha] くらいになるように)
+            val each = 1f - (1f - alpha).toDouble().pow(1.0 / taps.size).toFloat()
+            val tint = androidx.compose.ui.graphics.ColorFilter.tint(Color.Black, androidx.compose.ui.graphics.BlendMode.SrcIn)
+            for (t in taps) {
+                withTransform({
+                    translate(dist * 0.6f + t.x, dist + t.y)
+                    rotate(look.imageRotation, c)
+                    scale(if (look.imageFlipH) -1f else 1f, if (look.imageFlipV) -1f else 1f, c)
+                }) {
+                    drawImage(image, IntOffset.Zero, IntSize(image.width, image.height), dst, dstSize, alpha = each, colorFilter = tint)
+                }
+            }
+        }
         withTransform({
             rotate(look.imageRotation, c)
             scale(if (look.imageFlipH) -1f else 1f, if (look.imageFlipV) -1f else 1f, c)
@@ -1725,8 +1757,8 @@ fun PictureObject(look: GaugeLook, image: ImageBitmap?, modifier: Modifier = Mod
                 image,
                 srcOffset = IntOffset.Zero,
                 srcSize = IntSize(image.width, image.height),
-                dstOffset = IntOffset((c.x - dw / 2).roundToInt(), (c.y - dh / 2).roundToInt()),
-                dstSize = IntSize(dw.roundToInt().coerceAtLeast(1), dh.roundToInt().coerceAtLeast(1)),
+                dstOffset = dst,
+                dstSize = dstSize,
                 colorFilter = look.imageFilter(),
             )
         }

@@ -1327,6 +1327,13 @@ private fun ImageTab(g: GaugeConfig, update: ((GaugeDesign) -> GaugeDesign) -> U
             }
             SwitchLine("左右反転", null, d.imageFlipH) { v -> update { it.copy(imageFlipH = v) } }
             SwitchLine("上下反転", null, d.imageFlipV) { v -> update { it.copy(imageFlipV = v) } }
+            Head("影")
+            SwitchLine("影を落とす", "画像の形 (透明な部分は除く) に合わせて、右下に影を落とします", d.objectShadow) { v -> update { it.copy(objectShadow = v) } }
+            if (d.objectShadow) {
+                SliderLine("影の濃さ", d.shadowStrength * 100, 0f..150f, "%.0f%%") { v -> update { it.copy(shadowStrength = snap(v, 5f) / 100f) } }
+                SliderLine("影の距離", d.imageShadowDistance * 100, 0f..30f, "%.0f") { v -> update { it.copy(imageShadowDistance = snap(v, 0.5f) / 100f) } }
+                SliderLine("影のぼかし", d.imageShadowBlur * 100, 0f..20f, "%.0f") { v -> update { it.copy(imageShadowBlur = snap(v, 0.5f) / 100f) } }
+            }
             Head("明るさ・大きさ")
         }
         SliderLine("画像の大きさ", d.imageScale * 100, if (picture) 10f..300f else 30f..200f, "%.0f%%") { v -> update { it.copy(imageScale = snap(v, 1f) / 100f) } }

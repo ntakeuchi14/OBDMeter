@@ -345,6 +345,9 @@ data class GaugeDesign(
     val imageFlipH: Boolean = false,
     val imageFlipV: Boolean = false,
     val imageKeepAspect: Boolean = true,
+    /** 画像オブジェクトの影 ([objectShadow] で付ける): 落とす距離・ぼかし (オブジェクトの短い辺に対する比率) */
+    val imageShadowDistance: Float = 0.04f,
+    val imageShadowBlur: Float = 0.03f,
     /** 背景画像の明るさ (0 = そのまま、-1 = 真っ黒〜+1 = 真っ白) */
     val imageBrightness: Float = 0f,
     /** 背景画像のコントラスト (1 = そのまま、0 = 灰色一色〜2 = 2 倍) */
