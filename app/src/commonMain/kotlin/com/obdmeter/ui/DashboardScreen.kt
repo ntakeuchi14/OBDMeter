@@ -63,7 +63,9 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
@@ -150,6 +152,10 @@ fun DashboardScreen(vm: MainViewModel, onNavigate: (Screen) -> Unit, onCreateCus
     /** フロート表示の一覧を開いている・チェックしたメーター */
     var floatListOpen by remember { mutableStateOf(false) }
     var floatChecked by remember { mutableStateOf(emptySet<Long>()) }
+    /** レイアウトモード (編集中に上下のバーを隠して、ページ全体で配置する) */
+    var layoutMode by remember { mutableStateOf(false) }
+    LaunchedEffect(editing) { if (!editing) layoutMode = false }
+    PlatformBackHandler(enabled = editing && layoutMode) { layoutMode = false }
 
     val current = shown.getOrNull(pager.currentPage)
     // ページを変えた・編集をやめたら選択をやめる
@@ -199,11 +205,13 @@ fun DashboardScreen(vm: MainViewModel, onNavigate: (Screen) -> Unit, onCreateCus
                     color = GaugeColors.Peak, fontSize = 13.sp, modifier = Modifier.weight(1f),
                     maxLines = 2, overflow = TextOverflow.Ellipsis)
             } else if (editing) {
-                Text("レイアウト編集中: ドラッグで移動、右下の ◢ でサイズ変更、タップで設定、長押しでコピー。動かしたものはパッドで微調整、「一覧」で隠れたものも選べます",
+                Text("レイアウト編集中: ドラッグで移動、◢ でサイズ変更、タップで設定、長押しでコピー。パッドで微調整、「一覧」で隠れたものも選べます",
                     color = GaugeColors.Accent, fontSize = 13.sp, modifier = Modifier.weight(1f),
                     maxLines = 2, overflow = TextOverflow.Ellipsis)
                 val canUndo by vm.canUndo.collectAsStateWithLifecycle()
                 val canRedo by vm.canRedo.collectAsStateWithLifecycle()
+                FilledTonalButton(onClick = { layoutMode = true }) { Text("レイアウトモード") }
+                Spacer(Modifier.width(6.dp))
                 OutlinedButton(onClick = { vm.undo() }, enabled = canUndo) { Text("元に戻す") }
                 Spacer(Modifier.width(6.dp))
                 OutlinedButton(onClick = { vm.redo() }, enabled = canRedo) { Text("やり直す") }
@@ -288,7 +296,7 @@ fun DashboardScreen(vm: MainViewModel, onNavigate: (Screen) -> Unit, onCreateCus
         // 編集中: オブジェクト一覧と微調整パッド (メーターの上に重ねる。バーに重ならないよう上下に余白)
         if (editing && !selecting && current != null) {
             val focusGauge = current.gauges.firstOrNull { it.id == focusId }
-            val inset = if (settings.alwaysShowToolbar) Modifier.padding(8.dp) else Modifier.padding(start = 8.dp, end = 8.dp, top = 64.dp, bottom = 64.dp)
+            val inset = if (settings.alwaysShowToolbar || layoutMode) Modifier.padding(8.dp) else Modifier.padding(start = 8.dp, end = 8.dp, top = 64.dp, bottom = 64.dp)
             if (floatListOpen) {
                 FloatListPanel(
                     gauges = current.gauges, catalog = catalog, checked = floatChecked,
@@ -450,16 +458,73 @@ fun DashboardScreen(vm: MainViewModel, onNavigate: (Screen) -> Unit, onCreateCus
         }
     }
 
+    /**
+     * レイアウトモードのメニュー: 動かせる小さな丸ボタン。タップでメニュー (元に戻す・一覧・グリッドなど)
+     */
+    @Composable
+    fun LayoutModeMenu() {
+        var pos by remember { mutableStateOf(Offset.Zero) }
+        var open by remember { mutableStateOf(false) }
+        val canUndo by vm.canUndo.collectAsStateWithLifecycle()
+        val canRedo by vm.canRedo.collectAsStateWithLifecycle()
+        Box(
+            Modifier.padding(12.dp)
+                .offset { IntOffset(pos.x.roundToInt(), pos.y.roundToInt()) }
+                .zIndex(10f),
+        ) {
+            Box(
+                Modifier.size(52.dp).clip(RoundedCornerShape(26.dp))
+                    .background(GaugeColors.Accent.copy(alpha = 0.85f))
+                    .border(2.dp, GaugeColors.Background.copy(alpha = 0.6f), RoundedCornerShape(26.dp))
+                    .pointerInput(Unit) {
+                        detectDragGestures { change, amount -> change.consume(); pos += amount }
+                    }
+                    .clickable { open = true },
+                contentAlignment = Alignment.Center,
+            ) { Text("配置", color = GaugeColors.Background, fontSize = 13.sp, fontWeight = FontWeight.Bold) }
+            DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
+                DropdownMenuItem(text = { Text("元に戻す") }, enabled = canUndo, onClick = { vm.undo() })
+                DropdownMenuItem(text = { Text("やり直す") }, enabled = canRedo, onClick = { vm.redo() })
+                DropdownMenuItem(
+                    text = { Text((if (listOpen && !floatListOpen) "✓ " else "") + "一覧") },
+                    onClick = { listOpen = !(listOpen && !floatListOpen); floatListOpen = false; open = false },
+                )
+                DropdownMenuItem(
+                    text = { Text((if (floatListOpen) "✓ " else "") + "フロート") },
+                    onClick = { floatListOpen = !floatListOpen; if (floatListOpen) listOpen = false; open = false },
+                )
+                DropdownMenuItem(
+                    text = { Text("グリッド: " + (Layout.GRID_STEPS.firstOrNull { it.first == settings.gridStep }?.second ?: "") + " (タップで切替)") },
+                    onClick = {
+                        val steps = Layout.GRID_STEPS.map { it.first }
+                        val next = steps[(steps.indexOf(settings.gridStep) + 1).mod(steps.size)]
+                        vm.updateSettings { it.copy(gridStep = next) }
+                    },
+                )
+                DropdownMenuItem(text = { Text("メーター追加") }, enabled = current != null, onClick = { pickerFor = 0L; open = false })
+                DropdownMenuItem(text = { Text("通常の編集に戻る") }, onClick = { layoutMode = false; open = false })
+                DropdownMenuItem(text = { Text("編集を完了") }, onClick = { layoutMode = false; editing = false; open = false })
+            }
+        }
+    }
+
+    val inLayoutMode = editing && layoutMode
     if (barsPinned) {
-        Column(Modifier.fillMaxSize()) {
-            topBar(Modifier)
-            pagerContent(Modifier.weight(1f).fillMaxWidth())
-            bottomBar(Modifier)
+        Box(Modifier.fillMaxSize()) {
+            Column(Modifier.fillMaxSize()) {
+                // レイアウトモードでも、メーターの大きさが変わらないようバーの場所は空けておく (見えなくして触れないように)
+                Box { topBar(if (inLayoutMode) Modifier.alpha(0f) else Modifier); if (inLayoutMode) BlockTouches(Modifier.matchParentSize()) }
+                pagerContent(Modifier.weight(1f).fillMaxWidth())
+                Box { bottomBar(if (inLayoutMode) Modifier.alpha(0f) else Modifier); if (inLayoutMode) BlockTouches(Modifier.matchParentSize()) }
+            }
+            if (inLayoutMode) LayoutModeMenu()
         }
     } else {
         Box(Modifier.fillMaxSize()) {
             pagerContent(Modifier.fillMaxSize())
-            if (editing) {
+            if (inLayoutMode) {
+                LayoutModeMenu()
+            } else if (editing) {
                 // 背景だけの部分は触れても下のメーターに届く (ボタンだけが反応する)
                 topBar(Modifier.align(Alignment.TopCenter).background(GaugeColors.Background.copy(alpha = 0.8f)))
                 bottomBar(Modifier.align(Alignment.BottomCenter).background(GaugeColors.Background.copy(alpha = 0.8f)))
@@ -1247,4 +1312,12 @@ private fun sweepValue(g: GaugeConfig, def: PidDef): Double? {
     val lo = g.design.min ?: def.min
     val hi = g.design.max ?: def.max
     return lo + (hi - lo) * p
+}
+
+/** 下に触れさせない (見えなくしたバーのボタンが反応しないように) */
+@Composable
+private fun BlockTouches(modifier: Modifier) {
+    Box(modifier.pointerInput(Unit) {
+        awaitPointerEventScope { while (true) awaitPointerEvent().changes.forEach { it.consume() } }
+    })
 }
