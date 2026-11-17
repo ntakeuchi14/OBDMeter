@@ -137,10 +137,21 @@ fun DashboardScreen(vm: MainViewModel, onNavigate: (Screen) -> Unit, onCreateCus
     /** グループにするメーターを選んでいる (編集中) */
     var selecting by remember { mutableStateOf(false) }
     var selected by remember { mutableStateOf(emptySet<Long>()) }
+    /** 微調整するメーター (編集中) */
+    var focusId by remember { mutableStateOf<Long?>(null) }
+    /** オブジェクト一覧を開いている */
+    var listOpen by remember { mutableStateOf(false) }
+    /** 編集中だけ一時的に隠しているメーター */
+    var editHidden by remember { mutableStateOf(emptySet<Long>()) }
+    /** 微調整パッドを左に置く (右のメーターを触るとき用) */
+    var padLeft by remember { mutableStateOf(false) }
 
     val current = shown.getOrNull(pager.currentPage)
     // ページを変えた・編集をやめたら選択をやめる
-    LaunchedEffect(current?.id, editing) { selecting = false; selected = emptySet() }
+    LaunchedEffect(current?.id, editing) {
+        selecting = false; selected = emptySet(); focusId = null; editHidden = emptySet()
+        if (!editing) listOpen = false
+    }
 
     // 表示中のページの項目だけを読み出す
     // iDrive・方向キーでのページ切替 (最後のページの次は先頭に戻る)
@@ -183,7 +194,7 @@ fun DashboardScreen(vm: MainViewModel, onNavigate: (Screen) -> Unit, onCreateCus
                     color = GaugeColors.Peak, fontSize = 13.sp, modifier = Modifier.weight(1f),
                     maxLines = 2, overflow = TextOverflow.Ellipsis)
             } else if (editing) {
-                Text("レイアウト編集中: ドラッグで移動、右下の ◢ でサイズ変更、タップで設定、右上の ▲▼ で重なり順、長押しでコピー (グループはまとめて)",
+                Text("レイアウト編集中: ドラッグで移動、右下の ◢ でサイズ変更、タップで設定、長押しでコピー。動かしたものは右のパッドで 1/4 マスずつ微調整、「一覧」で隠れたものも選べます",
                     color = GaugeColors.Accent, fontSize = 13.sp, modifier = Modifier.weight(1f),
                     maxLines = 2, overflow = TextOverflow.Ellipsis)
                 Box {
@@ -223,7 +234,8 @@ fun DashboardScreen(vm: MainViewModel, onNavigate: (Screen) -> Unit, onCreateCus
 
     // ---- ダッシュボード (左右スワイプで切替。編集中はスワイプしない) ----
     val pagerContent: @Composable (Modifier) -> Unit = { modifier ->
-        HorizontalPager(pager, modifier, userScrollEnabled = !editing) { page ->
+        Box(modifier) {
+        HorizontalPager(pager, Modifier.fillMaxSize(), userScrollEnabled = !editing) { page ->
             shown.getOrNull(page)?.let { d ->
                 DashboardCanvas(
                     dashboard = d,
@@ -256,8 +268,38 @@ fun DashboardScreen(vm: MainViewModel, onNavigate: (Screen) -> Unit, onCreateCus
                         val ids = Layout.groups(d.gauges)[g.layoutGroup]?.map { it.id }?.toSet() ?: setOf(g.id)
                         selected = if (g.id in selected) selected - ids else selected + ids
                     },
+                    focused = if (editing && !selecting && d.id == current?.id) focusId else null,
+                    onFocus = { g -> if (!selecting) focusId = g.id },
+                    editHidden = if (editing) editHidden else emptySet(),
                 )
             }
+        }
+        // 編集中: オブジェクト一覧と微調整パッド (メーターの上に重ねる。バーに重ならないよう上下に余白)
+        if (editing && !selecting && current != null) {
+            val focusGauge = current.gauges.firstOrNull { it.id == focusId }
+            val inset = if (barsPinned) Modifier.padding(8.dp) else Modifier.padding(start = 8.dp, end = 8.dp, top = 64.dp, bottom = 64.dp)
+            if (listOpen) {
+                GaugeListPanel(
+                    gauges = current.gauges, catalog = catalog, focused = focusId, hidden = editHidden,
+                    onSelect = { g -> focusId = g.id },
+                    onToggleHidden = { g -> editHidden = if (g.id in editHidden) editHidden - g.id else editHidden + g.id },
+                    onMoveZ = { g, delta -> vm.moveZ(current.id, g.id, delta) },
+                    onClose = { listOpen = false },
+                    modifier = inset.align(if (padLeft) Alignment.CenterEnd else Alignment.CenterStart),
+                )
+            }
+            if (focusGauge != null) {
+                FineTunePad(
+                    gauge = focusGauge, catalog = catalog,
+                    onNudge = { dx, dy, resize -> vm.nudgeGauge(current.id, focusGauge.id, dx, dy, resize) },
+                    onPlace = { x, y, w, h -> vm.updateGauge(current.id, focusGauge.id) { it.copy(x = x, y = y, w = w, h = h) } },
+                    onSettings = { settingsFor = focusGauge.id },
+                    onSwapSide = { padLeft = !padLeft },
+                    onClose = { focusId = null },
+                    modifier = inset.align(if (padLeft) Alignment.CenterStart else Alignment.CenterEnd),
+                )
+            }
+        }
         }
     }
 
@@ -307,6 +349,7 @@ fun DashboardScreen(vm: MainViewModel, onNavigate: (Screen) -> Unit, onCreateCus
                     ) { Text("グループ解除") }
                     OutlinedButton(onClick = { selecting = false; selected = emptySet() }) { Text("やめる") }
                 } else {
+                OutlinedButton(onClick = { listOpen = !listOpen }, enabled = current != null) { Text(if (listOpen) "一覧を閉じる" else "一覧") }
                 OutlinedButton(onClick = { selecting = true; selected = emptySet() }, enabled = current != null) { Text("グループ") }
                 if (clipboard != null) {
                     FilledTonalButton(onClick = { current?.let { vm.pasteGauge(it.id) } }, enabled = current != null) {
@@ -525,6 +568,12 @@ private fun DashboardCanvas(
     onToggleSelect: (GaugeConfig) -> Unit = {},
     /** ボタン: このページの発光の ON / OFF */
     onToggleGlow: () -> Unit = {},
+    /** 微調整中のメーター (枠で囲む。隠れていても枠は見える) */
+    focused: Long? = null,
+    /** ドラッグ・大きさ変更を終えたメーター (微調整の対象にする) */
+    onFocus: (GaugeConfig) -> Unit = {},
+    /** 編集中だけ一時的に隠すメーター */
+    editHidden: Set<Long> = emptySet(),
 ) {
     // メーターごとのピーク値リセット回数 (長押しで増やす)
     val peakResets = remember { mutableStateMapOf<Long, Int>() }
@@ -620,6 +669,7 @@ private fun DashboardCanvas(
         }
 
         dashboard.gauges.forEachIndexed { zi, g ->
+            if (g.id in editHidden) return@forEachIndexed
             key(g.id) {
                 val def = g.resolvedDef(catalog)
                 val gid = g.layoutGroup?.takeIf { it in groups }
@@ -629,14 +679,14 @@ private fun DashboardCanvas(
                     cellWPx = cellWPx,
                     cellHPx = cellHPx,
                     editing = editing,
-                    onCommit = onCommit,
+                    onCommit = { cg, x, y, w, h -> onCommit(cg, x, y, w, h); onFocus(cg) },
                     onTap = onTap,
                     onLongPress = { peakResets[g.id] = (peakResets[g.id] ?: 0) + 1 },
                     onCopy = onCopy,
                     grouped = gid != null,
                     override = preview[g.id],
                     onGroupDrag = { d -> if (gid != null) groupMove = gid to ((groupMove?.second ?: Offset.Zero) + d) },
-                    onGroupDragEnd = { commitGroup() },
+                    onGroupDragEnd = { commitGroup(); onFocus(g) },
                     onGroupDragCancel = { groupMove = null },
                     selecting = selecting,
                     selected = g.id in selected,
@@ -656,6 +706,20 @@ private fun DashboardCanvas(
                         layer = if (g.style == GaugeStyle.ANALOG && !(editing && selecting)) com.obdmeter.ui.gauges.GaugeLayer.BODY else com.obdmeter.ui.gauges.GaugeLayer.ALL,
                         needleState = needle, glowOff = dashboard.glowOff, foreground = foreground)
                 }
+            }
+        }
+
+        // 微調整中のメーターの枠 (一番手前に描く。触っても下に届く)
+        dashboard.gauges.firstOrNull { it.id == focused }?.let { g ->
+            val r = preview[g.id] ?: intArrayOf(g.x, g.y, g.w, g.h)
+            val ox = with(density) { (r[0] * cellWPx).toDp() }
+            val oy = with(density) { (r[1] * cellHPx).toDp() }
+            Canvas(
+                Modifier.zIndex(NEEDLE_Z + 2f).offset(ox, oy).wrapContentSize(Alignment.TopStart, unbounded = true)
+                    .size(with(density) { (r[2] * cellWPx).toDp() }, with(density) { (r[3] * cellHPx).toDp() })
+            ) {
+                drawRect(GaugeColors.Accent, style = androidx.compose.ui.graphics.drawscope.Stroke(3.dp.toPx()))
+                drawRect(GaugeColors.Accent.copy(alpha = 0.08f))
             }
         }
 

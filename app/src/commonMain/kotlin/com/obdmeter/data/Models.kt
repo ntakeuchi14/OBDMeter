@@ -753,6 +753,22 @@ object Layout {
         return intArrayOf(x0, y0, x1 - x0, y1 - y0)
     }
 
+    /**
+     * 微調整: メーター [id] を (dx, dy) 単位だけ動かす ([resize] なら幅・高さを変える) ときの配置 (id → x, y, w, h)。
+     * グループのメーターを動かすときはグループごと動かす (大きさ変更はそのメーターだけ)
+     */
+    fun nudge(gauges: List<GaugeConfig>, id: Long, dx: Int, dy: Int, resize: Boolean): Map<Long, IntArray> {
+        val g = gauges.firstOrNull { it.id == id } ?: return emptyMap()
+        if (resize) {
+            val w = (g.w + dx).coerceIn(widthRange)
+            val h = (g.h + dy).coerceIn(heightRange)
+            return mapOf(g.id to intArrayOf(g.x.coerceIn(xRange(w)), g.y.coerceIn(yRange(h)), w, h))
+        }
+        val members = g.layoutGroup?.let { groups(gauges)[it] }
+        if (members != null) return moveGroup(members, dx, dy)
+        return mapOf(g.id to intArrayOf((g.x + dx).coerceIn(xRange(g.w)), (g.y + dy).coerceIn(yRange(g.h)), g.w, g.h))
+    }
+
     /** グループを (dx, dy) マス動かした配置。グループ全体がページの外へ出きらないように動きを抑える */
     fun moveGroup(gauges: List<GaugeConfig>, dx: Int, dy: Int): Map<Long, IntArray> {
         val b = bounds(gauges)

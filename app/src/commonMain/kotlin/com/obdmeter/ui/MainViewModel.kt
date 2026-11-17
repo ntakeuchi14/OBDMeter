@@ -507,6 +507,12 @@ class MainViewModel(val core: AppCore) : ViewModel() {
         })
     }
 
+    /** 微調整: メーターを (dx, dy) 単位動かす・大きさを変える (保存済みの最新の配置から計算する) */
+    fun nudgeGauge(dashboardId: Long, gaugeId: Long, dx: Int, dy: Int, resize: Boolean) = editDashboard(dashboardId) { d ->
+        val p = Layout.nudge(d.gauges, gaugeId, dx, dy, resize)
+        d.copy(gauges = d.gauges.map { g -> p[g.id]?.let { r -> g.copy(x = r[0], y = r[1], w = r[2], h = r[3]) } ?: g })
+    }
+
     /** メーターをまとめて 1 つのグループにする */
     fun groupGauges(dashboardId: Long, ids: Set<Long>) {
         if (ids.size < 2) return
