@@ -307,7 +307,7 @@ fun DashboardScreen(vm: MainViewModel, onNavigate: (Screen) -> Unit, onCreateCus
                     },
                     onUngroup = { vm.ungroupGauges(current.id, listChecked); listChecked = emptySet() },
                     onClearChecks = { listChecked = emptySet() },
-                    modifier = inset.align(if (padLeft) Alignment.CenterEnd else Alignment.CenterStart),
+                    modifier = inset.align(if (padLeft) Alignment.TopEnd else Alignment.TopStart),
                 )
             }
             if (focusGauge != null) {

@@ -286,7 +286,7 @@ internal fun GaugeListPanel(
                 Box(Modifier.alpha(if (anyGrouped) 1f else 0.4f)) {
                     TextButton(onClick = onUngroup, enabled = anyGrouped) { Text("解除", fontSize = 12.sp) }
                 }
-                TextButton(onClick = onClearChecks) { Text("選択をやめる", fontSize = 12.sp) }
+                TextButton(onClick = onClearChecks) { Text("やめる", fontSize = 12.sp) }
             }
         }
         Text("□ にチェックして複数選ぶとグループにできます。名前をタップで選んでパッドで微調整、「設定」で中身の編集。「隠す」は編集中だけ見えなくします", color = GaugeColors.SubText, fontSize = 10.sp)
