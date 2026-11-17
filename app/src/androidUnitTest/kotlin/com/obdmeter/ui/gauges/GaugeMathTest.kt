@@ -22,6 +22,18 @@ class GaugeMathTest {
     }
 
     @Test
+    fun autoTicksAvoidDecimals() {
+        // 自動の刻みは数字に小数点が出ないものにする
+        fun labels(min: Double, max: Double) = TickScale.of(min, max).let { s -> s.values(max).map(s::label) }
+        assertEquals(listOf("0", "5", "10", "15", "20"), labels(0.0, 20.0))
+        assertEquals(listOf("0", "5", "10", "15", "20"), labels(0.0, 23.0))
+        assertEquals(listOf("0", "1", "2", "3", "4", "5", "6", "7"), labels(0.0, 7400.0))
+        for ((lo, hi) in listOf(0.0 to 3000.0, 0.0 to 6000.0, -20.0 to 30.0, 0.0 to 300.0, 0.0 to 2.5, 10.0 to 16.0)) {
+            assert(labels(lo, hi).none { '.' in it }) { "$lo..$hi -> ${labels(lo, hi)}" }
+        }
+    }
+
+    @Test
     fun tickScaleHonoursDivisions() {
         val s = TickScale.of(-1.0, 1.5, 5)
         assertEquals(0.5, s.step, 1e-12)

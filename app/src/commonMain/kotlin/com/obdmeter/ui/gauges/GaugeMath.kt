@@ -27,6 +27,8 @@ internal fun fraction(def: PidDef, v: Double): Float =
     ((v - def.min) / (def.max - def.min)).toFloat().coerceIn(0f, 1f)
 
 /** 範囲から見やすい目盛り間隔を決める。1000 以上は ×1000 表記。 */
+private fun isWhole(x: Double) = abs(x - kotlin.math.round(x)) < 1e-6
+
 internal data class TickScale(val first: Double, val step: Double, val divisor: Double) {
     val unitSuffix get() = if (divisor > 1) " ×1000" else ""
 
@@ -52,6 +54,14 @@ internal data class TickScale(val first: Double, val step: Double, val divisor: 
             }
             val raw = range / 8
             val mag = 10.0.pow(floor(log10(raw)))
+            // 数字に小数点が出ない刻み (1・2・5 の 10 の累乗倍) を優先する。区間が 2 つ以上できるものだけ (範囲が狭すぎるときは小数の刻み)
+            for (m in listOf(1.0, 2.0, 5.0, 10.0, 20.0, 50.0)) {
+                val step = m * mag
+                if (step < raw * 0.999 || range / step < 1.999) continue
+                val divisor = if (max(abs(min), abs(max)) >= 1000 && step >= 500) 1000.0 else 1.0
+                val first = kotlin.math.ceil(min / step - 1e-9) * step
+                if (isWhole(step / divisor) && isWhole(first / divisor)) return TickScale(first, step, divisor)
+            }
             val step = listOf(1.0, 2.0, 2.5, 5.0, 10.0).map { it * mag }.first { it >= raw }
             val first = kotlin.math.ceil(min / step) * step
             val divisor = if (max(abs(min), abs(max)) >= 1000 && step >= 500) 1000.0 else 1.0
