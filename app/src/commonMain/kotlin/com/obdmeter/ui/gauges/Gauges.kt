@@ -440,7 +440,7 @@ fun GaugeCard(
             GaugeStyle.CHART -> ChartGauge(
                 series.ifEmpty { listOf(ChartSeries(def, value)) }, look, fonts, interactive, Modifier.fillMaxSize(), historySlot,
             )
-            GaugeStyle.IMAGE -> PictureObject(look, image, Modifier.fillMaxSize())
+            GaugeStyle.IMAGE -> PictureObject(look, image, Modifier.fillMaxSize(), placeholder = !interactive)
         }
     }
 }
@@ -1700,11 +1700,11 @@ object Sweep {
  * 画像オブジェクト: 画像を枠に合わせて描く (縦横比を保つ・伸ばす)。大きさ・位置のずらし・回転・反転・明るさ・コントラスト
  */
 @Composable
-fun PictureObject(look: GaugeLook, image: ImageBitmap?, modifier: Modifier = Modifier) {
+fun PictureObject(look: GaugeLook, image: ImageBitmap?, modifier: Modifier = Modifier, placeholder: Boolean = true) {
     Canvas(modifier) {
         if (image == null) {
-            // 画像をまだ選んでいない (編集画面で選ぶ)
-            drawRect(GaugeColors.CardBorder, style = Stroke(1.dp.toPx(), pathEffect = androidx.compose.ui.graphics.PathEffect.dashPathEffect(floatArrayOf(8f, 6f))))
+            // 画像をまだ選んでいない (編集中・編集画面だけ点線の枠を出す)
+            if (placeholder) drawRect(GaugeColors.CardBorder, style = Stroke(1.dp.toPx(), pathEffect = androidx.compose.ui.graphics.PathEffect.dashPathEffect(floatArrayOf(8f, 6f))))
             return@Canvas
         }
         val w = size.width
