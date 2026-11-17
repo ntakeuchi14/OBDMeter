@@ -205,6 +205,7 @@ fun GaugeDesign.toLook(def: PidDef, style: GaugeStyle): GaugeLook {
         imageKeepAspect = imageKeepAspect,
         imageShadowDistance = imageShadowDistance.coerceIn(0f, 0.3f),
         imageShadowBlur = imageShadowBlur.coerceIn(0f, 0.2f),
+        imageInset = imageInset && style == GaugeStyle.IMAGE,
         imageBrightness = imageBrightness.coerceIn(-1f, 1f),
         imageContrast = imageContrast.coerceIn(0f, 2f),
         valueFont = valueFont,

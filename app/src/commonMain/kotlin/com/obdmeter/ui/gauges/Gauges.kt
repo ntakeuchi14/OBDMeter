@@ -253,6 +253,8 @@ data class GaugeLook(
     /** 画像オブジェクトの影の距離・ぼかし (短い辺に対する比率) */
     val imageShadowDistance: Float = 0.04f,
     val imageShadowBlur: Float = 0.03f,
+    /** 画像オブジェクト: 埋め込む (内側の縁に影) */
+    val imageInset: Boolean = false,
     val imageBrightness: Float = 0f,
     val imageContrast: Float = 1f,
     val showCard: Boolean = true,
@@ -1704,8 +1706,8 @@ object Sweep {
  */
 @Composable
 fun PictureObject(look: GaugeLook, image: ImageBitmap?, modifier: Modifier = Modifier, placeholder: Boolean = true) {
-    // 影の画像 (設定・大きさが変わったときだけ作り直す)
-    val shadowHolder = remember { arrayOfNulls<Pair<Any, ImageBitmap>>(1) }
+    // 影・埋め込みの画像 (設定・大きさが変わったときだけ作り直す)
+    val fxHolder = remember { arrayOfNulls<Pair<Any, List<ImageBitmap>>>(1) }
     Canvas(modifier) {
         if (image == null) {
             // 画像をまだ選んでいない (編集中・編集画面だけ点線の枠を出す)
@@ -1724,19 +1726,31 @@ fun PictureObject(look: GaugeLook, image: ImageBitmap?, modifier: Modifier = Mod
         val c = Offset(w / 2 + w * look.imageOffsetX, h / 2 + h * look.imageOffsetY)
         val dst = IntOffset((c.x - dw / 2).roundToInt(), (c.y - dh / 2).roundToInt())
         val dstSize = IntSize(dw.roundToInt().coerceAtLeast(1), dh.roundToInt().coerceAtLeast(1))
-        // 影: 画像の形 (透明な部分は落とさない) を黒く塗って右下へずらし、少しずつずらして重ねてぼかす。
-        // 重ねる回数が多いので、一度画像に描いておき (はみ出す分の余白付き)、ふだんはそれを貼るだけにする
-        if (look.objectShadow && look.shadowStrength > 0f) {
-            val m = min(w, h)
-            val dist = m * look.imageShadowDistance
-            val blur = m * look.imageShadowBlur
-            val pad = kotlin.math.ceil(dist + blur + 2f).toInt()
+        val src = IntSize(image.width, image.height)
+        /** 画像の形を ([dx], [dy]) ずらして描く (回転・反転も同じに) */
+        fun DrawScope.silhouette(dx: Float, dy: Float, alpha: Float, filter: androidx.compose.ui.graphics.ColorFilter?, blend: androidx.compose.ui.graphics.BlendMode) {
+            withTransform({
+                translate(dx, dy)
+                rotate(look.imageRotation, c)
+                scale(if (look.imageFlipH) -1f else 1f, if (look.imageFlipV) -1f else 1f, c)
+            }) { drawImage(image, IntOffset.Zero, src, dst, dstSize, alpha = alpha, colorFilter = filter, blendMode = blend) }
+        }
+
+        val drop = look.objectShadow && look.shadowStrength > 0f
+        val inset = look.imageInset && look.shadowStrength > 0f
+        // 影・埋め込みは、画像の形を少しずつずらして何枚も重ねてぼかす。重ねる回数が多いので、
+        // 一度画像に描いておき (はみ出す分の余白付き)、ふだんはそれを貼るだけにする
+        val m = min(w, h)
+        val dist = m * look.imageShadowDistance
+        val blur = m * look.imageShadowBlur
+        val pad = kotlin.math.ceil(dist + blur + 2f).toInt()
+        val fx: List<ImageBitmap> = if (!drop && !inset) emptyList() else {
             val key = listOf(image, w, h, look.imageScale, look.imageKeepAspect, look.imageOffsetX, look.imageOffsetY,
-                look.imageRotation, look.imageFlipH, look.imageFlipV, look.shadowStrength, dist, blur)
-            val cached = shadowHolder[0]?.takeIf { it.first == key }?.second ?: run {
+                look.imageRotation, look.imageFlipH, look.imageFlipV, look.shadowStrength, dist, blur, drop, inset)
+            fxHolder[0]?.takeIf { it.first == key }?.second ?: run {
                 val bw = kotlin.math.ceil(w).toInt() + pad * 2
                 val bh = kotlin.math.ceil(h).toInt() + pad * 2
-                val bmp = ImageBitmap(bw, bh)
+                val bsize = androidx.compose.ui.geometry.Size(bw.toFloat(), bh.toFloat())
                 val taps = buildList {
                     add(Offset.Zero)
                     val rings = kotlin.math.ceil(blur / 1.5f).toInt().coerceIn(0, 12)
@@ -1749,40 +1763,42 @@ fun PictureObject(look: GaugeLook, image: ImageBitmap?, modifier: Modifier = Mod
                         }
                     }
                 }
-                val alpha = (0.6f * look.shadowStrength).coerceIn(0f, 1f)
-                // 重ねると濃くなるので、1 枚ずつは薄く (全部重なった所が [alpha] くらいになるように)
-                val each = 1f - (1f - alpha).toDouble().pow(1.0 / taps.size).toFloat()
-                val tint = androidx.compose.ui.graphics.ColorFilter.tint(Color.Black, androidx.compose.ui.graphics.BlendMode.SrcIn)
-                androidx.compose.ui.graphics.drawscope.CanvasDrawScope().draw(
-                    this, layoutDirection, androidx.compose.ui.graphics.Canvas(bmp), androidx.compose.ui.geometry.Size(bw.toFloat(), bh.toFloat()),
-                ) {
-                    for (t in taps) {
-                        withTransform({
-                            translate(pad + dist * 0.6f + t.x, pad + dist + t.y)
-                            rotate(look.imageRotation, c)
-                            scale(if (look.imageFlipH) -1f else 1f, if (look.imageFlipV) -1f else 1f, c)
-                        }) {
-                            drawImage(image, IntOffset.Zero, IntSize(image.width, image.height), dst, dstSize, alpha = each, colorFilter = tint)
-                        }
+                // 重ねると濃くなるので、1 枚ずつは薄く (全部重なった所が [target] くらいになるように)
+                fun each(target: Float) = 1f - (1f - target.coerceIn(0f, 0.999f)).toDouble().pow(1.0 / taps.size).toFloat()
+                val black = androidx.compose.ui.graphics.ColorFilter.tint(Color.Black, androidx.compose.ui.graphics.BlendMode.SrcIn)
+                fun layer(block: DrawScope.() -> Unit): ImageBitmap {
+                    val bmp = ImageBitmap(bw, bh)
+                    androidx.compose.ui.graphics.drawscope.CanvasDrawScope().draw(this, layoutDirection, androidx.compose.ui.graphics.Canvas(bmp), bsize, block)
+                    return bmp
+                }
+                val out = ArrayList<ImageBitmap>()
+                if (drop) {
+                    // 落ちる影: 画像の形を黒く塗って右下へずらす
+                    out += layer {
+                        val e = each(0.6f * look.shadowStrength)
+                        for (t in taps) silhouette(pad + dist * 0.6f + t.x, pad + dist + t.y, e, black, androidx.compose.ui.graphics.BlendMode.SrcOver)
                     }
                 }
-                shadowHolder[0] = key to bmp
-                bmp
+                if (inset) {
+                    // 埋め込み: 画像の内側の縁に、左上から内側へ落ちる影と、右下の縁のうっすらした明かり
+                    fun innerEdge(color: Color, target: Float, dx: Float, dy: Float) = layer {
+                        drawRect(color.copy(alpha = target.coerceIn(0f, 1f)))
+                        // ずらした形の分を抜く (抜いた残りが、反対側の縁に沿った帯になる)
+                        val e = each(0.98f)
+                        for (t in taps) silhouette(pad + dx + t.x, pad + dy + t.y, e, null, androidx.compose.ui.graphics.BlendMode.DstOut)
+                        // 画像の形の中だけ残す
+                        silhouette(pad.toFloat(), pad.toFloat(), 1f, null, androidx.compose.ui.graphics.BlendMode.DstIn)
+                    }
+                    out += innerEdge(Color.Black, 0.75f * look.shadowStrength, dist * 0.6f, dist)
+                    out += innerEdge(Color.White, 0.22f * look.shadowStrength, -dist * 0.4f, -dist * 0.6f)
+                }
+                fxHolder[0] = key to out
+                out
             }
-            drawImage(cached, Offset(-pad.toFloat(), -pad.toFloat()))
         }
-        withTransform({
-            rotate(look.imageRotation, c)
-            scale(if (look.imageFlipH) -1f else 1f, if (look.imageFlipV) -1f else 1f, c)
-        }) {
-            drawImage(
-                image,
-                srcOffset = IntOffset.Zero,
-                srcSize = IntSize(image.width, image.height),
-                dstOffset = dst,
-                dstSize = dstSize,
-                colorFilter = look.imageFilter(),
-            )
-        }
+        val at = Offset(-pad.toFloat(), -pad.toFloat())
+        if (drop) drawImage(fx[0], at)
+        silhouette(0f, 0f, 1f, look.imageFilter(), androidx.compose.ui.graphics.BlendMode.SrcOver)
+        if (inset) for (l in fx.drop(if (drop) 1 else 0)) drawImage(l, at)
     }
 }
