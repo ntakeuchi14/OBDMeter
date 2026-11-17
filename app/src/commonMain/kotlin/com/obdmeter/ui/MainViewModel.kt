@@ -572,6 +572,11 @@ class MainViewModel(val core: AppCore) : ViewModel() {
         d.copy(gauges = d.gauges.map { g -> p[g.id]?.let { r -> g.copy(x = r[0], y = r[1], w = r[2], h = r[3]) } ?: g })
     }
 
+    /** フロート表示の設定をまとめて変える ([show] = false でフロート表示しない、[group] = null で 1 つずつ表示) */
+    fun setFloatGroup(dashboardId: Long, ids: Set<Long>, show: Boolean, group: Int?) = editDashboard(dashboardId) { d ->
+        d.copy(gauges = d.gauges.map { if (it.id in ids) it.copy(floatShow = show, floatGroup = if (show) group else it.floatGroup) else it })
+    }
+
     /** メーターをまとめて 1 つのグループにする */
     fun groupGauges(dashboardId: Long, ids: Set<Long>) {
         if (ids.size < 2) return

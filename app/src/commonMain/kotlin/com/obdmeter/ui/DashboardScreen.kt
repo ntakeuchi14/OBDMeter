@@ -147,12 +147,15 @@ fun DashboardScreen(vm: MainViewModel, onNavigate: (Screen) -> Unit, onCreateCus
     var padLeft by remember { mutableStateOf(false) }
     /** 一覧でチェックしたメーター (グループにする) */
     var listChecked by remember { mutableStateOf(emptySet<Long>()) }
+    /** フロート表示の一覧を開いている・チェックしたメーター */
+    var floatListOpen by remember { mutableStateOf(false) }
+    var floatChecked by remember { mutableStateOf(emptySet<Long>()) }
 
     val current = shown.getOrNull(pager.currentPage)
     // ページを変えた・編集をやめたら選択をやめる
     LaunchedEffect(current?.id, editing) {
-        selecting = false; selected = emptySet(); focusId = null; editHidden = emptySet(); listChecked = emptySet()
-        if (!editing) listOpen = false
+        selecting = false; selected = emptySet(); focusId = null; editHidden = emptySet(); listChecked = emptySet(); floatChecked = emptySet()
+        if (!editing) { listOpen = false; floatListOpen = false }
     }
 
     // 表示中のページの項目だけを読み出す
@@ -286,7 +289,16 @@ fun DashboardScreen(vm: MainViewModel, onNavigate: (Screen) -> Unit, onCreateCus
         if (editing && !selecting && current != null) {
             val focusGauge = current.gauges.firstOrNull { it.id == focusId }
             val inset = if (settings.alwaysShowToolbar) Modifier.padding(8.dp) else Modifier.padding(start = 8.dp, end = 8.dp, top = 64.dp, bottom = 64.dp)
-            if (listOpen) {
+            if (floatListOpen) {
+                FloatListPanel(
+                    gauges = current.gauges, catalog = catalog, checked = floatChecked,
+                    onCheck = { g -> floatChecked = if (g.id in floatChecked) floatChecked - g.id else floatChecked + g.id },
+                    onCheckAll = { all -> floatChecked = if (all) current.gauges.map { it.id }.toSet() else emptySet() },
+                    onApply = { show, group -> vm.setFloatGroup(current.id, floatChecked, show, group) },
+                    onClose = { floatListOpen = false; floatChecked = emptySet() },
+                    modifier = inset.align(if (padLeft) Alignment.TopEnd else Alignment.TopStart),
+                )
+            } else if (listOpen) {
                 GaugeListPanel(
                     gauges = current.gauges, catalog = catalog, focused = focusId, hidden = editHidden,
                     onSelect = { g -> focusId = g.id },
@@ -371,7 +383,8 @@ fun DashboardScreen(vm: MainViewModel, onNavigate: (Screen) -> Unit, onCreateCus
                     ) { Text("グループ解除") }
                     OutlinedButton(onClick = { selecting = false; selected = emptySet() }) { Text("やめる") }
                 } else {
-                OutlinedButton(onClick = { listOpen = !listOpen }, enabled = current != null) { Text(if (listOpen) "一覧を閉じる" else "一覧") }
+                OutlinedButton(onClick = { listOpen = !listOpen; floatListOpen = false }, enabled = current != null) { Text(if (listOpen && !floatListOpen) "一覧を閉じる" else "一覧") }
+                OutlinedButton(onClick = { floatListOpen = !floatListOpen; if (floatListOpen) listOpen = false }, enabled = current != null) { Text(if (floatListOpen) "フロートを閉じる" else "フロート") }
                 OutlinedButton(onClick = { selecting = true; selected = emptySet() }, enabled = current != null) { Text("グループ") }
                 if (clipboard != null) {
                     FilledTonalButton(onClick = { current?.let { vm.pasteGauge(it.id) } }, enabled = current != null) {

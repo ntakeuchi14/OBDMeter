@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -290,5 +291,77 @@ internal fun GaugeListPanel(
             }
         }
         Text("左の枠にチェックして複数選ぶとグループにできます。名前をタップで選んでパッドで微調整、「設定」で中身の編集。「隠す」は編集中だけ見えなくします", color = GaugeColors.SubText, fontSize = 10.sp)
+    }
+}
+
+
+/** フロート表示の設定の表示 */
+private fun floatText(g: GaugeConfig): String = when {
+    !g.floatShow -> "出さない"
+    g.floatGroup == null -> "単独"
+    else -> "グループ " + GaugeConfig.groupLabel(g.floatGroup)
+}
+
+/**
+ * フロート表示の一覧: メーターごとのフロート表示の設定を見て、チェックしたものをまとめて設定する
+ */
+@Composable
+internal fun FloatListPanel(
+    gauges: List<GaugeConfig>,
+    catalog: PidCatalog,
+    checked: Set<Long>,
+    onCheck: (GaugeConfig) -> Unit,
+    onCheckAll: (Boolean) -> Unit,
+    /** (フロート表示する, グループ) */
+    onApply: (Boolean, Int?) -> Unit,
+    onClose: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Column(
+        modifier.width(300.dp).clip(RoundedCornerShape(14.dp))
+            .background(GaugeColors.Background.copy(alpha = 0.94f))
+            .border(1.dp, GaugeColors.CardBorder, RoundedCornerShape(14.dp))
+            .padding(8.dp),
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text("フロート表示の設定", color = GaugeColors.Text, fontSize = 13.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+            val all = gauges.isNotEmpty() && gauges.all { it.id in checked }
+            Text(if (all) "全解除" else "全選択", color = GaugeColors.Accent, fontSize = 12.sp,
+                modifier = Modifier.clickable { onCheckAll(!all) }.padding(horizontal = 6.dp, vertical = 4.dp))
+            Text("閉じる", color = GaugeColors.SubText, fontSize = 12.sp, modifier = Modifier.clickable(onClick = onClose).padding(horizontal = 6.dp, vertical = 4.dp))
+        }
+        Spacer(Modifier.size(4.dp))
+        LazyColumn(Modifier.weight(1f, fill = false).heightIn(max = 360.dp)) {
+            itemsIndexed(gauges.asReversed(), key = { _, g -> g.id }) { _, g ->
+                val on = g.id in checked
+                Row(
+                    Modifier.fillMaxWidth().padding(vertical = 2.dp).clip(RoundedCornerShape(8.dp))
+                        .background(if (on) GaugeColors.Accent.copy(alpha = 0.2f) else Color.Transparent)
+                        .clickable { onCheck(g) }.padding(horizontal = 6.dp, vertical = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Box(
+                        Modifier.padding(end = 6.dp).size(20.dp).clip(RoundedCornerShape(4.dp))
+                            .background(if (on) GaugeColors.Accent else Color.Transparent)
+                            .border(1.5.dp, if (on) GaugeColors.Accent else GaugeColors.SubText, RoundedCornerShape(4.dp)),
+                        contentAlignment = Alignment.Center,
+                    ) { if (on) Text("✓", color = GaugeColors.Background, fontSize = 13.sp, fontWeight = FontWeight.Bold) }
+                    Text(g.editLabel(catalog), color = GaugeColors.Text, fontSize = 12.sp,
+                        maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+                    Text(floatText(g), fontSize = 12.sp,
+                        color = if (!g.floatShow) GaugeColors.SubText else if (g.floatGroup != null) GaugeColors.Peak else GaugeColors.Text)
+                }
+            }
+        }
+        if (checked.isNotEmpty()) {
+            Text("チェックした ${checked.size} 個を:", color = GaugeColors.Text, fontSize = 12.sp, modifier = Modifier.padding(top = 4.dp))
+            Row(Modifier.padding(vertical = 4.dp).horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                Seg("出さない", false) { onApply(false, null) }
+                Seg("単独", false) { onApply(true, null) }
+                (1..GaugeConfig.FLOAT_GROUPS).forEach { n -> Seg(GaugeConfig.groupLabel(n), false) { onApply(true, n) } }
+            }
+        }
+        Text("同じグループのメーターは、フロート表示で 1 つのウィンドウにまとめて表示します。「単独」は 1 つずつ、「出さない」はフロート表示に出しません",
+            color = GaugeColors.SubText, fontSize = 10.sp)
     }
 }
