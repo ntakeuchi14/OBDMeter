@@ -36,6 +36,7 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
@@ -216,7 +217,17 @@ internal fun GaugeListPanel(
     onSettings: (GaugeConfig) -> Unit,
     onClose: () -> Unit,
     modifier: Modifier = Modifier,
+    /** チェックしたメーター (グループにする・解除する) */
+    checked: Set<Long> = emptySet(),
+    onCheck: (GaugeConfig) -> Unit = {},
+    onGroup: () -> Unit = {},
+    onUngroup: () -> Unit = {},
+    onClearChecks: () -> Unit = {},
 ) {
+    // グループごとの番号 (一覧で同じグループが分かるように)
+    val groupNo = remember(gauges) {
+        Layout.groups(gauges).keys.sorted().withIndex().associate { (i, gid) -> gid to i + 1 }
+    }
     Column(
         modifier.width(300.dp).clip(RoundedCornerShape(14.dp))
             .background(GaugeColors.Background.copy(alpha = 0.94f))
@@ -239,8 +250,17 @@ internal fun GaugeListPanel(
                         .clickable { onSelect(g) }.padding(horizontal = 6.dp, vertical = 6.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
+                    // チェック (複数選んでグループにする)
+                    val on = g.id in checked
+                    Box(
+                        Modifier.padding(end = 6.dp).size(20.dp).clip(RoundedCornerShape(4.dp))
+                            .background(if (on) GaugeColors.Accent else Color.Transparent)
+                            .border(1.5.dp, if (on) GaugeColors.Accent else GaugeColors.SubText, RoundedCornerShape(4.dp))
+                            .clickable { onCheck(g) },
+                        contentAlignment = Alignment.Center,
+                    ) { if (on) Text("✓", color = GaugeColors.Background, fontSize = 13.sp, fontWeight = FontWeight.Bold) }
                     Text(
-                        g.editLabel(catalog) + (if (g.layoutGroup != null) " ・グループ" else ""),
+                        g.editLabel(catalog) + (g.layoutGroup?.let { groupNo[it] }?.let { " ・G$it" } ?: ""),
                         color = if (off) GaugeColors.SubText else GaugeColors.Text, fontSize = 12.sp,
                         maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f),
                     )
@@ -256,6 +276,19 @@ internal fun GaugeListPanel(
                 }
             }
         }
-        Text("名前をタップで選んでパッドで微調整、「設定」で中身の編集。「隠す」は編集中だけ見えなくします", color = GaugeColors.SubText, fontSize = 10.sp)
+        if (checked.isNotEmpty()) {
+            val anyGrouped = gauges.any { it.id in checked && it.layoutGroup != null && it.layoutGroup in groupNo }
+            Row(Modifier.padding(vertical = 4.dp), horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text("${checked.size} 個", color = GaugeColors.Text, fontSize = 12.sp)
+                Box(Modifier.alpha(if (checked.size >= 2) 1f else 0.4f)) {
+                    TextButton(onClick = onGroup, enabled = checked.size >= 2) { Text("グループにする", fontSize = 12.sp) }
+                }
+                Box(Modifier.alpha(if (anyGrouped) 1f else 0.4f)) {
+                    TextButton(onClick = onUngroup, enabled = anyGrouped) { Text("解除", fontSize = 12.sp) }
+                }
+                TextButton(onClick = onClearChecks) { Text("選択をやめる", fontSize = 12.sp) }
+            }
+        }
+        Text("□ にチェックして複数選ぶとグループにできます。名前をタップで選んでパッドで微調整、「設定」で中身の編集。「隠す」は編集中だけ見えなくします", color = GaugeColors.SubText, fontSize = 10.sp)
     }
 }

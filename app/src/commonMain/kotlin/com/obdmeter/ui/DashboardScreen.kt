@@ -145,11 +145,13 @@ fun DashboardScreen(vm: MainViewModel, onNavigate: (Screen) -> Unit, onCreateCus
     var editHidden by remember { mutableStateOf(emptySet<Long>()) }
     /** 微調整パッドを左に置く (右のメーターを触るとき用) */
     var padLeft by remember { mutableStateOf(false) }
+    /** 一覧でチェックしたメーター (グループにする) */
+    var listChecked by remember { mutableStateOf(emptySet<Long>()) }
 
     val current = shown.getOrNull(pager.currentPage)
     // ページを変えた・編集をやめたら選択をやめる
     LaunchedEffect(current?.id, editing) {
-        selecting = false; selected = emptySet(); focusId = null; editHidden = emptySet()
+        selecting = false; selected = emptySet(); focusId = null; editHidden = emptySet(); listChecked = emptySet()
         if (!editing) listOpen = false
     }
 
@@ -291,7 +293,20 @@ fun DashboardScreen(vm: MainViewModel, onNavigate: (Screen) -> Unit, onCreateCus
                     onToggleHidden = { g -> editHidden = if (g.id in editHidden) editHidden - g.id else editHidden + g.id },
                     onMoveZ = { g, delta -> vm.moveZ(current.id, g.id, delta) },
                     onSettings = { g -> focusId = g.id; settingsFor = g.id },
-                    onClose = { listOpen = false },
+                    onClose = { listOpen = false; listChecked = emptySet() },
+                    checked = listChecked,
+                    onCheck = { g ->
+                        // グループのメーターはグループごと選ぶ
+                        val ids = Layout.groups(current.gauges)[g.layoutGroup]?.map { it.id }?.toSet() ?: setOf(g.id)
+                        listChecked = if (g.id in listChecked) listChecked - ids else listChecked + ids
+                    },
+                    onGroup = {
+                        vm.groupGauges(current.id, listChecked)
+                        toast("${listChecked.size} 個をグループにしました")
+                        listChecked = emptySet()
+                    },
+                    onUngroup = { vm.ungroupGauges(current.id, listChecked); listChecked = emptySet() },
+                    onClearChecks = { listChecked = emptySet() },
                     modifier = inset.align(if (padLeft) Alignment.CenterEnd else Alignment.CenterStart),
                 )
             }
