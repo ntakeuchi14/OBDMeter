@@ -289,6 +289,6 @@ internal fun GaugeListPanel(
                 TextButton(onClick = onClearChecks) { Text("やめる", fontSize = 12.sp) }
             }
         }
-        Text("□ にチェックして複数選ぶとグループにできます。名前をタップで選んでパッドで微調整、「設定」で中身の編集。「隠す」は編集中だけ見えなくします", color = GaugeColors.SubText, fontSize = 10.sp)
+        Text("左の枠にチェックして複数選ぶとグループにできます。名前をタップで選んでパッドで微調整、「設定」で中身の編集。「隠す」は編集中だけ見えなくします", color = GaugeColors.SubText, fontSize = 10.sp)
     }
 }
