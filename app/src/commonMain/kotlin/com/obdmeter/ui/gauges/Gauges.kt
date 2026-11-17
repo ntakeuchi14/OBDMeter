@@ -1782,12 +1782,12 @@ fun PictureObject(look: GaugeLook, image: ImageBitmap?, modifier: Modifier = Mod
                 if (inset) {
                     // 埋め込み: 画像の内側の縁に、左上から内側へ落ちる影と、右下の縁のうっすらした明かり
                     fun innerEdge(color: Color, target: Float, dx: Float, dy: Float) = layer {
-                        drawRect(color.copy(alpha = target.coerceIn(0f, 1f)))
+                        // 画像の形を塗り
+                        val tint = androidx.compose.ui.graphics.ColorFilter.tint(color, androidx.compose.ui.graphics.BlendMode.SrcIn)
+                        silhouette(pad.toFloat(), pad.toFloat(), target.coerceIn(0f, 1f), tint, androidx.compose.ui.graphics.BlendMode.SrcOver)
                         // ずらした形の分を抜く (抜いた残りが、反対側の縁に沿った帯になる)
                         val e = each(0.98f)
                         for (t in taps) silhouette(pad + dx + t.x, pad + dy + t.y, e, null, androidx.compose.ui.graphics.BlendMode.DstOut)
-                        // 画像の形の中だけ残す
-                        silhouette(pad.toFloat(), pad.toFloat(), 1f, null, androidx.compose.ui.graphics.BlendMode.DstIn)
                     }
                     out += innerEdge(Color.Black, 0.75f * look.shadowStrength, dist * 0.6f, dist)
                     out += innerEdge(Color.White, 0.22f * look.shadowStrength, -dist * 0.4f, -dist * 0.6f)
