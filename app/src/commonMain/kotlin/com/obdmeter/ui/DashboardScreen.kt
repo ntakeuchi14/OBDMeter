@@ -553,6 +553,7 @@ fun statusColor(state: ConnectionState): Color = when (state) {
 
 fun defaultStyleFor(def: PidDef): GaugeStyle = when (def.key) {
     com.obdmeter.core.DeviceItems.BUTTON -> GaugeStyle.BUTTON
+    com.obdmeter.core.DeviceItems.IMAGE -> GaugeStyle.IMAGE
     "RPM", "SPEED", "LOAD", "THROTTLE", "PEDAL", "BOOST", "TIMING" -> GaugeStyle.ANALOG
     "STFT1", "STFT2", "LTFT1", "LTFT2", "FUEL_LEVEL", "COOLANT", "OIL_TEMP" -> GaugeStyle.BAR
     else -> GaugeStyle.DIGITAL
@@ -1201,6 +1202,8 @@ internal fun solidAt(g: GaugeConfig, x: Float, y: Float, w: Float, h: Float): Bo
         // 値テーブルは背景が無ければ文字だけ。グラフ・変動監視は中で操作するので範囲全体
         GaugeStyle.TABLE -> d.tableValueImage != null || d.tableValueBg != null
         GaugeStyle.CHART, GaugeStyle.MONITOR -> true
+        // 画像は飾りなので、通常表示中のタップは下のメーターに届ける
+        GaugeStyle.IMAGE -> false
     }
 }
 

@@ -198,12 +198,17 @@ fun GaugeDesign.toLook(def: PidDef, style: GaugeStyle): GaugeLook {
         showName = showName,
         showUnit = showUnit,
         image = backgroundImage,
-        imageScale = imageScale.coerceIn(0.3f, 2f),
+        imageScale = imageScale.coerceIn(0.1f, 3f),
+        imageRotation = imageRotation,
+        imageFlipH = imageFlipH,
+        imageFlipV = imageFlipV,
+        imageKeepAspect = imageKeepAspect,
         imageBrightness = imageBrightness.coerceIn(-1f, 1f),
         imageContrast = imageContrast.coerceIn(0f, 2f),
         valueFont = valueFont,
         labelFont = labelFont,
-        showCard = showCard,
+        // 画像オブジェクトはカードを出さない (画像だけ)
+        showCard = showCard && style != GaugeStyle.IMAGE,
     )
 }
 

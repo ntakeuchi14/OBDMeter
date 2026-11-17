@@ -13,7 +13,7 @@ object ReadPlan {
         if (pidKey.startsWith("BMW_") || pidKey.startsWith("MSD80_")) "BMW_RPM" else "RPM"
 
     fun gaugeKeys(g: GaugeConfig): List<String> =
-        if (g.style == GaugeStyle.BUTTON) emptyList() // ボタンは何も読まない
+        if (g.style == GaugeStyle.BUTTON || g.style == GaugeStyle.IMAGE) emptyList() // ボタン・画像は何も読まない
         // 「エンジン停止中は最大値を記録しない」は回転数も読む
         else if (g.style in setOf(GaugeStyle.ANALOG, GaugeStyle.BAR, GaugeStyle.DIGITAL) && g.design.showPeak && g.design.peakEngineRunningOnly)
             listOf(g.pidKey, engineRpmKey(g.pidKey))

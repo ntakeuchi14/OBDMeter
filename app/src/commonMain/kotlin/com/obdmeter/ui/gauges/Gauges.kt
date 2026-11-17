@@ -245,6 +245,11 @@ data class GaugeLook(
     val showUnit: Boolean = true,
     val image: String? = null,
     val imageScale: Float = 1f,
+    /** 画像オブジェクト: 回転 (度)・反転・縦横比を保つ */
+    val imageRotation: Float = 0f,
+    val imageFlipH: Boolean = false,
+    val imageFlipV: Boolean = false,
+    val imageKeepAspect: Boolean = true,
     val imageBrightness: Float = 0f,
     val imageContrast: Float = 1f,
     val showCard: Boolean = true,
@@ -435,6 +440,7 @@ fun GaugeCard(
             GaugeStyle.CHART -> ChartGauge(
                 series.ifEmpty { listOf(ChartSeries(def, value)) }, look, fonts, interactive, Modifier.fillMaxSize(), historySlot,
             )
+            GaugeStyle.IMAGE -> PictureObject(look, image, Modifier.fillMaxSize())
         }
     }
 }
@@ -1685,6 +1691,44 @@ object Sweep {
             } finally {
                 progress = null
             }
+        }
+    }
+}
+
+
+/**
+ * 画像オブジェクト: 画像を枠に合わせて描く (縦横比を保つ・伸ばす)。大きさ・位置のずらし・回転・反転・明るさ・コントラスト
+ */
+@Composable
+fun PictureObject(look: GaugeLook, image: ImageBitmap?, modifier: Modifier = Modifier) {
+    Canvas(modifier) {
+        if (image == null) {
+            // 画像をまだ選んでいない (編集画面で選ぶ)
+            drawRect(GaugeColors.CardBorder, style = Stroke(1.dp.toPx(), pathEffect = androidx.compose.ui.graphics.PathEffect.dashPathEffect(floatArrayOf(8f, 6f))))
+            return@Canvas
+        }
+        val w = size.width
+        val h = size.height
+        val iw = image.width.toFloat()
+        val ih = image.height.toFloat()
+        val sc = look.imageScale
+        val (dw, dh) = if (look.imageKeepAspect) {
+            val k = min(w / iw, h / ih) * sc
+            iw * k to ih * k
+        } else (w * sc) to (h * sc)
+        val c = Offset(w / 2 + w * look.imageOffsetX, h / 2 + h * look.imageOffsetY)
+        withTransform({
+            rotate(look.imageRotation, c)
+            scale(if (look.imageFlipH) -1f else 1f, if (look.imageFlipV) -1f else 1f, c)
+        }) {
+            drawImage(
+                image,
+                srcOffset = IntOffset.Zero,
+                srcSize = IntSize(image.width, image.height),
+                dstOffset = IntOffset((c.x - dw / 2).roundToInt(), (c.y - dh / 2).roundToInt()),
+                dstSize = IntSize(dw.roundToInt().coerceAtLeast(1), dh.roundToInt().coerceAtLeast(1)),
+                colorFilter = look.imageFilter(),
+            )
         }
     }
 }

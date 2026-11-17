@@ -1274,6 +1274,7 @@ private fun ImageTab(g: GaugeConfig, update: ((GaugeDesign) -> GaugeDesign) -> U
     var loading by remember { mutableStateOf(false) }
     val latestUpdate by rememberUpdatedState(update)
     val analog = g.style == GaugeStyle.ANALOG
+    val picture = g.style == GaugeStyle.IMAGE
 
     val picker = rememberImageImporter(onStart = { loading = true }) { r ->
             r
@@ -1294,7 +1295,8 @@ private fun ImageTab(g: GaugeConfig, update: ((GaugeDesign) -> GaugeDesign) -> U
     }
 
     Hint(
-        if (analog) "メーターの文字盤 (目盛りや数字のない画像) を背景に使えます。目盛り・数字・針は画像の上に描かれます。\n" +
+        if (picture) "画像を置くだけのオブジェクトです。大きさ・位置は「配置」タブやレイアウト編集で、下の設定で回転・反転・明るさなどを変えられます。透過 PNG も使えます。"
+        else if (analog) "メーターの文字盤 (目盛りや数字のない画像) を背景に使えます。目盛り・数字・針は画像の上に描かれます。\n" +
             "透過 PNG も使えます。正方形に近い画像がおすすめです。"
         else "メーターの背景に画像を使えます。数値などは画像の上に描かれます。透過 PNG も使えます。"
     )
@@ -1313,7 +1315,21 @@ private fun ImageTab(g: GaugeConfig, update: ((GaugeDesign) -> GaugeDesign) -> U
     error?.let { Text("⚠ $it", color = GaugeColors.Warn, fontSize = 13.sp) }
 
     if (d.backgroundImage != null) {
-        SliderLine("画像の大きさ", d.imageScale * 100, 30f..200f, "%.0f%%") { v -> update { it.copy(imageScale = snap(v, 1f) / 100f) } }
+        if (picture) {
+            Head("形")
+            SwitchLine("縦横比を保つ", "OFF にすると、オブジェクトの枠いっぱいに伸ばします", d.imageKeepAspect) { v -> update { it.copy(imageKeepAspect = v) } }
+            SliderLine("角度 (時計回り)", d.imageRotation, -180f..180f, "%.0f°") { v -> update { it.copy(imageRotation = snap(v, 1f)) } }
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                fun turn(by: Float) = update { it.copy(imageRotation = ((it.imageRotation + by + 540f) % 360f) - 180f) }
+                OutlinedButton(onClick = { turn(-90f) }) { Text("左に 90°") }
+                OutlinedButton(onClick = { turn(90f) }) { Text("右に 90°") }
+                if (d.imageRotation != 0f) TextButton(onClick = { update { it.copy(imageRotation = 0f) } }) { Text("0° に戻す") }
+            }
+            SwitchLine("左右反転", null, d.imageFlipH) { v -> update { it.copy(imageFlipH = v) } }
+            SwitchLine("上下反転", null, d.imageFlipV) { v -> update { it.copy(imageFlipV = v) } }
+            Head("明るさ・大きさ")
+        }
+        SliderLine("画像の大きさ", d.imageScale * 100, if (picture) 10f..300f else 30f..200f, "%.0f%%") { v -> update { it.copy(imageScale = snap(v, 1f) / 100f) } }
         SliderLine("画像の明るさ (0 = そのまま)", d.imageBrightness * 100, -100f..100f, "%.0f%%") { v ->
             update { it.copy(imageBrightness = snap(v, 1f) / 100f) }
         }
@@ -1329,7 +1345,7 @@ private fun ImageTab(g: GaugeConfig, update: ((GaugeDesign) -> GaugeDesign) -> U
         SliderLine("画像の縦位置 (下が +)", d.imageOffsetY * 100, -50f..50f, "%.0f%%") { v ->
             update { it.copy(imageOffsetY = snap(v, 1f) / 100f) }
         }
-        if (g.style != GaugeStyle.LAMP) {
+        if (g.style != GaugeStyle.LAMP && !picture) {
             Head("画像に合わせる")
             if (analog) {
                 Hint("目盛りが画像の枠と重なる場合は「目盛りの位置」を、数値を画像の表示窓に入れたい場合は「数値の縦位置・横位置」を調整してください。")

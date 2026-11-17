@@ -108,6 +108,8 @@ enum class GaugeStyle(val label: String) {
     MONITOR("変動監視"),
     /** ボタン: タップで操作する (見た目はランプと同じ) */
     BUTTON("ボタン"),
+    /** 画像: 画像を置くだけ (項目の値は使わない) */
+    IMAGE("画像"),
 }
 
 /** ライト連動で発光を切り替える方法 (車載ナビはライトを点けると画面を夜用にする) */
@@ -338,6 +340,11 @@ data class GaugeDesign(
     val backgroundImage: String? = null,
     /** 背景画像の大きさ (1.0 = メーター枠いっぱい) */
     val imageScale: Float = 1f,
+    /** 画像オブジェクト: 回転 (度、時計回り)・左右反転・上下反転・縦横比を保つ (OFF = 枠いっぱいに伸ばす) */
+    val imageRotation: Float = 0f,
+    val imageFlipH: Boolean = false,
+    val imageFlipV: Boolean = false,
+    val imageKeepAspect: Boolean = true,
     /** 背景画像の明るさ (0 = そのまま、-1 = 真っ黒〜+1 = 真っ白) */
     val imageBrightness: Float = 0f,
     /** 背景画像のコントラスト (1 = そのまま、0 = 灰色一色〜2 = 2 倍) */
@@ -594,7 +601,7 @@ val GaugeDesign.historyRetentionMs: Long
 /** 今の表示形式で背景画像を描くか */
 val GaugeStyle.drawsBackgroundImage: Boolean
     get() = this == GaugeStyle.ANALOG || this == GaugeStyle.BAR || this == GaugeStyle.DIGITAL || this == GaugeStyle.LAMP ||
-        this == GaugeStyle.BUTTON
+        this == GaugeStyle.BUTTON || this == GaugeStyle.IMAGE
 
 /** メーターが今の表示形式で実際に表示している画像の名前 (ほかの形式用に残っている設定は含めない) */
 fun GaugeConfig.imageNames(): List<String> = listOfNotNull(
