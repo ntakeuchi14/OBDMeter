@@ -48,6 +48,7 @@ import com.obdmeter.data.Layout
 import com.obdmeter.ui.gauges.GaugeColors
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import com.obdmeter.util.format
 
 /** メーターの一覧・微調整パッドに出す名前 (項目の短い名前と表示形式) */
 internal fun GaugeConfig.editLabel(catalog: PidCatalog): String {

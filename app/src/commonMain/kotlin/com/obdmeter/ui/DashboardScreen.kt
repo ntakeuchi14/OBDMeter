@@ -277,7 +277,7 @@ fun DashboardScreen(vm: MainViewModel, onNavigate: (Screen) -> Unit, onCreateCus
         // 編集中: オブジェクト一覧と微調整パッド (メーターの上に重ねる。バーに重ならないよう上下に余白)
         if (editing && !selecting && current != null) {
             val focusGauge = current.gauges.firstOrNull { it.id == focusId }
-            val inset = if (barsPinned) Modifier.padding(8.dp) else Modifier.padding(start = 8.dp, end = 8.dp, top = 64.dp, bottom = 64.dp)
+            val inset = if (settings.alwaysShowToolbar) Modifier.padding(8.dp) else Modifier.padding(start = 8.dp, end = 8.dp, top = 64.dp, bottom = 64.dp)
             if (listOpen) {
                 GaugeListPanel(
                     gauges = current.gauges, catalog = catalog, focused = focusId, hidden = editHidden,
