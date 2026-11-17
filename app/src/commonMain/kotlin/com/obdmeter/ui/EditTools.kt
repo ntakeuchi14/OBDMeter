@@ -114,8 +114,8 @@ internal fun FineTunePad(
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(gauge.editLabel(catalog), color = GaugeColors.Accent, fontSize = 12.sp, fontWeight = FontWeight.Bold,
                 maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
-            Text("⇄", color = GaugeColors.SubText, fontSize = 18.sp, modifier = Modifier.clickable(onClick = onSwapSide).padding(horizontal = 6.dp))
-            Text("✕", color = GaugeColors.SubText, fontSize = 18.sp, modifier = Modifier.clickable(onClick = onClose).padding(horizontal = 6.dp))
+            Text("左右", color = GaugeColors.SubText, fontSize = 12.sp, modifier = Modifier.clickable(onClick = onSwapSide).padding(horizontal = 6.dp, vertical = 4.dp))
+            Text("閉じる", color = GaugeColors.SubText, fontSize = 12.sp, modifier = Modifier.clickable(onClick = onClose).padding(horizontal = 6.dp, vertical = 4.dp))
         }
         Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             FilterChip(!resize, { resize = false }, { Text("移動") })
@@ -179,7 +179,7 @@ private fun PlacementDialog(gauge: GaugeConfig, onDismiss: () -> Unit, onOk: (In
 }
 
 /**
- * ページのオブジェクト一覧 (手前のものが上)。タップで選ぶ (隠れているものも)、▲▼ で重なり順、👁 で編集中だけ一時的に隠す
+ * ページのオブジェクト一覧 (手前のものが上)。タップで選ぶ (隠れているものも)、▲▼ で重なり順、「隠す」で編集中だけ一時的に隠す
  */
 @Composable
 internal fun GaugeListPanel(
@@ -201,7 +201,7 @@ internal fun GaugeListPanel(
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text("オブジェクト一覧 (上ほど手前)", color = GaugeColors.Text, fontSize = 13.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
-            Text("✕", color = GaugeColors.SubText, fontSize = 18.sp, modifier = Modifier.clickable(onClick = onClose).padding(horizontal = 6.dp))
+            Text("閉じる", color = GaugeColors.SubText, fontSize = 12.sp, modifier = Modifier.clickable(onClick = onClose).padding(horizontal = 6.dp, vertical = 4.dp))
         }
         Spacer(Modifier.size(4.dp))
         val list = gauges.asReversed()
@@ -220,7 +220,7 @@ internal fun GaugeListPanel(
                         color = if (off) GaugeColors.SubText else GaugeColors.Text, fontSize = 12.sp,
                         maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f),
                     )
-                    Text(if (off) "隠" else "👁", fontSize = 15.sp, color = if (off) GaugeColors.Warn else GaugeColors.SubText,
+                    Text(if (off) "戻す" else "隠す", fontSize = 12.sp, color = if (off) GaugeColors.Warn else GaugeColors.SubText,
                         modifier = Modifier.clickable { onToggleHidden(g) }.padding(horizontal = 6.dp, vertical = 2.dp))
                     // 一覧は手前が上なので、▲ = 手前へ
                     Text("▲", fontSize = 15.sp, color = if (i > 0) GaugeColors.Text else GaugeColors.CardBorder,
@@ -230,6 +230,6 @@ internal fun GaugeListPanel(
                 }
             }
         }
-        Text("👁 で隠したものは編集中だけ見えなくなります (完了すると戻ります)", color = GaugeColors.SubText, fontSize = 10.sp)
+        Text("「隠す」は編集中だけ見えなくします (完了すると戻ります)。タップで選ぶと右のパッドで動かせます", color = GaugeColors.SubText, fontSize = 10.sp)
     }
 }
