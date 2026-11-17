@@ -383,8 +383,14 @@ fun DashboardScreen(vm: MainViewModel, onNavigate: (Screen) -> Unit, onCreateCus
                     ) { Text("グループ解除") }
                     OutlinedButton(onClick = { selecting = false; selected = emptySet() }) { Text("やめる") }
                 } else {
-                OutlinedButton(onClick = { listOpen = !listOpen; floatListOpen = false }, enabled = current != null) { Text(if (listOpen && !floatListOpen) "一覧を閉じる" else "一覧") }
-                OutlinedButton(onClick = { floatListOpen = !floatListOpen; if (floatListOpen) listOpen = false }, enabled = current != null) { Text(if (floatListOpen) "フロートを閉じる" else "フロート") }
+                // 開いている一覧のボタンは塗りつぶしで表す (文字の長さを変えず、バーがはみ出さないように)
+                val listShown = listOpen && !floatListOpen
+                val onList = { listOpen = !listShown; floatListOpen = false }
+                if (listShown) FilledTonalButton(onClick = onList) { Text("一覧") }
+                else OutlinedButton(onClick = onList, enabled = current != null) { Text("一覧") }
+                val onFloat = { floatListOpen = !floatListOpen; if (floatListOpen) listOpen = false }
+                if (floatListOpen) FilledTonalButton(onClick = onFloat) { Text("フロート") }
+                else OutlinedButton(onClick = onFloat, enabled = current != null) { Text("フロート") }
                 OutlinedButton(onClick = { selecting = true; selected = emptySet() }, enabled = current != null) { Text("グループ") }
                 if (clipboard != null) {
                     FilledTonalButton(onClick = { current?.let { vm.pasteGauge(it.id) } }, enabled = current != null) {
