@@ -50,7 +50,8 @@ private val json = Json { ignoreUnknownKeys = true; encodeDefaults = true }
 private data class WebSettings(
     val alwaysShowToolbar: Boolean = true,
     val lastPageId: Long? = null,
-    val gridStep: Int = AppSettings().gridStep,
+    /** 吸着の間隔 ([gridUnit] 単位。保存が無いときは 1 マス) */
+    val gridStep: Int = Layout.OLD_SCALE,
     val pollIntervalsMs: Map<String, Int> = AppSettings().pollIntervalsMs,
     // 以前の版は別の場所 (obd.screen) に保存していた
     val screenSize: String = LocalStore.get("obd.screen").orEmpty(),
