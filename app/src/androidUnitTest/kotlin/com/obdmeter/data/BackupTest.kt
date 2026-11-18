@@ -1,6 +1,7 @@
 package com.obdmeter.data
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -229,5 +230,16 @@ class BackupTest {
         assertEquals("a.png", fixed[0].background.image)
         assertEquals("a.png", fixed[0].gauges[0].design.backgroundImage)
         assertEquals("c.png", fixed[0].gauges[1].design.backgroundImage)
+    }
+
+    @Test
+    fun jpegImagesInBackupAreAccepted() {
+        // バックアップの中の画像を JPEG に差し替えても読み込める
+        assertTrue(BackupLogic.SAFE_IMAGE_NAME.matches("bg_0123abcd.jpg"))
+        assertTrue(BackupLogic.SAFE_IMAGE_NAME.matches("bg_0123abcd.JPEG"))
+        assertTrue(BackupLogic.SAFE_IMAGE_NAME.matches("bg_0123abcd.png"))
+        assertFalse(BackupLogic.SAFE_IMAGE_NAME.matches("../x.jpg"))
+        assertEquals("jpg", BackupLogic.imageExtension(byteArrayOf(0xFF.toByte(), 0xD8.toByte(), 0xFF.toByte(), 0)))
+        assertEquals("png", BackupLogic.imageExtension(byteArrayOf(0x89.toByte(), 0x50, 0x4E, 0x47)))
     }
 }

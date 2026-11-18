@@ -194,24 +194,31 @@ class WebPlatform : AppPlatform {
         val img = runCatching { Image.makeFromEncoded(bytes) }.getOrNull()
             ?: throw IllegalArgumentException("画像を読み込めませんでした")
         val longest = maxOf(img.width, img.height)
-        val png = if (longest > maxSize) {
+        // 写真 (JPEG) は JPEG のまま保存する (PNG にすると大きくなりすぎる)。それ以外は PNG
+        val jpeg = com.obdmeter.data.BackupLogic.imageExtension(bytes) == "jpg"
+        val format = if (jpeg) EncodedImageFormat.JPEG else EncodedImageFormat.PNG
+        val quality = if (jpeg) 90 else 100
+        val out = if (longest > maxSize) {
             val scale = maxSize.toFloat() / longest
             val w = (img.width * scale).roundToInt().coerceAtLeast(1)
             val h = (img.height * scale).roundToInt().coerceAtLeast(1)
             val surface = Surface.makeRasterN32Premul(w, h)
             surface.canvas.drawImageRect(img, Rect.makeWH(w.toFloat(), h.toFloat()))
-            surface.makeImageSnapshot().encodeToData(EncodedImageFormat.PNG)?.bytes
+            surface.makeImageSnapshot().encodeToData(format, quality)?.bytes
+        } else if (jpeg) {
+            bytes
         } else {
-            img.encodeToData(EncodedImageFormat.PNG)?.bytes
+            img.encodeToData(format, quality)?.bytes
         } ?: throw IllegalArgumentException("画像を読み込めませんでした")
-        val name = newName("bg_") + ".png"
-        FileStore.put("img/$name", png)
+        val name = newName("bg_") + if (jpeg) ".jpg" else ".png"
+        FileStore.put("img/$name", out)
         return name
     }
 
     override suspend fun saveImageBytes(bytes: ByteArray): String? {
         if (runCatching { Image.makeFromEncoded(bytes) }.isFailure) return null
-        val name = newName("bg_") + ".png"
+        // 中身に合った拡張子にする (バックアップの中で PNG を JPEG に差し替えた場合など)
+        val name = newName("bg_") + "." + com.obdmeter.data.BackupLogic.imageExtension(bytes)
         FileStore.put("img/$name", bytes)
         return name
     }

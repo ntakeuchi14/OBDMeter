@@ -38,8 +38,12 @@ object GaugeImages {
             val scale = maxSize.toFloat() / longest
             bmp = Bitmap.createScaledBitmap(bmp, (bmp.width * scale).toInt(), (bmp.height * scale).toInt(), true)
         }
-        val name = "bg_" + UUID.randomUUID().toString().take(12) + ".png"
-        File(dir(context), name).outputStream().use { bmp.compress(Bitmap.CompressFormat.PNG, 100, it) }
+        // 写真など透明な部分の無い画像は JPEG で保存する (PNG だと大きくなりすぎる)。透明な部分のある画像は PNG
+        val jpeg = BackupLogic.imageExtension(data) == "jpg" || !bmp.hasAlpha()
+        val name = "bg_" + UUID.randomUUID().toString().take(12) + if (jpeg) ".jpg" else ".png"
+        File(dir(context), name).outputStream().use {
+            if (jpeg) bmp.compress(Bitmap.CompressFormat.JPEG, 90, it) else bmp.compress(Bitmap.CompressFormat.PNG, 100, it)
+        }
         name
     }
 
@@ -54,7 +58,8 @@ object GaugeImages {
         val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
         BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
         if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return@withContext null
-        val name = "bg_" + UUID.randomUUID().toString().take(12) + ".png"
+        // 中身に合った拡張子にする (バックアップの中で PNG を JPEG に差し替えた場合など)
+        val name = "bg_" + UUID.randomUUID().toString().take(12) + "." + BackupLogic.imageExtension(bytes)
         File(dir(context), name).writeBytes(bytes)
         name
     }

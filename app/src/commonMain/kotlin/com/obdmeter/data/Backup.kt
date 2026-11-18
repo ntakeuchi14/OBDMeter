@@ -69,7 +69,14 @@ object BackupLogic {
     val json = Json { ignoreUnknownKeys = true; encodeDefaults = true; prettyPrint = true }
 
     /** 背景画像のファイル名として受け付ける形 (zip の中のパス攻撃を防ぐ) */
-    val SAFE_IMAGE_NAME = Regex("^[A-Za-z0-9_.-]{1,80}\\.png$")
+    val SAFE_IMAGE_NAME = Regex("^[A-Za-z0-9_.-]{1,80}\\.(png|jpg|jpeg|webp)$", RegexOption.IGNORE_CASE)
+
+    /** 画像データの中身から決めた拡張子 (PNG・JPEG・WebP。わからなければ png) */
+    fun imageExtension(bytes: ByteArray): String = when {
+        bytes.size >= 3 && bytes[0] == 0xFF.toByte() && bytes[1] == 0xD8.toByte() && bytes[2] == 0xFF.toByte() -> "jpg"
+        bytes.size >= 12 && bytes.decodeToString(0, 4) == "RIFF" && bytes.decodeToString(8, 12) == "WEBP" -> "webp"
+        else -> "png"
+    }
 
     /** フォントのファイル名として受け付ける形 */
     val SAFE_FONT_NAME = Regex("^[A-Za-z0-9_-]{1,60}\\.(ttf|otf)$")
