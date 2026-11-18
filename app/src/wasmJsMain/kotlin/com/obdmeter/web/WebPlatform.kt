@@ -198,7 +198,7 @@ class WebPlatform : AppPlatform {
         val jpeg = com.obdmeter.data.BackupLogic.imageExtension(bytes) == "jpg"
         val format = if (jpeg) EncodedImageFormat.JPEG else EncodedImageFormat.PNG
         val quality = if (jpeg) 90 else 100
-        val out = if (longest > maxSize) {
+        val out = (if (longest > maxSize) {
             val scale = maxSize.toFloat() / longest
             val w = (img.width * scale).roundToInt().coerceAtLeast(1)
             val h = (img.height * scale).roundToInt().coerceAtLeast(1)
@@ -209,7 +209,7 @@ class WebPlatform : AppPlatform {
             bytes
         } else {
             img.encodeToData(format, quality)?.bytes
-        } ?: throw IllegalArgumentException("画像を読み込めませんでした")
+        }) ?: throw IllegalArgumentException("画像を読み込めませんでした")
         val name = newName("bg_") + if (jpeg) ".jpg" else ".png"
         FileStore.put("img/$name", out)
         return name

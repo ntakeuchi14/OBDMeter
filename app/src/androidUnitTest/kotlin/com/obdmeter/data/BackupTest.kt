@@ -176,7 +176,7 @@ class BackupTest {
     @Test
     fun safeImageNames() {
         assertTrue(BackupLogic.SAFE_IMAGE_NAME.matches("bg_1a2b3c.png"))
-        for (bad in listOf("../x.png", "a/b.png", "x.jpg", "", "..png/..")) {
+        for (bad in listOf("../x.png", "a/b.png", "x.gif", "", "..png/..")) {
             assertTrue("should reject $bad", !BackupLogic.SAFE_IMAGE_NAME.matches(bad))
         }
     }
