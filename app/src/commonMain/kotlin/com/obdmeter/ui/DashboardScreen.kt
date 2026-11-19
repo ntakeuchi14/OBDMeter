@@ -252,6 +252,10 @@ fun DashboardScreen(vm: MainViewModel, onNavigate: (Screen) -> Unit, onCreateCus
     }
 
     // ---- ダッシュボード (左右スワイプで切替。編集中はスワイプしない) ----
+    // ページの画像を先に読んでおく (ページを切り替えたとき、背景が遅れて出ないように)
+    val allImages = remember(shown) { com.obdmeter.data.BackupLogic.referencedImages(shown).toSet() }
+    PreloadGaugeImages(allImages)
+
     val pagerContent: @Composable (Modifier) -> Unit = { modifier ->
         Box(modifier) {
         HorizontalPager(pager, Modifier.fillMaxSize(), userScrollEnabled = !editing) { page ->

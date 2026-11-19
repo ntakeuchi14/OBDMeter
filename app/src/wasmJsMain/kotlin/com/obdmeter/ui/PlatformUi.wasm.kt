@@ -84,9 +84,16 @@ actual fun rememberShareText(): (subject: String, text: String) -> Unit = rememb
 @Composable
 actual fun rememberGaugeImage(name: String?): ImageBitmap? {
     val platform = WebUi.platform
-    return produceState<ImageBitmap?>(null, name) {
+    // 読み込み済みなら最初から出す (ページを開いたとき、背景が一瞬遅れて出ないように)
+    return produceState(name?.let { platform.peekImage(it) }, name) {
         value = name?.let { platform.loadImage(it) }
     }.value
+}
+
+@Composable
+actual fun PreloadGaugeImages(names: Set<String>) {
+    val platform = WebUi.platform
+    androidx.compose.runtime.LaunchedEffect(names) { for (n in names) platform.loadImage(n) }
 }
 
 @Composable

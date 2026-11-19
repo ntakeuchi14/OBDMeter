@@ -12,6 +12,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
@@ -92,9 +93,16 @@ actual fun rememberShareText(): (subject: String, text: String) -> Unit {
 @Composable
 actual fun rememberGaugeImage(name: String?): ImageBitmap? {
     val context = LocalContext.current
-    return produceState<ImageBitmap?>(null, name) {
+    // 読み込み済みなら最初から出す (ページを開いたとき、背景が一瞬遅れて出ないように)
+    return produceState(name?.let { GaugeImages.peek(it) }, name) {
         value = name?.let { GaugeImages.load(context, it) }
     }.value
+}
+
+@Composable
+actual fun PreloadGaugeImages(names: Set<String>) {
+    val context = LocalContext.current
+    LaunchedEffect(names) { for (n in names) GaugeImages.load(context, n) }
 }
 
 @Composable

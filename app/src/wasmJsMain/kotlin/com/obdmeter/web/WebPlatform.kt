@@ -178,11 +178,14 @@ class WebPlatform : AppPlatform {
 
     private val imageCache = HashMap<String, ImageBitmap>()
 
+    /** 読み込み済みならその画像 (読み込みはしない) */
+    fun peekImage(name: String): ImageBitmap? = imageCache[name]
+
     suspend fun loadImage(name: String): ImageBitmap? {
         imageCache[name]?.let { return it }
         val bytes = FileStore.get("img/$name") ?: return null
         val img = runCatching { Image.makeFromEncoded(bytes).toComposeImageBitmap() }.getOrNull() ?: return null
-        if (imageCache.size > 24) imageCache.clear()
+        if (imageCache.size > 64) imageCache.clear()
         imageCache[name] = img
         return img
     }

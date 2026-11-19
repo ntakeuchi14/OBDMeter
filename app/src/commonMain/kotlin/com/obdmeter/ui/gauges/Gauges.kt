@@ -1567,7 +1567,30 @@ internal fun GaugeLook.formatValue(def: PidDef, value: Double?): String {
 
 
 /** 重い飾り (くぼみ・ガラスの反射) を画像にしておく入れ物。描く内容 ([key]) か大きさが変わったときだけ描き直す */
-internal class FxLayer {
+/**
+ * 重い飾り (くぼみ・ガラス・目盛り・画像の影) を描いた画像の置き場 (アプリ全体で共有)。
+ * ページを切り替えてメーターを作り直しても、同じ設定・大きさなら作り直さずに使う。古いものから消す (大きさの合計で制限)
+ */
+internal object FxBitmapCache {
+    private const val MAX_BYTES = 32L * 1024 * 1024
+    private val map = LinkedHashMap<Any, List<ImageBitmap>>()
+    private var bytes = 0L
+    private fun size(l: List<ImageBitmap>) = l.sumOf { it.width.toLong() * it.height * 4 }
+
+    fun get(key: Any): List<ImageBitmap>? = map.remove(key)?.also { map[key] = it }
+
+    fun put(key: Any, value: List<ImageBitmap>) {
+        map.remove(key)?.let { bytes -= size(it) }
+        map[key] = value
+        bytes += size(value)
+        while (bytes > MAX_BYTES && map.size > 1) {
+            val first = map.keys.first()
+            bytes -= size(map.remove(first)!!)
+        }
+    }
+}
+
+internal class FxLayer(private val kind: String = "") {
     private var key: Any? = null
     private var image: ImageBitmap? = null
 
@@ -1575,13 +1598,15 @@ internal class FxLayer {
         val w = kotlin.math.ceil(scope.size.width).toInt()
         val h = kotlin.math.ceil(scope.size.height).toInt()
         if (w <= 0 || h <= 0) return
-        val k = listOf(key, w, h)
+        val k = listOf(kind, key, w, h)
         var img = image
         if (img == null || this.key != k) {
-            img = ImageBitmap(w, h)
-            androidx.compose.ui.graphics.drawscope.CanvasDrawScope().draw(
-                scope, scope.layoutDirection, androidx.compose.ui.graphics.Canvas(img), scope.size, block,
-            )
+            img = FxBitmapCache.get(k)?.firstOrNull() ?: ImageBitmap(w, h).also { b ->
+                androidx.compose.ui.graphics.drawscope.CanvasDrawScope().draw(
+                    scope, scope.layoutDirection, androidx.compose.ui.graphics.Canvas(b), scope.size, block,
+                )
+                FxBitmapCache.put(k, listOf(b))
+            }
             image = img
             this.key = k
         }
@@ -1590,9 +1615,9 @@ internal class FxLayer {
 }
 
 internal class GaugeFxCache {
-    val recess = FxLayer()
-    val glass = FxLayer()
-    val scale = FxLayer()
+    val recess = FxLayer("recess")
+    val glass = FxLayer("glass")
+    val scale = FxLayer("scale")
 }
 
 
@@ -1706,8 +1731,6 @@ object Sweep {
  */
 @Composable
 fun PictureObject(look: GaugeLook, image: ImageBitmap?, modifier: Modifier = Modifier, placeholder: Boolean = true) {
-    // 影・埋め込みの画像 (設定・大きさが変わったときだけ作り直す)
-    val fxHolder = remember { arrayOfNulls<Pair<Any, List<ImageBitmap>>>(1) }
     Canvas(modifier) {
         if (image == null) {
             // 画像をまだ選んでいない (編集中・編集画面だけ点線の枠を出す)
@@ -1727,13 +1750,13 @@ fun PictureObject(look: GaugeLook, image: ImageBitmap?, modifier: Modifier = Mod
         val dst = IntOffset((c.x - dw / 2).roundToInt(), (c.y - dh / 2).roundToInt())
         val dstSize = IntSize(dw.roundToInt().coerceAtLeast(1), dh.roundToInt().coerceAtLeast(1))
         val src = IntSize(image.width, image.height)
-        /** 画像の形を ([dx], [dy]) ずらして描く (回転・反転も同じに) */
-        fun DrawScope.silhouette(dx: Float, dy: Float, alpha: Float, filter: androidx.compose.ui.graphics.ColorFilter?, blend: androidx.compose.ui.graphics.BlendMode) {
+        /** 画像の形を ([dx], [dy]) ずらして描く (回転・反転も同じに)。[img] は描く画像 (影づくりでは小さくしたもの) */
+        fun DrawScope.silhouette(dx: Float, dy: Float, alpha: Float, filter: androidx.compose.ui.graphics.ColorFilter?, blend: androidx.compose.ui.graphics.BlendMode, img: ImageBitmap = image) {
             withTransform({
                 translate(dx, dy)
                 rotate(look.imageRotation, c)
                 scale(if (look.imageFlipH) -1f else 1f, if (look.imageFlipV) -1f else 1f, c)
-            }) { drawImage(image, IntOffset.Zero, src, dst, dstSize, alpha = alpha, colorFilter = filter, blendMode = blend) }
+            }) { drawImage(img, IntOffset.Zero, IntSize(img.width, img.height), dst, dstSize, alpha = alpha, colorFilter = filter, blendMode = blend) }
         }
 
         val drop = look.objectShadow && look.shadowStrength > 0f
@@ -1745,15 +1768,25 @@ fun PictureObject(look: GaugeLook, image: ImageBitmap?, modifier: Modifier = Mod
         val blur = m * look.imageShadowBlur
         val pad = kotlin.math.ceil(dist + blur + 2f).toInt()
         val fx: List<ImageBitmap> = if (!drop && !inset) emptyList() else {
-            val key = listOf(image, w, h, look.imageScale, look.imageKeepAspect, look.imageOffsetX, look.imageOffsetY,
+            val key = listOf("picture", image, w, h, look.imageScale, look.imageKeepAspect, look.imageOffsetX, look.imageOffsetY,
                 look.imageRotation, look.imageFlipH, look.imageFlipV, look.shadowStrength, dist, blur, drop, inset)
-            fxHolder[0]?.takeIf { it.first == key }?.second ?: run {
-                val bw = kotlin.math.ceil(w).toInt() + pad * 2
-                val bh = kotlin.math.ceil(h).toInt() + pad * 2
+            FxBitmapCache.get(key) ?: run {
+                // ぼかすので、小さな画像で作って貼るときに広げる (重ねる回数と 1 回の重さを減らす)
+                val k = if (blur > 6f) (6f / blur).coerceIn(0.2f, 1f) else 1f
+                val bw = kotlin.math.ceil((w + pad * 2) * k).toInt().coerceAtLeast(1)
+                val bh = kotlin.math.ceil((h + pad * 2) * k).toInt().coerceAtLeast(1)
                 val bsize = androidx.compose.ui.geometry.Size(bw.toFloat(), bh.toFloat())
+                // 元の画像も、描く大きさまで先に小さくしておく
+                val small = ImageBitmap(kotlin.math.ceil(dstSize.width * k).toInt().coerceAtLeast(1), kotlin.math.ceil(dstSize.height * k).toInt().coerceAtLeast(1))
+                androidx.compose.ui.graphics.Canvas(small).let { cv ->
+                    androidx.compose.ui.graphics.drawscope.CanvasDrawScope().draw(this, layoutDirection, cv,
+                        androidx.compose.ui.geometry.Size(small.width.toFloat(), small.height.toFloat())) {
+                        drawImage(image, IntOffset.Zero, src, IntOffset.Zero, IntSize(small.width, small.height))
+                    }
+                }
                 val taps = buildList {
                     add(Offset.Zero)
-                    val rings = kotlin.math.ceil(blur / 1.5f).toInt().coerceIn(0, 12)
+                    val rings = kotlin.math.ceil(blur * k / 1.5f).toInt().coerceIn(0, 6)
                     for (ring in 1..rings) {
                         val n = 8 + ring * 4
                         val r = blur * ring / rings
@@ -1768,7 +1801,9 @@ fun PictureObject(look: GaugeLook, image: ImageBitmap?, modifier: Modifier = Mod
                 val black = androidx.compose.ui.graphics.ColorFilter.tint(Color.Black, androidx.compose.ui.graphics.BlendMode.SrcIn)
                 fun layer(block: DrawScope.() -> Unit): ImageBitmap {
                     val bmp = ImageBitmap(bw, bh)
-                    androidx.compose.ui.graphics.drawscope.CanvasDrawScope().draw(this, layoutDirection, androidx.compose.ui.graphics.Canvas(bmp), bsize, block)
+                    androidx.compose.ui.graphics.drawscope.CanvasDrawScope().draw(this, layoutDirection, androidx.compose.ui.graphics.Canvas(bmp), bsize) {
+                        withTransform({ scale(k, k, Offset.Zero) }) { block() }
+                    }
                     return bmp
                 }
                 val out = ArrayList<ImageBitmap>()
@@ -1776,7 +1811,7 @@ fun PictureObject(look: GaugeLook, image: ImageBitmap?, modifier: Modifier = Mod
                     // 落ちる影: 画像の形を黒く塗って右下へずらす
                     out += layer {
                         val e = each(0.6f * look.shadowStrength)
-                        for (t in taps) silhouette(pad + dist * 0.6f + t.x, pad + dist + t.y, e, black, androidx.compose.ui.graphics.BlendMode.SrcOver)
+                        for (t in taps) silhouette(pad + dist * 0.6f + t.x, pad + dist + t.y, e, black, androidx.compose.ui.graphics.BlendMode.SrcOver, small)
                     }
                 }
                 if (inset) {
@@ -1784,21 +1819,24 @@ fun PictureObject(look: GaugeLook, image: ImageBitmap?, modifier: Modifier = Mod
                     fun innerEdge(color: Color, target: Float, dx: Float, dy: Float) = layer {
                         // 画像の形を塗り
                         val tint = androidx.compose.ui.graphics.ColorFilter.tint(color, androidx.compose.ui.graphics.BlendMode.SrcIn)
-                        silhouette(pad.toFloat(), pad.toFloat(), target.coerceIn(0f, 1f), tint, androidx.compose.ui.graphics.BlendMode.SrcOver)
+                        silhouette(pad.toFloat(), pad.toFloat(), target.coerceIn(0f, 1f), tint, androidx.compose.ui.graphics.BlendMode.SrcOver, small)
                         // ずらした形の分を抜く (抜いた残りが、反対側の縁に沿った帯になる)
                         val e = each(0.98f)
-                        for (t in taps) silhouette(pad + dx + t.x, pad + dy + t.y, e, null, androidx.compose.ui.graphics.BlendMode.DstOut)
+                        for (t in taps) silhouette(pad + dx + t.x, pad + dy + t.y, e, null, androidx.compose.ui.graphics.BlendMode.DstOut, small)
                     }
                     out += innerEdge(Color.Black, 0.75f * look.shadowStrength, dist * 0.6f, dist)
                     out += innerEdge(Color.White, 0.22f * look.shadowStrength, -dist * 0.4f, -dist * 0.6f)
                 }
-                fxHolder[0] = key to out
+                FxBitmapCache.put(key, out)
                 out
             }
         }
-        val at = Offset(-pad.toFloat(), -pad.toFloat())
-        if (drop) drawImage(fx[0], at)
+        // 小さく作った影を、元の大きさに広げて貼る
+        val at = IntOffset(-pad, -pad)
+        val full = IntSize(kotlin.math.ceil(w).toInt() + pad * 2, kotlin.math.ceil(h).toInt() + pad * 2)
+        fun put(l: ImageBitmap) = drawImage(l, IntOffset.Zero, IntSize(l.width, l.height), at, full)
+        if (drop) put(fx[0])
         silhouette(0f, 0f, 1f, look.imageFilter(), androidx.compose.ui.graphics.BlendMode.SrcOver)
-        if (inset) for (l in fx.drop(if (drop) 1 else 0)) drawImage(l, at)
+        if (inset) for (l in fx.drop(if (drop) 1 else 0)) put(l)
     }
 }

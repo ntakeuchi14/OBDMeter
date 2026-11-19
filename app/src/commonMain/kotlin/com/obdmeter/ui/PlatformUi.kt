@@ -44,6 +44,10 @@ expect fun rememberShareText(): (subject: String, text: String) -> Unit
 @Composable
 expect fun rememberGaugeImage(name: String?): ImageBitmap?
 
+/** 画像を先に読んでおく (隣のページを開いたとき、背景がすぐ出るように) */
+@Composable
+expect fun PreloadGaugeImages(names: Set<String>)
+
 /** 取り込んだフォント。読めなければ null */
 @Composable
 expect fun rememberFontFamily(entry: FontEntry?): FontFamily?

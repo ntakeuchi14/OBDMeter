@@ -18,7 +18,13 @@ import java.util.UUID
  */
 object GaugeImages {
     private const val MAX_SIZE = 1024
-    private val cache = LruCache<String, ImageBitmap>(12)
+    /** 読んだ画像 (大きさの合計 64MB まで。ページを切り替えても読み直さない) */
+    private val cache = object : LruCache<String, ImageBitmap>(64 * 1024 * 1024) {
+        override fun sizeOf(key: String, value: ImageBitmap) = value.width * value.height * 4
+    }
+
+    /** 読み込み済みならその画像 (すぐ返す。読み込みはしない) */
+    fun peek(name: String): ImageBitmap? = cache.get(name)
 
     private fun dir(context: Context) = File(context.filesDir, "gauge_images").apply { mkdirs() }
 
