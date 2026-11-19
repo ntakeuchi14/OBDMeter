@@ -11,7 +11,8 @@ object BackupZip {
     private const val IMAGE_DIR = "images/"
     private const val FONT_DIR = "fonts/"
     private const val MAX_FONT = 40 * 1024 * 1024
-    private const val MAX_MANIFEST = 2 * 1024 * 1024
+    /** 設定 (manifest.json) の上限。ページ・メーターが多いと数 MB になる */
+    private const val MAX_MANIFEST = 32 * 1024 * 1024
     private const val MAX_IMAGE = 12 * 1024 * 1024
     private const val MAX_TOTAL = 240L * 1024 * 1024
 

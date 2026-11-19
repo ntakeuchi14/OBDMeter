@@ -242,4 +242,15 @@ class BackupTest {
         assertEquals("jpg", BackupLogic.imageExtension(byteArrayOf(0xFF.toByte(), 0xD8.toByte(), 0xFF.toByte(), 0)))
         assertEquals("png", BackupLogic.imageExtension(byteArrayOf(0x89.toByte(), 0x50, 0x4E, 0x47)))
     }
+
+    @Test
+    fun largeManifestCanBeRead() {
+        // ページ・メーターが多いと manifest.json が数 MB になる (以前は 2MB を超えると読めなかった)
+        val gauges = (1..40).map { GaugeConfig("RPM", id = it.toLong()) }.toTypedArray()
+        val pages = (1..60L).map { page(it, "P$it", *gauges) }
+        val text = BackupLogic.encode(BackupManifest(dashboards = pages))
+        assertTrue("テストの manifest は 2MB より大きい", text.length > 2 * 1024 * 1024)
+        val zip = com.obdmeter.util.Zip.write(listOf(com.obdmeter.util.Zip.Entry("manifest.json", text.encodeToByteArray())))
+        assertEquals(60, BackupZip.read(zip).manifest.dashboards.size)
+    }
 }
