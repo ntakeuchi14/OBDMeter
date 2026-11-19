@@ -730,9 +730,13 @@ object Layout {
     fun normalize(d: Dashboard): Dashboard {
         var nextId = (d.gauges.maxOfOrNull { it.id } ?: 0L) + 1
         val withIds = d.gauges.map { if (it.id == 0L) it.copy(id = nextId++) else it }
-        // 以前の版の単位 (24 × 12 マス) なら細かい単位に直す
-        val scaled = if (d.unitScale < SCALE) {
-            val f = SCALE / d.unitScale.coerceAtLeast(1)
+        // 以前の版の単位 (24 × 12 マス) なら細かい単位に直す。
+        // ただし、以前の単位ではページに収まらない位置・大きさなら、すでに細かい単位になっている
+        // (単位の記録が抜けていた版で作ったページ) ので、そのままにする
+        val f0 = SCALE / d.unitScale.coerceAtLeast(1)
+        val alreadyFine = withIds.any { g -> g.x + g.w > COLS / f0 || g.y + g.h > ROWS / f0 }
+        val scaled = if (d.unitScale < SCALE && !alreadyFine) {
+            val f = f0
             withIds.map { g -> if (g.w > 0 && g.h > 0) g.copy(x = g.x * f, y = g.y * f, w = g.w * f, h = g.h * f) else g }
         } else withIds
         val placed = if (scaled.all { it.w > 0 && it.h > 0 }) scaled else arrangeInGrid(scaled, d.columns)

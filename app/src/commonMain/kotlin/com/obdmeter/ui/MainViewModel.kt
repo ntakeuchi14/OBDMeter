@@ -104,7 +104,7 @@ class MainViewModel(val core: AppCore) : ViewModel() {
                 val manifest = BackupManifest(
                     appVersion = platform.appVersion,
                     exportedAt = DateFmt("yyyy-MM-dd HH:mm").format(nowMs()),
-                    dashboards = repo.dashboards.first().map { it.withoutUnusedImages() },
+                    dashboards = repo.dashboards.first().map { it.withoutUnusedImages().copy(unitScale = Layout.SCALE) },
                     customPids = repo.customPids.first(),
                     fonts = repo.fonts.first(),
                     pollIntervalsMs = repo.settings.first().pollIntervalsMs,
@@ -394,7 +394,9 @@ class MainViewModel(val core: AppCore) : ViewModel() {
         viewModelScope.launch {
             editLock.withLock {
                 val before = repo.dashboards.first()
-                val after = transform(before)
+                // メモリ上のページはいつも今の単位なので、単位の記録をそろえて保存する
+                // (新しいページなどで記録が抜けると、次に読み込んだときに大きくなってしまうため)
+                val after = transform(before).map { if (it.unitScale != Layout.SCALE) it.copy(unitScale = Layout.SCALE) else it }
                 if (after == before) return@withLock
                 pushUndo(before, coalesce)
                 repo.saveDashboards(after)
@@ -460,7 +462,7 @@ class MainViewModel(val core: AppCore) : ViewModel() {
 
     fun addDashboard(name: String): Long {
         val id = nowMs()
-        editDashboards { it + Dashboard(id = id, name = name) }
+        editDashboards { it + Dashboard(id = id, name = name, unitScale = Layout.SCALE) }
         return id
     }
 

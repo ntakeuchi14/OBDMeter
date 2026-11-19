@@ -31,3 +31,23 @@ class LayoutNudgeTest {
         assertEquals(setOf(1L), Layout.nudge(listOf(g1, g2), 1, 1, 0, true).keys)
     }
 }
+
+class LayoutUnitScaleTest {
+    @Test
+    fun oldUnitsAreScaled() {
+        val d = Dashboard(id = 1, name = "p", gauges = listOf(GaugeConfig("RPM", id = 1, x = 2, y = 1, w = 6, h = 6)), unitScale = 1)
+        val n = Layout.normalize(d)
+        assertEquals(2 * Layout.SCALE, n.gauges[0].x)
+        assertEquals(Layout.SCALE, n.unitScale)
+    }
+
+    @Test
+    fun alreadyFineUnitsWithMissingRecordAreKept() {
+        // 単位の記録が抜けていた (1 のまま) が、位置はすでに細かい単位のページ
+        val d = Dashboard(id = 1, name = "p", gauges = listOf(GaugeConfig("RPM", id = 1, x = 256, y = 16, w = 80, h = 72)), unitScale = 1)
+        val n = Layout.normalize(d)
+        assertEquals(256, n.gauges[0].x)
+        assertEquals(80, n.gauges[0].w)
+        assertEquals(Layout.SCALE, n.unitScale)
+    }
+}
