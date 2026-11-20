@@ -16,6 +16,16 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
+import androidx.compose.material.icons.filled.Menu
+import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.material3.Checkbox
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.zIndex
+import kotlinx.coroutines.launch
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -45,25 +55,91 @@ import com.obdmeter.ui.gauges.GaugeColors
 fun EditScreen(vm: MainViewModel, onBack: () -> Unit) {
     val dashboards by vm.dashboards.collectAsStateWithLifecycle()
     val catalog by vm.catalog.collectAsStateWithLifecycle()
+    val scope = rememberCoroutineScope()
 
     var nameDialog by remember { mutableStateOf<NameDialog?>(null) }
     var deleteTarget by remember { mutableStateOf<Dashboard?>(null) }
     var confirmReset by remember { mutableStateOf(false) }
     /** 背景を編集しているページの id */
     var backgroundFor by remember { mutableStateOf<Long?>(null) }
+    /** チェックしたページ (まとめて削除) */
+    var checked by remember { mutableStateOf(emptySet<Long>()) }
+    var confirmBulkDelete by remember { mutableStateOf(false) }
+    /** ドラッグで並べ替え中の順番 (ページの id)・ドラッグしているページ・ずれ・1 行の高さ */
+    var dragOrder by remember { mutableStateOf<List<Long>?>(null) }
+    var dragId by remember { mutableStateOf<Long?>(null) }
+    var dragOffset by remember { mutableStateOf(0f) }
+    var rowHeight by remember { mutableStateOf(1f) }
+    val rowHeights = remember { HashMap<Long, Int>() }
+    val shownList = dragOrder?.let { o -> o.mapNotNull { id -> dashboards.firstOrNull { it.id == id } } } ?: dashboards
 
     Column(Modifier.fillMaxSize()) {
         TopBar("ページ管理", onBack)
         Text(
-            "左右スワイプで切り替わるページの一覧です。「隠す」にしたページは、ふだんのページ切り替えには出ず、レイアウト編集中だけ出ます。「背景」でページの背景 (色・柄・画像) を変えられます。メーターの配置や見た目は、ダッシュボードの鉛筆ボタンで編集します。",
+            "左右スワイプで切り替わるページの一覧です。左のつまみ (三本線) をドラッグすると並べ替え、チェックを付けるとまとめて削除できます。「隠す」にしたページは、ふだんのページ切り替えには出ず、レイアウト編集中だけ出ます。「背景」でページの背景 (色・柄・画像) を変えられます。メーターの配置や見た目は、ダッシュボードの鉛筆ボタンで編集します。",
             color = GaugeColors.SubText, fontSize = 13.sp, modifier = Modifier.padding(horizontal = 16.dp),
         )
+        if (checked.isNotEmpty()) {
+            Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text("${checked.size} ページを選択中", modifier = Modifier.weight(1f))
+                TextButton(onClick = { checked = dashboards.map { it.id }.toSet() }) { Text("全部") }
+                TextButton(onClick = { checked = emptySet() }) { Text("選択をやめる") }
+                TextButton(onClick = { confirmBulkDelete = true }, enabled = checked.size < dashboards.size) {
+                    Icon(Icons.Default.Delete, null, tint = GaugeColors.Warn); Text("削除", color = GaugeColors.Warn)
+                }
+            }
+        }
         LazyColumn(Modifier.weight(1f).fillMaxWidth().padding(top = 8.dp)) {
-            itemsIndexed(dashboards, key = { _, d -> d.id }) { index, d ->
+            itemsIndexed(shownList, key = { _, d -> d.id }) { index, d ->
+                val dragging = d.id == dragId
                 Row(
-                    Modifier.fillMaxWidth().padding(start = 16.dp, end = 4.dp, top = 4.dp, bottom = 4.dp),
+                    Modifier.fillMaxWidth()
+                        .zIndex(if (dragging) 1f else 0f)
+                        .graphicsLayer { translationY = if (dragging) dragOffset else 0f }
+                        .background(if (dragging) GaugeColors.CardBorder else androidx.compose.ui.graphics.Color.Transparent)
+                        .onSizeChanged { rowHeights[d.id] = it.height }
+                        .padding(start = 4.dp, end = 4.dp, top = 4.dp, bottom = 4.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
+                    // ドラッグして並べ替える
+                    Icon(
+                        Icons.Default.Menu, "並べ替え", tint = GaugeColors.SubText,
+                        modifier = Modifier.padding(horizontal = 8.dp).pointerInput(d.id) {
+                            detectDragGestures(
+                                onDragStart = {
+                                    dragOrder = dashboards.map { it.id }
+                                    dragId = d.id
+                                    dragOffset = 0f
+                                    rowHeight = (rowHeights[d.id] ?: (size.height * 2)).toFloat().coerceAtLeast(1f)
+                                },
+                                onDrag = { change, amount ->
+                                    change.consume()
+                                    dragOffset += amount.y
+                                    val order = dragOrder ?: return@detectDragGestures
+                                    val i = order.indexOf(d.id)
+                                    // 行の半分を越えたら隣と入れ替える
+                                    if (dragOffset > rowHeight / 2 && i < order.lastIndex) {
+                                        dragOrder = order.toMutableList().also { it[i] = it[i + 1]; it[i + 1] = d.id }
+                                        dragOffset -= rowHeight
+                                    } else if (dragOffset < -rowHeight / 2 && i > 0) {
+                                        dragOrder = order.toMutableList().also { it[i] = it[i - 1]; it[i - 1] = d.id }
+                                        dragOffset += rowHeight
+                                    }
+                                },
+                                onDragEnd = {
+                                    dragOrder?.let { if (it != dashboards.map { x -> x.id }) vm.reorderDashboards(it) }
+                                    dragId = null; dragOffset = 0f
+                                    // 保存が反映されるまで少し待ってから、並べ替え中の順番をやめる
+                                    scope.launch { kotlinx.coroutines.delay(300); if (dragId == null) dragOrder = null }
+                                },
+                                onDragCancel = { dragId = null; dragOffset = 0f; dragOrder = null },
+                            )
+                        },
+                    )
+                    Checkbox(
+                        checked = d.id in checked,
+                        onCheckedChange = { on -> checked = if (on) checked + d.id else checked - d.id },
+                    )
                     Column(Modifier.weight(1f)) {
                         Text("${index + 1}. ${d.name}" + if (d.hidden) "  (隠しページ)" else "", fontWeight = FontWeight.Medium,
                             color = if (d.hidden) GaugeColors.SubText else androidx.compose.ui.graphics.Color.Unspecified)
@@ -119,6 +195,21 @@ fun EditScreen(vm: MainViewModel, onBack: () -> Unit) {
                 }) { Text("OK") }
             },
             dismissButton = { TextButton(onClick = { nameDialog = null }) { Text("キャンセル") } },
+        )
+    }
+
+    if (confirmBulkDelete) {
+        val targets = dashboards.filter { it.id in checked }
+        AlertDialog(
+            onDismissRequest = { confirmBulkDelete = false },
+            title = { Text("${targets.size} ページを削除しますか？") },
+            text = { Text(targets.joinToString("、") { it.name } + "\nこれらのページのメーター ${targets.sumOf { it.gauges.size }} 個も削除されます。「元に戻す」(レイアウト編集) で戻せます。") },
+            confirmButton = {
+                TextButton(onClick = { vm.deleteDashboards(checked); checked = emptySet(); confirmBulkDelete = false }) {
+                    Text("削除", color = GaugeColors.Warn)
+                }
+            },
+            dismissButton = { TextButton(onClick = { confirmBulkDelete = false }) { Text("キャンセル") } },
         )
     }
 

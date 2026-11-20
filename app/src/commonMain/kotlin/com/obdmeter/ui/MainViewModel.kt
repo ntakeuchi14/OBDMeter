@@ -485,6 +485,17 @@ class MainViewModel(val core: AppCore) : ViewModel() {
 
     fun deleteDashboard(id: Long) = editDashboards { list -> list.filterNot { it.id == id } }
 
+    /** ページをまとめて削除する (全部は消さない。最低 1 ページ残す) */
+    fun deleteDashboards(ids: Set<Long>) = editDashboards { list ->
+        list.filterNot { it.id in ids }.ifEmpty { list }
+    }
+
+    /** ページを [ids] の順に並べ替える (載っていないページは後ろにそのまま) */
+    fun reorderDashboards(ids: List<Long>) = editDashboards { list ->
+        val byId = list.associateBy { it.id }
+        ids.mapNotNull { byId[it] } + list.filter { it.id !in ids }
+    }
+
     fun moveDashboard(id: Long, delta: Int) = editDashboards { it.moved(it.indexOfFirst { d -> d.id == id }, delta) }
 
     /** ページ内のメーターを [columns] 列で均等に並べ直す */

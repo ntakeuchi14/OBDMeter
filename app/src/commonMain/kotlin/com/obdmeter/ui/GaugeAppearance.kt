@@ -176,6 +176,7 @@ fun GaugeDesign.toLook(def: PidDef, style: GaugeStyle): GaugeLook {
         chartColors = chartColors.map { c -> c?.let { Color(it) } },
         showPeak = showPeak,
         peakKeep = peakKeep,
+        peakEngineRunningOnly = peakEngineRunningOnly,
         peakMark = peakMarkShow,
         peakNeedle = peakNeedle && style == GaugeStyle.ANALOG,
         peakNeedleColor = peakNeedleColor?.let { Color(it) } ?: peakColor.color(GaugeColors.Peak).copy(alpha = 0.55f),

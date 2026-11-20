@@ -219,6 +219,8 @@ data class GaugeLook(
     val chartColors: List<Color?> = emptyList(),
     val showPeak: Boolean = false,
     val peakKeep: Boolean = false,
+    /** エンジン停止中は最大値を記録しない (ページ間で引き継ぐときの区別に使う) */
+    val peakEngineRunningOnly: Boolean = false,
     /** 最大値の位置に印を描く */
     val peakMark: Boolean = true,
     /** 最大値の位置に針を残す (アナログ) */
@@ -358,7 +360,10 @@ fun GaugeCard(
     // ピーク値 (生の値で記録する。表示用のならし前の値)
     // 「ページを切り替えても維持」のときは、アプリの中 ([PeakStore]) に項目ごとに覚えておき、ページに戻ったら
     // (別のページの同じ項目のメーターでも) そこから続ける
-    val keepKey = if (look.showPeak && look.peakKeep && peakKey != null) def.key else null
+    // 同じ項目でも、最大値の消え方 (描く時間・エンジン停止中の扱い) が違うメーターどうしは別々に覚える
+    // (描く時間で消えるアナログと、消えないデジタルが同じ項目でも、デジタルまで消えないように)
+    val keepKey = if (look.showPeak && look.peakKeep && peakKey != null)
+        "${def.key}|hold=${look.peakHoldSec}|eng=${look.peakEngineRunningOnly}" else null
     val lastReset = remember { intArrayOf(peakResetKey) }
     if (lastReset[0] != peakResetKey) {
         // 長押しでリセットした
