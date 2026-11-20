@@ -372,6 +372,12 @@ fun GaugeCard(
     val peakAt = remember(def.key, peakResetKey, def.min, def.max, keepKey, PeakStore.generation) {
         longArrayOf(keepKey?.let { PeakStore.times[it] } ?: com.obdmeter.util.nowMs())
     }
+    // ページ間で引き継ぐときは、アプリの中に覚えている値が正 (隣のページは先に作られていることがあり、
+    // その間に別のページで更新・リセットされた最大値をここで取り込む)
+    if (keepKey != null) {
+        peakHolder[0] = PeakStore.values[keepKey] ?: Double.NaN
+        PeakStore.times[keepKey]?.let { peakAt[0] = it }
+    }
     if (look.showPeak && peakAllowed && value != null && !unsupported && (peakHolder[0].isNaN() || value > peakHolder[0])) {
         peakHolder[0] = value
         peakAt[0] = com.obdmeter.util.nowMs()
