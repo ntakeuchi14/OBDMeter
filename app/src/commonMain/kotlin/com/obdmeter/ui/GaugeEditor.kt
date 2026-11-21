@@ -2137,19 +2137,28 @@ internal fun PageBackgroundDialog(
                             if (bg.image != null) OutlinedButton(onClick = { bg = bg.copy(image = null) }) { Text("画像を外す") }
                         }
                         if (bg.image != null) {
-                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                OutlinedButton(onClick = {
-                                    bg = bg.copy(imageX = 0.5f, imageY = 0.5f, imageWidth = 1f, imageHeight = 1f, keepAspect = false)
-                                }) { Text("ページいっぱいに伸ばす") }
-                                OutlinedButton(onClick = { bg = bg.copy(imageX = 0.5f, imageY = 0.5f) }) { Text("中央に置く") }
+                            SwitchLine("繰り返して敷き詰める", "画像を並べてページ全体を埋めます (タイル・柄の画像向け)", bg.imageTile) { v -> bg = bg.copy(imageTile = v) }
+                            if (bg.imageTile) {
+                                SliderLine("倍率 (画像の元の大きさ = 100%)", bg.tileScale * 100, 5f..400f, "%.0f%%") { v -> bg = bg.copy(tileScale = snap(v, 1f) / 100f) }
+                                SliderLine("横のずらし", (bg.imageX - 0.5f) * 100, -50f..50f, "%+.0f%%") { v -> bg = bg.copy(imageX = 0.5f + snap(v, 1f) / 100f) }
+                                SliderLine("縦のずらし", (bg.imageY - 0.5f) * 100, -50f..50f, "%+.0f%%") { v -> bg = bg.copy(imageY = 0.5f + snap(v, 1f) / 100f) }
+                            } else {
+                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    OutlinedButton(onClick = {
+                                        bg = bg.copy(imageX = 0.5f, imageY = 0.5f, imageWidth = 1f, imageHeight = 1f, keepAspect = false)
+                                    }) { Text("ページいっぱいに伸ばす") }
+                                    OutlinedButton(onClick = { bg = bg.copy(imageX = 0.5f, imageY = 0.5f) }) { Text("中央に置く") }
+                                }
+                                SliderLine("幅 (ページの幅 = 100%)", bg.imageWidth * 100, 5f..300f, "%.0f%%") { v -> bg = bg.copy(imageWidth = snap(v, 1f) / 100f) }
+                                SwitchLine("縦横比を保つ", "OFF にすると高さを別に決められます (画像が伸び縮みします)", bg.keepAspect) { v -> bg = bg.copy(keepAspect = v) }
+                                if (!bg.keepAspect) {
+                                    SliderLine("高さ (ページの高さ = 100%)", bg.imageHeight * 100, 5f..300f, "%.0f%%") { v -> bg = bg.copy(imageHeight = snap(v, 1f) / 100f) }
+                                }
+                                SliderLine("横の位置 (中心。左端 = 0%、右端 = 100%)", bg.imageX * 100, -50f..150f, "%.0f%%") { v -> bg = bg.copy(imageX = snap(v, 1f) / 100f) }
+                                SliderLine("縦の位置 (中心。上端 = 0%、下端 = 100%)", bg.imageY * 100, -50f..150f, "%.0f%%") { v -> bg = bg.copy(imageY = snap(v, 1f) / 100f) }
                             }
-                            SliderLine("幅 (ページの幅 = 100%)", bg.imageWidth * 100, 5f..300f, "%.0f%%") { v -> bg = bg.copy(imageWidth = snap(v, 1f) / 100f) }
-                            SwitchLine("縦横比を保つ", "OFF にすると高さを別に決められます (画像が伸び縮みします)", bg.keepAspect) { v -> bg = bg.copy(keepAspect = v) }
-                            if (!bg.keepAspect) {
-                                SliderLine("高さ (ページの高さ = 100%)", bg.imageHeight * 100, 5f..300f, "%.0f%%") { v -> bg = bg.copy(imageHeight = snap(v, 1f) / 100f) }
-                            }
-                            SliderLine("横の位置 (中心。左端 = 0%、右端 = 100%)", bg.imageX * 100, -50f..150f, "%.0f%%") { v -> bg = bg.copy(imageX = snap(v, 1f) / 100f) }
-                            SliderLine("縦の位置 (中心。上端 = 0%、下端 = 100%)", bg.imageY * 100, -50f..150f, "%.0f%%") { v -> bg = bg.copy(imageY = snap(v, 1f) / 100f) }
+                            SliderLine("明るさ", bg.imageBrightness * 100, -100f..100f, "%+.0f") { v -> bg = bg.copy(imageBrightness = snap(v, 1f) / 100f) }
+                            SliderLine("コントラスト", bg.imageContrast * 100, 0f..300f, "%.0f%%") { v -> bg = bg.copy(imageContrast = snap(v, 1f) / 100f) }
                             SliderLine("不透明度", bg.imageAlpha * 100, 0f..100f, "%.0f%%") { v -> bg = bg.copy(imageAlpha = snap(v, 1f) / 100f) }
                         }
 

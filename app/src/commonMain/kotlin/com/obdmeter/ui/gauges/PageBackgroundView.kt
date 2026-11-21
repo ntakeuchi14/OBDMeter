@@ -33,7 +33,22 @@ fun PageBackgroundView(bg: PageBackground, modifier: Modifier) {
             val pc = (bg.patternColor?.let { Color(it) } ?: autoPatternColor(base)).copy(alpha = bg.patternAlpha.coerceIn(0f, 1f))
             drawPattern(bg.pattern, pc, base, (24f * density * bg.patternScale.coerceIn(0.2f, 6f)))
         }
-        if (image != null && image.width > 0) {
+        val filter = GaugeLook(imageBrightness = bg.imageBrightness.coerceIn(-1f, 1f), imageContrast = bg.imageContrast.coerceIn(0f, 3f)).imageFilter()
+        if (image != null && image.width > 0 && bg.imageTile) {
+            // 繰り返し: 画像 1 枚を [tileScale] 倍にして、ページの左上からすき間なく敷き詰める
+            val k = bg.tileScale.coerceIn(0.05f, 10f)
+            val brush = androidx.compose.ui.graphics.ShaderBrush(
+                androidx.compose.ui.graphics.ImageShader(image, androidx.compose.ui.graphics.TileMode.Repeated, androidx.compose.ui.graphics.TileMode.Repeated),
+            )
+            // 位置の設定で、敷き詰めの始まりをずらせる (0.5 = ずらさない)
+            val ox = (bg.imageX - 0.5f) * image.width * k
+            val oy = (bg.imageY - 0.5f) * image.height * k
+            withTransform({ translate(ox, oy); scale(k, k, Offset.Zero) }) {
+                drawRect(brush, topLeft = Offset(-ox / k - image.width, -oy / k - image.height),
+                    size = Size(size.width / k + image.width * 2, size.height / k + image.height * 2),
+                    alpha = bg.imageAlpha.coerceIn(0f, 1f), colorFilter = filter)
+            }
+        } else if (image != null && image.width > 0) {
             val w = size.width * bg.imageWidth
             val h = if (bg.keepAspect) w * image.height / image.width else size.height * bg.imageHeight
             val cx = size.width * bg.imageX
@@ -43,6 +58,7 @@ fun PageBackgroundView(bg: PageBackground, modifier: Modifier) {
                 dstOffset = IntOffset((cx - w / 2).roundToInt(), (cy - h / 2).roundToInt()),
                 dstSize = IntSize(w.roundToInt().coerceAtLeast(1), h.roundToInt().coerceAtLeast(1)),
                 alpha = bg.imageAlpha.coerceIn(0f, 1f),
+                colorFilter = filter,
             )
         }
     }

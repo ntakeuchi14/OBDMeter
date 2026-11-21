@@ -673,6 +673,12 @@ data class PageBackground(
     val keepAspect: Boolean = true,
     /** 画像の不透明度 */
     val imageAlpha: Float = 1f,
+    /** 画像の明るさ (-1〜1、0 = そのまま)・コントラスト (1 = そのまま) */
+    val imageBrightness: Float = 0f,
+    val imageContrast: Float = 1f,
+    /** 画像をページ全体に繰り返して敷き詰める ([tileScale] = 画像 1 枚の大きさ。1 = 画像の元の大きさ) */
+    val imageTile: Boolean = false,
+    val tileScale: Float = 1f,
 )
 
 @Serializable
