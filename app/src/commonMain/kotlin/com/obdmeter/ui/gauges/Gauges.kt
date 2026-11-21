@@ -676,8 +676,10 @@ fun AnalogGauge(
             val sw = sweep * (p1 - p0)
             if (glow && look.arcGlow > 0f) {
                 val g = look.arcGlow
-                drawArc(color.copy(alpha = 0.14f * g), a0, sw, false, arcTopLeft, arcSize, style = Stroke(stroke + d * 0.05f * g, cap = StrokeCap.Round))
-                drawArc(color.copy(alpha = 0.28f * g), a0, sw, false, arcTopLeft, arcSize, style = Stroke(stroke + d * 0.02f * g, cap = StrokeCap.Round))
+                // 破線のときは角のまま光らせる (丸いにじみがマスの外にはみ出さないように)
+                val gc = if (segs > 0) StrokeCap.Butt else StrokeCap.Round
+                drawArc(color.copy(alpha = 0.14f * g), a0, sw, false, arcTopLeft, arcSize, style = Stroke(stroke + d * 0.05f * g, cap = gc))
+                drawArc(color.copy(alpha = 0.28f * g), a0, sw, false, arcTopLeft, arcSize, style = Stroke(stroke + d * 0.02f * g, cap = gc))
             }
             drawArc(color, a0, sw, false, arcTopLeft, arcSize, style = Stroke(stroke, cap = pieceCap))
         }
