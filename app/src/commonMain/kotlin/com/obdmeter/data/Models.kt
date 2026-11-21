@@ -766,6 +766,66 @@ object Layout {
     fun groups(gauges: List<GaugeConfig>): Map<Long, List<GaugeConfig>> =
         gauges.filter { it.layoutGroup != null }.groupBy { it.layoutGroup!! }.filterValues { it.size >= 2 }
 
+    /**
+     * 重なりの順番で、同じグループのメーターがひと続きになるように並べ直す
+     * (グループの中に別のグループや単体のメーターが挟まらないように)。
+     * グループは、いちばん手前のメンバーの位置にまとめる (グループの中の順番はそのまま)
+     */
+    fun compactGroups(gauges: List<GaugeConfig>): List<GaugeConfig> {
+        val groups = groups(gauges)
+        if (groups.isEmpty()) return gauges
+        val lastIndex = groups.mapValues { (_, m) -> gauges.indexOf(m.last()) }
+        val out = ArrayList<GaugeConfig>(gauges.size)
+        gauges.forEachIndexed { i, g ->
+            val members = g.layoutGroup?.let { groups[it] }
+            when {
+                members == null -> out += g
+                lastIndex[g.layoutGroup] == i -> out += members
+            }
+        }
+        return out
+    }
+
+    /** 重なりの順番のかたまり (グループはひとまとめ、単体は 1 個ずつ)。[compactGroups] した並びで使う */
+    private fun blocks(gauges: List<GaugeConfig>): MutableList<List<GaugeConfig>> {
+        val groups = groups(gauges)
+        val out = ArrayList<List<GaugeConfig>>()
+        for (g in gauges) {
+            val gid = g.layoutGroup?.takeIf { it in groups }
+            if (gid != null && out.lastOrNull()?.first()?.layoutGroup == gid) out[out.lastIndex] = out.last() + g
+            else out += listOf(g)
+        }
+        return out
+    }
+
+    /**
+     * 重なりの順番を変える ([delta] = +1 で 1 つ手前、-1 で 1 つ奥、Int.MAX_VALUE で最前面、Int.MIN_VALUE で最背面)。
+     * グループのメンバーは、グループの中で入れ替え、グループの端からさらに動かすとグループごと動く。
+     * 単体のメーターはグループを 1 つのかたまりとして飛び越える
+     */
+    fun moveZ(gauges: List<GaugeConfig>, id: Long, delta: Int): List<GaugeConfig> {
+        val bl = blocks(compactGroups(gauges))
+        val bi = bl.indexOfFirst { b -> b.any { it.id == id } }
+        if (bi < 0) return gauges
+        val block = bl[bi]
+        val mi = block.indexOfFirst { it.id == id }
+        // グループの中で 1 つ動かせるなら、グループの中で入れ替える
+        if (block.size > 1 && (delta == 1 && mi < block.lastIndex || delta == -1 && mi > 0)) {
+            val m = block.toMutableList()
+            val t = m[mi]; m[mi] = m[mi + delta]; m[mi + delta] = t
+            bl[bi] = m
+            return bl.flatten()
+        }
+        bl.removeAt(bi)
+        val to = when (delta) {
+            Int.MAX_VALUE -> bl.size
+            Int.MIN_VALUE -> 0
+            else -> (bi + delta).coerceIn(0, bl.size)
+        }
+        bl.add(to, block)
+        return bl.flatten()
+    }
+
     /** メーターをまとめて囲む範囲 (x, y, w, h) */
     fun bounds(gauges: List<GaugeConfig>): IntArray {
         val x0 = gauges.minOf { it.x }

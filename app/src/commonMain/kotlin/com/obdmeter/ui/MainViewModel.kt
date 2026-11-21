@@ -414,7 +414,11 @@ class MainViewModel(val core: AppCore) : ViewModel() {
                 val before = repo.dashboards.first()
                 // メモリ上のページはいつも今の単位なので、単位の記録をそろえて保存する
                 // (新しいページなどで記録が抜けると、次に読み込んだときに大きくなってしまうため)
-                val after = transform(before).map { if (it.unitScale != Layout.SCALE) it.copy(unitScale = Layout.SCALE) else it }
+                // 重なりの順番では、同じグループのメーターをひと続きにしておく
+                val after = transform(before).map { d ->
+                    val g = Layout.compactGroups(d.gauges)
+                    if (d.unitScale != Layout.SCALE || g != d.gauges) d.copy(unitScale = Layout.SCALE, gauges = g) else d
+                }
                 if (after == before) return@withLock
                 pushUndo(before, coalesce)
                 repo.saveDashboards(after)
@@ -628,23 +632,10 @@ class MainViewModel(val core: AppCore) : ViewModel() {
      * [Int.MAX_VALUE] で最前面、[Int.MIN_VALUE] で最背面
      */
     fun moveZ(dashboardId: Long, gaugeId: Long, delta: Int) = editDashboard(dashboardId) { d ->
-        val i = d.gauges.indexOfFirst { it.id == gaugeId }
-        if (i < 0) return@editDashboard d
-        val list = d.gauges.toMutableList()
-        val g = list.removeAt(i)
-        val to = when (delta) {
-            Int.MAX_VALUE -> list.size
-            Int.MIN_VALUE -> 0
-            else -> (i + delta).coerceIn(0, list.size)
-        }
-        list.add(to, g)
-        d.copy(gauges = list)
+        d.copy(gauges = Layout.moveZ(d.gauges, gaugeId, delta))
     }
 
-    fun bringToFront(dashboardId: Long, gaugeId: Long) = editDashboard(dashboardId) { d ->
-        val g = d.gauges.firstOrNull { it.id == gaugeId } ?: return@editDashboard d
-        d.copy(gauges = d.gauges.filterNot { it.id == gaugeId } + g)
-    }
+    fun bringToFront(dashboardId: Long, gaugeId: Long) = moveZ(dashboardId, gaugeId, Int.MAX_VALUE)
 
     fun resetDashboards() = viewModelScope.launch { repo.saveDashboards(Defaults.dashboards) }
 

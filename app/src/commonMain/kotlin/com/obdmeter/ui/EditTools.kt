@@ -60,6 +60,11 @@ internal fun GaugeConfig.editLabel(catalog: PidCatalog): String {
     return "$name (${style.label})"
 }
 
+/** 一覧でグループを見分ける色 (グループの番号ごと) */
+private fun groupColor(n: Int): Color = listOf(
+    Color(0xFF4FC3F7), Color(0xFFFFB74D), Color(0xFF81C784), Color(0xFFE57373), Color(0xFFBA68C8), Color(0xFFFFF176),
+)[(n - 1).mod(6)]
+
 /** マス目の単位 → マス (1/4 単位) の表示 */
 private fun cells(v: Int): String =
     if (v % Layout.SCALE == 0) "${v / Layout.SCALE}" else "%.4f".format(v.toDouble() / Layout.SCALE).trimEnd('0')
@@ -240,7 +245,8 @@ internal fun GaugeListPanel(
             Text("閉じる", color = GaugeColors.SubText, fontSize = 12.sp, modifier = Modifier.clickable(onClick = onClose).padding(horizontal = 6.dp, vertical = 4.dp))
         }
         Spacer(Modifier.size(4.dp))
-        val list = gauges.asReversed()
+        // 同じグループはひと続きに見せる (保存前の古い並びでも)
+        val list = Layout.compactGroups(gauges).asReversed()
         LazyColumn(Modifier.weight(1f, fill = false).heightIn(max = 420.dp)) {
             itemsIndexed(list, key = { _, g -> g.id }) { i, g ->
                 val sel = g.id == focused
@@ -251,6 +257,12 @@ internal fun GaugeListPanel(
                         .clickable { onSelect(g) }.padding(horizontal = 6.dp, vertical = 6.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
+                    // グループの印 (同じグループの行の左に色の線)
+                    val gn = g.layoutGroup?.let { groupNo[it] }
+                    Box(
+                        Modifier.padding(end = 4.dp).size(width = 4.dp, height = 26.dp).clip(RoundedCornerShape(2.dp))
+                            .background(if (gn != null) groupColor(gn) else Color.Transparent),
+                    )
                     // チェック (複数選んでグループにする)
                     val on = g.id in checked
                     Box(

@@ -51,3 +51,31 @@ class LayoutUnitScaleTest {
         assertEquals(Layout.SCALE, n.unitScale)
     }
 }
+
+class LayoutGroupOrderTest {
+    private fun g(id: Long, group: Long? = null) = GaugeConfig("RPM", id = id, layoutGroup = group)
+
+    @Test
+    fun groupsBecomeContiguousAtFrontmostMember() {
+        // 1(G) 2 3(G) 4 → 2 1 3 4 (グループは手前のメンバー 3 の位置にまとまる)
+        val r = Layout.compactGroups(listOf(g(1, 9), g(2), g(3, 9), g(4)))
+        assertEquals(listOf(2L, 1L, 3L, 4L), r.map { it.id })
+    }
+
+    @Test
+    fun singleJumpsOverWholeGroup() {
+        val list = listOf(g(1), g(2, 9), g(3, 9), g(4))
+        assertEquals(listOf(2L, 3L, 1L, 4L), Layout.moveZ(list, 1, 1).map { it.id })
+    }
+
+    @Test
+    fun memberMovesInsideGroupThenGroupMoves() {
+        val list = listOf(g(1), g(2, 9), g(3, 9), g(4))
+        // グループの中で入れ替え
+        assertEquals(listOf(1L, 3L, 2L, 4L), Layout.moveZ(list, 2, 1).map { it.id })
+        // グループの手前の端からさらに手前へ → グループごと
+        assertEquals(listOf(1L, 4L, 2L, 3L), Layout.moveZ(list, 3, 1).map { it.id })
+        // 最背面 → グループごと
+        assertEquals(listOf(2L, 3L, 1L, 4L), Layout.moveZ(list, 3, Int.MIN_VALUE).map { it.id })
+    }
+}
