@@ -175,6 +175,7 @@ fun GaugeDesign.toLook(def: PidDef, style: GaugeStyle): GaugeLook {
         tableColGap = tableColGap.coerceIn(-60f, 120f),
         chartColors = chartColors.map { c -> c?.let { Color(it) } },
         showPeak = showPeak,
+        arcGlow = arcGlow.coerceIn(0f, 2f),
         peakKeep = peakKeep,
         peakEngineRunningOnly = peakEngineRunningOnly,
         peakMark = peakMarkShow,

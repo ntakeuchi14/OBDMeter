@@ -218,6 +218,8 @@ data class GaugeLook(
     /** 折れ線グラフの線の色 (項目の順。足りない分は自動) */
     val chartColors: List<Color?> = emptyList(),
     val showPeak: Boolean = false,
+    /** アナログ: 現在値の弧の発光 */
+    val arcGlow: Float = 0f,
     val peakKeep: Boolean = false,
     /** エンジン停止中は最大値を記録しない (ページ間で引き継ぐときの区別に使う) */
     val peakEngineRunningOnly: Boolean = false,
@@ -653,13 +655,65 @@ fun AnalogGauge(
         val clipScale = shifted
         if (clipScale) { drawContext.canvas.save(); drawContext.canvas.clipPath(innerCircle) }
 
+        // ---- 現在値の弧の飾り (破線・範囲で色分け・発光。バー表示と同じ設定) ----
+        val segs = look.barSegments
+        val gapFrac = if (segs > 0) look.barSegmentGap / segs else 0f
+        val arcBase = if (warn && !look.barZoneColors) GaugeColors.Warn else look.accent
+        fun zoneCol(p: Float): Color {
+            if (!look.barZoneColors) return arcBase
+            val v = def.min + (def.max - def.min) * p
+            val z = look.redZone
+            if (z != null && v >= z.start && v <= z.endInclusive) return look.redZoneColor
+            val m = look.barMidFrom
+            if (m != null && v >= m) return look.barMidColor
+            return look.accent
+        }
+        fun offCol(p: Float): Color = look.trackColor ?: look.barOffColor
+            ?: if (look.barZoneColors || look.arcGlow > 0f) zoneCol(p).copy(alpha = 0.13f) else GaugeColors.Track
+        fun arcPiece(p0: Float, p1: Float, color: Color, glow: Boolean, pieceCap: StrokeCap) {
+            if (p1 <= p0) return
+            val a0 = start + sweep * p0
+            val sw = sweep * (p1 - p0)
+            if (glow && look.arcGlow > 0f) {
+                val g = look.arcGlow
+                drawArc(color.copy(alpha = 0.14f * g), a0, sw, false, arcTopLeft, arcSize, style = Stroke(stroke + d * 0.05f * g, cap = StrokeCap.Round))
+                drawArc(color.copy(alpha = 0.28f * g), a0, sw, false, arcTopLeft, arcSize, style = Stroke(stroke + d * 0.02f * g, cap = StrokeCap.Round))
+            }
+            drawArc(color, a0, sw, false, arcTopLeft, arcSize, style = Stroke(stroke, cap = pieceCap))
+        }
+        /** [lo, hi] を塗る (破線ならマスごと、実線なら色の切れ目ごと) */
+        fun fillArc(lo: Float, hi: Float, colorAt: (Float) -> Color, glow: Boolean) {
+            if (segs > 0) {
+                for (i in 0 until segs) {
+                    val mid = (i + 0.5f) / segs
+                    if (mid < lo || mid > hi) continue
+                    arcPiece(i.toFloat() / segs + gapFrac / 2, (i + 1f) / segs - gapFrac / 2, colorAt(mid), glow, StrokeCap.Butt)
+                }
+            } else if (hi > lo) {
+                val cuts = mutableListOf(lo, hi)
+                if (look.barZoneColors) {
+                    look.barMidFrom?.let { cuts += fraction(def, it) }
+                    look.redZone?.let { cuts += fraction(def, it.start); cuts += fraction(def, it.endInclusive) }
+                }
+                val pts = cuts.filter { it in lo..hi }.distinct().sorted()
+                for (j in 0 until pts.size - 1) {
+                    // 端を丸くするときは、全体の両端だけ丸くする
+                    val c = if (look.arcRoundCap && pts.size == 2) StrokeCap.Round else StrokeCap.Butt
+                    arcPiece(pts[j], pts[j + 1], colorAt((pts[j] + pts[j + 1]) / 2), glow, c)
+                }
+            }
+        }
+        val styledArc = segs > 0 || look.barZoneColors || look.arcGlow > 0f
+
         if (look.showTrack && stroke > 0f) {
-            drawArc(look.trackColor ?: GaugeColors.Track, start, sweep, false, arcTopLeft, arcSize, style = Stroke(stroke, cap = cap))
+            if (segs > 0) fillArc(0f, 1f, ::offCol, false)
+            else drawArc(look.trackColor ?: GaugeColors.Track, start, sweep, false, arcTopLeft, arcSize, style = Stroke(stroke, cap = cap))
         }
         val majorLen = d * 0.05f * look.majorTickLength
         val minorLen = d * 0.025f * look.minorTickLength
         val zoneInsideW = d * 0.025f
-        look.redZone?.let { z ->
+        // 色分けするときは、レッドゾーンは弧の色で表すので帯は描かない (弧が無いときは帯で描く)
+        look.redZone?.takeIf { arcHidden || !look.barZoneColors }?.let { z ->
             val s = fraction(def, z.start)
             val e = fraction(def, z.endInclusive)
             if (e > s) {
@@ -677,8 +731,8 @@ fun AnalogGauge(
         }
         if (value != null && look.showValueArc && stroke > 0f) {
             val arcColor = if (warn) GaugeColors.Warn else look.accent
-            drawArc(arcColor, start, sweep * f, false,
-                arcTopLeft, arcSize, style = Stroke(stroke, cap = cap))
+            if (styledArc) fillArc(0f, f, ::zoneCol, true)
+            else drawArc(arcColor, start, sweep * f, false, arcTopLeft, arcSize, style = Stroke(stroke, cap = cap))
             // 弧の先の丸い点 (ピーク値を出すときは、点をピーク値の位置に置いて印にする)
             if (look.arcTipDot && !(peak != null && look.peakMark)) {
                 val ta = com.obdmeter.util.toRadians((start + sweep * f).toDouble())

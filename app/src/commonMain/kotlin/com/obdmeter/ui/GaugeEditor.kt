@@ -205,7 +205,7 @@ fun GaugeSettingsDialog(
                             when (currentTab) {
                                 EditorTab.ITEM, EditorTab.ITEM_AXIS -> ItemTab(draft, catalog, ::update, { draft = it }, { showPicker = true },
                                     { showFallbackPicker = true }, { showChartPicker = true }, { showCapturePicker = true })
-                                EditorTab.SCALE -> ScaleTab(draft, ::update)
+                                EditorTab.SCALE -> ScaleTab(draft, def, ::update)
                                 EditorTab.BAR -> BarTab(draft, def, ::update)
                                 EditorTab.LAMP -> LampTab(draft, ::update, onPickFont)
                                 EditorTab.BUTTON -> ButtonTab(draft, ::update, { draft = it }, onPickFont)
@@ -531,7 +531,7 @@ private fun PlaceTab(
 // ---------------------------------------------------------------------------
 
 @Composable
-private fun ScaleTab(g: GaugeConfig, update: ((GaugeDesign) -> GaugeDesign) -> Unit) {
+private fun ScaleTab(g: GaugeConfig, def: com.obdmeter.core.PidDef?, update: ((GaugeDesign) -> GaugeDesign) -> Unit) {
     val d = g.design
     if (g.style == GaugeStyle.ANALOG) ClockSection(g, update)
     Head("シンプルな扇形")
@@ -633,6 +633,30 @@ private fun ScaleTab(g: GaugeConfig, update: ((GaugeDesign) -> GaugeDesign) -> U
         if (d.showPeak) Hint("ピーク値を表示しているので、点の色は「ピーク値の印の色」になります (「色・数値」タブ)")
         else ColorLine("点の色", d.arcTipColor, Color.White) { c -> update { it.copy(arcTipColor = c) } }
     }
+    // デジパネ風 (バー表示と同じ設定)
+    Row {
+        FilterChip(d.barSegments == 0, { update { it.copy(barSegments = 0) } }, { Text("実線") }, Modifier.padding(end = 6.dp))
+        FilterChip(d.barSegments > 0, { update { it.copy(barSegments = if (it.barSegments > 0) it.barSegments else 30) } }, { Text("破線 (デジパネ風)") })
+    }
+    if (d.barSegments > 0) {
+        SliderLine("マスの数", d.barSegments.toFloat(), 3f..80f, "%.0f") { v -> update { it.copy(barSegments = v.roundToInt()) } }
+        SliderLine("マスの間のすき間", d.barSegmentGap * 100, 5f..80f, "%.0f%%") { v -> update { it.copy(barSegmentGap = snap(v, 1f) / 100f) } }
+    }
+    SwitchLine("範囲で色分けする", "通常の色 → 中間の色 → レッドゾーンの色 の順に、弧を位置ごとに塗り分けます", d.barZoneColors) { v ->
+        update { it.copy(barZoneColors = v) }
+    }
+    if (d.barZoneColors) {
+        ColorLine("中間の色", d.barMidColor, Color(0xFFFFC107)) { c -> update { it.copy(barMidColor = c) } }
+        if (def != null && def.max > def.min) {
+            val from = (d.barMidFrom ?: (def.min + (def.max - def.min) * 0.7)).toFloat()
+            SliderLine("中間の色にする値", from, def.min.toFloat()..def.max.toFloat(), "%.0f") { v ->
+                update { it.copy(barMidFrom = v.toDouble()) }
+            }
+        }
+        Hint("レッドゾーンの範囲と色は下の「レッドゾーン」の設定を使います。")
+    }
+    SliderLine("現在値の弧の発光 (0 = なし)", d.arcGlow * 100, 0f..200f, "%.0f%%") { v -> update { it.copy(arcGlow = snap(v, 5f) / 100f) } }
+    if (d.barSegments > 0 && d.trackColor == null) Hint("下地の弧の色が既定のときは、色分けか発光を使うと各マスの色をうっすら、それ以外は灰色で描きます。")
 
     RedZoneSection(g, update)
 

@@ -395,6 +395,8 @@ data class GaugeDesign(
     val barMidFrom: Double? = null,
     /** アナログ: 目盛りの線を表示する */
     val showTicks: Boolean = true,
+    /** アナログ: 現在値の弧の発光 (0 = なし)。破線・色分けはバー表示と同じ設定 ([barSegments]・[barZoneColors] など) を使う */
+    val arcGlow: Float = 0f,
     /** アナログ: 弧の端を丸くする */
     val arcRoundCap: Boolean = false,
     /** アナログ: 背景の弧の色 (null = 既定の灰色) */
