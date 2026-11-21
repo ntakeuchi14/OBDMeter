@@ -538,8 +538,10 @@ class MainViewModel(val core: AppCore) : ViewModel() {
             d.copy(gauges = d.gauges.map { if (it.id == gaugeId) transform(it) else it })
         }
 
+    /** メーターを削除する。グループに入っていれば、グループのメーターをまとめて削除する */
     fun removeGauge(dashboardId: Long, gaugeId: Long) = editDashboard(dashboardId) { d ->
-        d.copy(gauges = d.gauges.filterNot { it.id == gaugeId })
+        val ids = Layout.groups(d.gauges)[d.gauges.firstOrNull { it.id == gaugeId }?.layoutGroup]?.map { it.id }?.toSet() ?: setOf(gaugeId)
+        d.copy(gauges = d.gauges.filterNot { it.id in ids })
     }
 
     /** 重なったときに手前に表示する (リストの最後が最前面) */

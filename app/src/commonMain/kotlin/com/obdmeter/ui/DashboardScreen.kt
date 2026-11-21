@@ -558,7 +558,8 @@ fun DashboardScreen(vm: MainViewModel, onNavigate: (Screen) -> Unit, onCreateCus
             onChange = { updated -> vm.updateGauge(current.id, updated.id) { updated } },
             onBringToFront = { vm.bringToFront(current.id, gaugeInSettings.id) },
             onMoveZ = { delta -> vm.moveZ(current.id, gaugeInSettings.id, delta) },
-            onDelete = { vm.removeGauge(current.id, gaugeInSettings.id); settingsFor = null },
+            onDelete = { vm.removeGauge(current.id, gaugeInSettings.id); settingsFor = null; focusId = null },
+            groupSize = Layout.groups(current.gauges)[gaugeInSettings.layoutGroup]?.size ?: 1,
             onCreateCustomPid = { settingsFor = null; onCreateCustomPid() },
             onDismiss = { settingsFor = null },
         )

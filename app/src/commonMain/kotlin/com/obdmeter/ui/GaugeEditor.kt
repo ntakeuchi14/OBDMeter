@@ -106,6 +106,8 @@ fun GaugeSettingsDialog(
     onCreateCustomPid: () -> Unit,
     /** 重なりの順番 (+1 = 1 つ手前、-1 = 1 つ奥、MAX = 最前面、MIN = 最背面) */
     onMoveZ: (Int) -> Unit = {},
+    /** このメーターが入っているグループのメーターの数 (グループでなければ 1)。削除はグループごと */
+    groupSize: Int = 1,
     onDismiss: () -> Unit,
 ) {
     var draft by remember(gauge.id) { mutableStateOf(gauge) }
@@ -320,7 +322,10 @@ fun GaugeSettingsDialog(
         if (confirmDelete) {
             AlertDialog(
                 onDismissRequest = { confirmDelete = false },
-                title = { Text("このメーターを削除しますか？") },
+                title = { Text(if (groupSize > 1) "グループのメーター $groupSize 個を削除しますか？" else "このメーターを削除しますか？") },
+                text = if (groupSize > 1) {
+                    { Text("このメーターはグループに入っているので、同じグループのメーターもまとめて削除します。「元に戻す」で戻せます。") }
+                } else null,
                 confirmButton = {
                     TextButton(onClick = { confirmDelete = false; onDelete() }) { Text("削除", color = GaugeColors.Warn) }
                 },
