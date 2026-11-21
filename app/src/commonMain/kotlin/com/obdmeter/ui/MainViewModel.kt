@@ -97,20 +97,31 @@ class MainViewModel(val core: AppCore) : ViewModel() {
     /**
      * 設定をバックアップ zip にして [write] で書き出す。[write] は保存先の説明を返す (なければ null)
      */
-    fun exportBackup(write: suspend (ByteArray) -> String?) {
+    fun exportBackup(write: suspend (ByteArray) -> String?, onlyPage: Long? = null) {
         viewModelScope.launch {
             _backupBusy.value = true
             runCatching {
+                // [onlyPage] を指定したときは、そのページと、そのページが使うカスタム PID・フォントだけ
+                val pages = repo.dashboards.first().filter { onlyPage == null || it.id == onlyPage }
+                    .map { it.withoutUnusedImages().copy(unitScale = Layout.SCALE) }
+                if (pages.isEmpty()) throw IllegalStateException("ページが見つかりません")
+                val usedKeys = pages.flatMap { d ->
+                    d.gauges.flatMap { g -> g.chartAllKeys + listOfNotNull(g.fallbackKey) + g.design.monitorCaptureKeys }
+                }.toSet()
+                val usedFonts = pages.flatMap { d -> d.gauges.flatMap { listOfNotNull(it.design.labelFont, it.design.valueFont) } }.toSet()
                 val manifest = BackupManifest(
                     appVersion = platform.appVersion,
                     exportedAt = DateFmt("yyyy-MM-dd HH:mm").format(nowMs()),
-                    dashboards = repo.dashboards.first().map { it.withoutUnusedImages().copy(unitScale = Layout.SCALE) },
-                    customPids = repo.customPids.first(),
-                    fonts = repo.fonts.first(),
-                    pollIntervalsMs = repo.settings.first().pollIntervalsMs,
+                    dashboards = pages,
+                    customPids = repo.customPids.first().filter { onlyPage == null || it.key in usedKeys },
+                    fonts = repo.fonts.first().filter { onlyPage == null || it.id in usedFonts },
+                    pollIntervalsMs = repo.settings.first().pollIntervalsMs.let { m ->
+                        if (onlyPage == null) m else m.filterKeys { it in usedKeys }
+                    },
                 )
                 val (bytes, images) = BackupZip.build(platform, manifest)
                 val savedAs = write(bytes)
+                (if (onlyPage != null) "「${pages.first().name}」を" else "") +
                 "エクスポートしました (ページ ${manifest.dashboards.size}、カスタム PID ${manifest.customPids.size}、" +
                     "画像 $images、フォント ${manifest.fonts.size})" + (savedAs?.let { "\n保存先: $it" } ?: "")
             }.onSuccess { _backupMessage.value = it }
@@ -330,6 +341,13 @@ class MainViewModel(val core: AppCore) : ViewModel() {
     fun initialPageIndex(): Int {
         val id = core.appPage.value ?: settings.value.lastPageId ?: return 0
         return dashboards.value.shownPages(false).indexOfFirst { it.id == id }.coerceAtLeast(0)
+    }
+
+    /** 今表示しているページ (無ければ先頭のページ) */
+    fun currentPage(): Dashboard? {
+        val list = dashboards.value
+        val id = core.appPage.value ?: settings.value.lastPageId
+        return list.firstOrNull { it.id == id } ?: list.firstOrNull()
     }
 
     suspend fun pageToRestore(): Long? {

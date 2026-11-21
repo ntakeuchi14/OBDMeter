@@ -389,13 +389,17 @@ private fun BackupSection(vm: MainViewModel) {
     val pending by vm.pendingImport.collectAsStateWithLifecycle()
 
     val exporter = rememberFileSaver("application/zip") { target -> vm.exportBackup(target.write) }
+    // 今のページだけ (読み込むときは「追加」でページを足せる)
+    val currentPage = vm.currentPage()
+    val pageExporter = rememberFileSaver("application/zip") { target -> vm.exportBackup(target.write, onlyPage = currentPage?.id) }
     val importer = rememberFileOpener(listOf("application/zip", "application/x-zip-compressed", "application/octet-stream")) { f ->
         vm.loadBackup(f.read)
     }
 
     Text(
         "ダッシュボード (メーターの配置・色・角度・背景画像など)、カスタム PID、取り込んだフォントを 1 つのファイル (zip) に保存します。" +
-            "機種変更や再インストールのときに、画像も含めてそのまま戻せます。",
+            "機種変更や再インストールのときに、画像も含めてそのまま戻せます。" +
+            "「今のページだけ」は表示中のページ (と使っているカスタム PID・フォント) だけを保存します。読み込むときに「追加」を選ぶと、今のページに足せます。",
         color = GaugeColors.SubText, fontSize = 12.sp,
     )
     Row(Modifier.padding(vertical = 8.dp)) {
@@ -406,6 +410,15 @@ private fun BackupSection(vm: MainViewModel) {
                 exporter("OBDMeter_$stamp.zip")
             },
         ) { Text("エクスポート") }
+        Spacer(Modifier.width(8.dp))
+        OutlinedButton(
+            enabled = !busy && currentPage != null,
+            onClick = {
+                val stamp = com.obdmeter.util.DateFmt("yyyyMMdd_HHmm").format(com.obdmeter.util.nowMs())
+                val safe = (currentPage?.name ?: "page").replace(Regex("[\\\\/:*?\"<>|\\s]"), "_").take(30)
+                pageExporter("OBDMeter_page_${safe}_$stamp.zip")
+            },
+        ) { Text("今のページだけ (${currentPage?.name ?: "-"})", maxLines = 1) }
         Spacer(Modifier.width(8.dp))
         OutlinedButton(
             enabled = !busy,

@@ -56,6 +56,10 @@ fun EditScreen(vm: MainViewModel, onBack: () -> Unit) {
     val dashboards by vm.dashboards.collectAsStateWithLifecycle()
     val catalog by vm.catalog.collectAsStateWithLifecycle()
     val scope = rememberCoroutineScope()
+    // 1 ページだけ書き出す (読み込むときは「追加」でページを足せる)
+    var exportPage by remember { mutableStateOf<Long?>(null) }
+    val pageExporter = rememberFileSaver("application/zip") { target -> vm.exportBackup(target.write, onlyPage = exportPage) }
+    val backupMessage by vm.backupMessage.collectAsStateWithLifecycle()
 
     var nameDialog by remember { mutableStateOf<NameDialog?>(null) }
     var deleteTarget by remember { mutableStateOf<Dashboard?>(null) }
@@ -76,7 +80,7 @@ fun EditScreen(vm: MainViewModel, onBack: () -> Unit) {
     Column(Modifier.fillMaxSize()) {
         TopBar("ページ管理", onBack)
         Text(
-            "左右スワイプで切り替わるページの一覧です。左のつまみ (三本線) をドラッグすると並べ替え、チェックを付けるとまとめて削除できます。「隠す」にしたページは、ふだんのページ切り替えには出ず、レイアウト編集中だけ出ます。「背景」でページの背景 (色・柄・画像) を変えられます。メーターの配置や見た目は、ダッシュボードの鉛筆ボタンで編集します。",
+            "左右スワイプで切り替わるページの一覧です。左のつまみ (三本線) をドラッグすると並べ替え、チェックを付けるとまとめて削除できます。「隠す」にしたページは、ふだんのページ切り替えには出ず、レイアウト編集中だけ出ます。「背景」でページの背景 (色・柄・画像) を変えられます。「書き出し」でそのページだけをファイル (zip) に保存できます (読み込みは設定のインポートで「追加」)。メーターの配置や見た目は、ダッシュボードの鉛筆ボタンで編集します。",
             color = GaugeColors.SubText, fontSize = 13.sp, modifier = Modifier.padding(horizontal = 16.dp),
         )
         if (checked.isNotEmpty()) {
@@ -152,6 +156,12 @@ fun EditScreen(vm: MainViewModel, onBack: () -> Unit) {
                         enabled = d.hidden || dashboards.count { !it.hidden } > 1,
                     ) { Text(if (d.hidden) "出す" else "隠す") }
                     TextButton(onClick = { backgroundFor = d.id }) { Text("背景") }
+                    TextButton(onClick = {
+                        exportPage = d.id
+                        val stamp = com.obdmeter.util.DateFmt("yyyyMMdd_HHmm").format(com.obdmeter.util.nowMs())
+                        val safe = d.name.replace(Regex("[\\\\/:*?\"<>|\\s]"), "_").take(30)
+                        pageExporter("OBDMeter_page_${safe}_$stamp.zip")
+                    }) { Text("書き出し") }
                     IconButton(onClick = { nameDialog = NameDialog(d.id, d.name) }) { Icon(Icons.Default.Edit, "名前変更") }
                     IconButton(onClick = { vm.moveDashboard(d.id, -1) }, enabled = index > 0) {
                         Icon(Icons.Default.KeyboardArrowUp, "前へ")
@@ -195,6 +205,14 @@ fun EditScreen(vm: MainViewModel, onBack: () -> Unit) {
                 }) { Text("OK") }
             },
             dismissButton = { TextButton(onClick = { nameDialog = null }) { Text("キャンセル") } },
+        )
+    }
+
+    backupMessage?.let { m ->
+        AlertDialog(
+            onDismissRequest = vm::clearBackupMessage,
+            text = { Text(m + "\n\n読み込むときは、設定の「インポート」で「追加」を選ぶと、今のページに足せます。") },
+            confirmButton = { TextButton(onClick = vm::clearBackupMessage) { Text("OK") } },
         )
     }
 
