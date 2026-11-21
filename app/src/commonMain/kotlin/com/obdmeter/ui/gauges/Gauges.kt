@@ -1091,7 +1091,9 @@ private fun DrawScope.drawBar(
         }
         val bw = (maxX - minX).coerceAtLeast(0.2f)
         val bh = (maxY - minY).coerceAtLeast(0.2f)
-        val margin = thick * 0.6f + 2f
+        // 変わり目の数値を出すときは、弧の外側に数値の分の余白を空ける
+        val labelRoom = if (look.barZoneColors && look.barZoneLabels) unit * 0.09f * look.labelSize * 1.6f + max(thick * 0.25f, 3f) else 0f
+        val margin = thick * 0.6f + 2f + labelRoom
         val r = min((w - margin * 2) / bw, (h - margin * 2) / bh).coerceAtLeast(8f)
         val cx = w / 2 - (minX + maxX) / 2 * r
         val cy = h / 2 - (minY + maxY) / 2 * r
@@ -1223,7 +1225,7 @@ private fun DrawScope.drawBar(
             }
         }
     }
-    // 色分けの変わり目の数値 (中間の色・レッドゾーンが始まるところ)。まっすぐなバーは上 (外側)、弧は内側に出す
+    // 色分けの変わり目の数値 (中間の色・レッドゾーンが始まるところ)。バーの上 (弧なら外側) に出す
     if (look.barZoneColors && look.barZoneLabels) {
         val marks = listOfNotNull(
             look.barMidFrom?.let { it to look.barMidColor },
@@ -1232,13 +1234,12 @@ private fun DrawScope.drawBar(
         val gap = max(thick * 0.25f, 3f)
         for ((v, c) in marks) {
             val p = fraction(def, v)
-            val t = tm.measure(def.format(v), TextStyle(color = c, fontSize = (unit * 0.09f * look.labelSize).toSp(),
+            val t = tm.measure(def.format(v), TextStyle(color = c.copy(alpha = 1f), fontSize = (unit * 0.09f * look.labelSize).toSp(),
                 fontFamily = fonts.value, fontWeight = FontWeight.Bold))
             val half = if (arc) max(t.size.width, t.size.height) / 2f else t.size.height / 2f
             // 変わり目の小さな線
-            if (arc) drawLine(c, pointAt(p, -gap * 0.8f), pointAt(p, 0f), max(1.5f, thick * 0.08f))
-            else drawLine(c, pointAt(p, thick), pointAt(p, thick + gap * 0.8f), max(1.5f, thick * 0.08f))
-            val ctr = if (arc) pointAt(p, -(gap + half)) else pointAt(p, thick + gap + half)
+            drawLine(c.copy(alpha = 1f), pointAt(p, thick), pointAt(p, thick + gap * 0.8f), max(1.5f, thick * 0.08f))
+            val ctr = pointAt(p, thick + gap + half)
             drawTextHit(t, topLeft = Offset(ctr.x - t.size.width / 2f, ctr.y - t.size.height / 2f))
         }
     }
