@@ -220,6 +220,8 @@ data class GaugeLook(
     val showPeak: Boolean = false,
     /** アナログ: 現在値の弧の発光 */
     val arcGlow: Float = 0f,
+    /** バー: 色分けの変わり目に数値を出す */
+    val barZoneLabels: Boolean = false,
     val peakKeep: Boolean = false,
     /** エンジン停止中は最大値を記録しない (ページ間で引き継ぐときの区別に使う) */
     val peakEngineRunningOnly: Boolean = false,
@@ -1219,6 +1221,25 @@ private fun DrawScope.drawBar(
             } else {
                 fill(0f, f, ::zoneColor, true)
             }
+        }
+    }
+    // 色分けの変わり目の数値 (中間の色・レッドゾーンが始まるところ)。まっすぐなバーは上 (外側)、弧は内側に出す
+    if (look.barZoneColors && look.barZoneLabels) {
+        val marks = listOfNotNull(
+            look.barMidFrom?.let { it to look.barMidColor },
+            look.redZone?.let { it.start to look.redZoneColor },
+        ).filter { it.first > def.min && it.first < def.max }
+        val gap = max(thick * 0.25f, 3f)
+        for ((v, c) in marks) {
+            val p = fraction(def, v)
+            val t = tm.measure(def.format(v), TextStyle(color = c, fontSize = (unit * 0.09f * look.labelSize).toSp(),
+                fontFamily = fonts.value, fontWeight = FontWeight.Bold))
+            val half = if (arc) max(t.size.width, t.size.height) / 2f else t.size.height / 2f
+            // 変わり目の小さな線
+            if (arc) drawLine(c, pointAt(p, -gap * 0.8f), pointAt(p, 0f), max(1.5f, thick * 0.08f))
+            else drawLine(c, pointAt(p, thick), pointAt(p, thick + gap * 0.8f), max(1.5f, thick * 0.08f))
+            val ctr = if (arc) pointAt(p, -(gap + half)) else pointAt(p, thick + gap + half)
+            drawTextHit(t, topLeft = Offset(ctr.x - t.size.width / 2f, ctr.y - t.size.height / 2f))
         }
     }
     if (peak != null) {

@@ -815,6 +815,9 @@ private fun BarTab(g: GaugeConfig, def: com.obdmeter.core.PidDef?, update: ((Gau
                 update { it.copy(barMidFrom = v.toDouble()) }
             }
         }
+        SwitchLine("変わり目の数値を表示", "中間の色・レッドゾーンが始まる値を、バーの横 (弧なら内側) に表示します", d.barZoneLabels) { v ->
+            update { it.copy(barZoneLabels = v) }
+        }
         Hint("レッドゾーンの範囲と色は下の「レッドゾーン」の設定を使います。")
     }
     ColorLine("消えているマス・背景の色 (既定 = 自動)", d.barOffColor, GaugeColors.Track) { c -> update { it.copy(barOffColor = c) } }

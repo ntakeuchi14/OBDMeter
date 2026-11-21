@@ -123,7 +123,9 @@ fun GaugeDesign.toLook(def: PidDef, style: GaugeStyle): GaugeLook {
         barOffColor = barOffColor?.let { Color(it) },
         barZoneColors = barZoneColors,
         barMidColor = barMidColor.color(Color(0xFFFFC107)),
-        barMidFrom = barMidFrom,
+        // 中間の色にする値を決めていないときは、編集画面の表示と同じく範囲の 70% から
+        barMidFrom = barMidFrom ?: if (barZoneColors && def.max > def.min) def.min + (def.max - def.min) * 0.7 else null,
+        barZoneLabels = barZoneLabels,
         glow = glow.coerceIn(0f, 1f),
         scaleGlow = scaleGlow.coerceIn(0f, 1f),
         needleGlow = needleGlow.coerceIn(0f, 1f),
