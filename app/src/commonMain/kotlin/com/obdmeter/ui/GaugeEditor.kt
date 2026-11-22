@@ -66,6 +66,9 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -165,13 +168,16 @@ fun GaugeSettingsDialog(
                                 Modifier.requiredSize(real.first.dp, real.second.dp).graphicsLayer { scaleX = k; scaleY = k }
                             } else Modifier.aspectRatio(ratio)
                             if (def != null) {
+                                // 目盛りの可変間隔: 目盛りタブを開いているときは、プレビューの主目盛りを指で動かせる
+                                val warpDrag = draft.style == GaugeStyle.ANALOG && !draft.design.clockMode && draft.design.scaleWarp != null &&
+                                    EditorTabs.keepOrFirst(draft.style, tab) == EditorTab.SCALE
                                 GaugeCard(
                                     def = def,
                                     value = previewValue,
                                     style = draft.style,
                                     unsupported = false,
                                     look = draft.look(def),
-                                    modifier = previewModifier,
+                                    modifier = if (warpDrag) previewModifier.then(scaleWarpDrag(draft, def, ::update)) else previewModifier,
                                     series = if (draft.style == GaugeStyle.CHART || draft.style == GaugeStyle.TABLE || draft.style == GaugeStyle.MONITOR) {
                                         chartSeries(draft, def, mapOf(def.key to (previewValue ?: 0.0)), catalog)
                                     } else emptyList(),
@@ -540,6 +546,38 @@ private fun PlaceTab(
 // タブ: 目盛り・針 (アナログ)
 // ---------------------------------------------------------------------------
 
+/** 目盛りの可変間隔: 主目盛りの区間ごとに幅の比率を決める (プレビューで主目盛りを指で動かしても変えられる) */
+@Composable
+private fun ScaleWarpSection(d: GaugeDesign, def: com.obdmeter.core.PidDef, update: ((GaugeDesign) -> GaugeDesign) -> Unit) {
+    val w = com.obdmeter.ui.gauges.ScaleWarp
+    val bounds = w.bounds(def.min, def.max, d.majorDivisions)
+    if (bounds.size < 3) return
+    fun preset(pr: com.obdmeter.ui.gauges.ScaleWarp.Preset) = w.fromWeights(def.min, def.max, bounds,
+        (0 until bounds.size - 1).map { i -> pr.weight((((bounds[i] + bounds[i + 1]) / 2 - def.min) / (def.max - def.min)).toFloat()) })
+    Head("目盛りの間隔")
+    SwitchLine("可変間隔にする", "よく使う範囲を広く、あまり使わない範囲を狭くします (針・弧・レッドゾーンも合わせて動きます)", d.scaleWarp != null) { on ->
+        update { it.copy(scaleWarp = if (on) preset(com.obdmeter.ui.gauges.ScaleWarp.Preset.MIDDLE) else null) }
+    }
+    if (d.scaleWarp == null) return
+    Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        for (pr in com.obdmeter.ui.gauges.ScaleWarp.Preset.entries) {
+            OutlinedButton(onClick = { update { it.copy(scaleWarp = preset(pr)) } }) { Text(pr.label, fontSize = 13.sp) }
+        }
+    }
+    Hint("プレビューのメーターの主目盛りを指でつまんで左右に動かしても変えられます。区間の幅は等間隔のときを 1 とした比率です。")
+    val sc = com.obdmeter.ui.gauges.TickScale.of(def.min, def.max, d.majorDivisions)
+    val weights = w.weights(def.min, def.max, bounds, d.scaleWarp)
+    for (i in 0 until bounds.size - 1) {
+        SliderLine("${sc.label(bounds[i])}〜${sc.label(bounds[i + 1])}${sc.unitSuffix} の幅", weights[i], 0.2f..4f, "%.2f") { v ->
+            update {
+                val cur = w.weights(def.min, def.max, bounds, it.scaleWarp).toMutableList()
+                cur[i] = snap(v * 100f, 5f) / 100f
+                it.copy(scaleWarp = w.fromWeights(def.min, def.max, bounds, cur) ?: emptyList())
+            }
+        }
+    }
+}
+
 @Composable
 private fun ScaleTab(g: GaugeConfig, def: com.obdmeter.core.PidDef?, update: ((GaugeDesign) -> GaugeDesign) -> Unit) {
     val d = g.design
@@ -572,6 +610,7 @@ private fun ScaleTab(g: GaugeConfig, def: com.obdmeter.core.PidDef?, update: ((G
     SliderLine("小目盛り (主目盛りの間)", d.minorDivisions.toFloat(), 0f..9f, "%.0f") { v ->
         update { it.copy(minorDivisions = v.roundToInt()) }
     }
+    if (g.style == GaugeStyle.ANALOG && !d.clockMode && def != null) ScaleWarpSection(d, def, update)
     SwitchLine(
         "目盛りの外側に線を引く",
         "最小から最大まで、目盛りの外端に沿って線を引きます (色は目盛りと同じ)",
@@ -2261,5 +2300,55 @@ private fun ClockSection(g: GaugeConfig, update: ((GaugeDesign) -> GaugeDesign) 
     HandEditor("秒針", d.clockSecond) { x, h -> x.copy(clockSecond = h) }
     if (d.clockSecond.show) {
         SwitchLine("秒針をなめらかに動かす", "OFF なら 1 秒ごとに進みます", d.clockSecondSmooth) { v -> update { it.copy(clockSecondSmooth = v) } }
+    }
+}
+
+
+/** プレビューのアナログメーターで、主目盛りを指でつまんで動かす (目盛りの可変間隔) */
+@Composable
+private fun scaleWarpDrag(draft: GaugeConfig, def: com.obdmeter.core.PidDef, update: ((GaugeDesign) -> GaugeDesign) -> Unit): Modifier {
+    val cur by rememberUpdatedState(draft)
+    val w = com.obdmeter.ui.gauges.ScaleWarp
+    return Modifier.pointerInput(def.min, def.max) {
+        var idx = -1
+        // 触った点 → 目盛り上の位置 (0〜1)。目盛りの外の隙間は近い方の端
+        fun posAt(o: Offset): Float {
+            val look = cur.look(def)
+            val pad = (if (look.showCard) 8.dp else 2.dp).toPx()
+            val dd = kotlin.math.min(size.width - pad * 2, size.height - pad * 2)
+            val pcx = size.width / 2f + dd * look.pivotX
+            val pcy = size.height / 2f + dd * look.pivotY
+            val q = look.scaleRoundness.takeIf { it > 0.01f } ?: 1f
+            val ang = com.obdmeter.util.toDegrees(kotlin.math.atan2(((o.y - pcy) / q).toDouble(), (o.x - pcx).toDouble())).toFloat()
+            val asw = kotlin.math.abs(look.sweep)
+            val raw = if (look.sweep >= 0f) ang - look.startAngle else look.startAngle - ang
+            val rel = ((raw % 360f) + 360f) % 360f
+            return if (rel <= asw) rel / asw else if (rel - asw < 360f - rel) 1f else 0f
+        }
+        fun positions(d: GaugeDesign, bounds: List<Double>): MutableList<Float> {
+            val pr = w.pairs(def.min, def.max, d.scaleWarp)
+            return bounds.map { w.warp(pr, ((it - def.min) / (def.max - def.min)).toFloat()) }.toMutableList()
+        }
+        detectDragGestures(
+            onDragStart = { o ->
+                val bounds = w.bounds(def.min, def.max, cur.design.majorDivisions)
+                val pos = positions(cur.design, bounds)
+                val p = posAt(o)
+                idx = (1 until bounds.size - 1).minByOrNull { kotlin.math.abs(pos[it] - p) }?.takeIf { kotlin.math.abs(pos[it] - p) < 0.12f } ?: -1
+            },
+            onDragEnd = { idx = -1 },
+            onDragCancel = { idx = -1 },
+        ) { change, _ ->
+            if (idx < 0) return@detectDragGestures
+            change.consume()
+            val k = idx
+            update { d ->
+                val bounds = w.bounds(def.min, def.max, d.majorDivisions)
+                if (k >= bounds.size - 1) return@update d
+                val pos = positions(d, bounds)
+                pos[k] = posAt(change.position).coerceIn(pos[k - 1] + 0.01f, pos[k + 1] - 0.01f)
+                d.copy(scaleWarp = w.fromPositions(bounds, pos))
+            }
+        }
     }
 }

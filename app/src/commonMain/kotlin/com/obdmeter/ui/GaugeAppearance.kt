@@ -72,6 +72,7 @@ fun GaugeDesign.toLook(def: PidDef, style: GaugeStyle): GaugeLook {
         midTick = midTick,
         midTickLength = midTickLength.coerceIn(0.3f, 1f),
         scaleOutline = scaleOutline,
+        scaleWarp = if (clock || style != GaugeStyle.ANALOG) null else com.obdmeter.ui.gauges.ScaleWarp.pairs(def.min, def.max, scaleWarp),
         majorTickLength = majorTickLength.coerceIn(0.2f, 4f),
         minorTickLength = minorTickLength.coerceIn(0.2f, 4f),
         labelGap = labelGap.coerceIn(-0.1f, 0.3f),

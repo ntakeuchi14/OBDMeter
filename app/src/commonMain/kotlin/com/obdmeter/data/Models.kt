@@ -180,6 +180,10 @@ enum class ColorPart(val label: String) {
 @Serializable
 data class ValueText(val condition: String = "", val text: String = "")
 
+/** 目盛りの可変間隔の点: 値 [value] を目盛りの始めから [pos] (0〜1) の位置に置く (点と点の間は直線でつなぐ) */
+@Serializable
+data class ScalePoint(val value: Double, val pos: Float)
+
 /** アナログ時計の針 1 本 ([length] は目盛りまでの長さに対する比率、[width] は針の太さの倍率。[color] = null は針の色) */
 @Serializable
 data class ClockHand(val show: Boolean = true, val color: Long? = null, val length: Float = 1f, val width: Float = 1f)
@@ -220,6 +224,8 @@ data class GaugeDesign(
     val midTickLength: Float = 0.7f,
     /** アナログ: 目盛りの外側に、最小から最大まで線を引く (色は目盛りと同じ) */
     val scaleOutline: Boolean = false,
+    /** 目盛りの可変間隔 (アナログ)。null = 等間隔 */
+    val scaleWarp: List<ScalePoint>? = null,
     /** アナログ: 主目盛り・小目盛りの長さ (標準 = 1.0) */
     val majorTickLength: Float = 1f,
     val minorTickLength: Float = 1f,

@@ -72,3 +72,96 @@ internal data class TickScale(val first: Double, val step: Double, val divisor: 
 
 /** 消えている 7 セグ表示の文字列 (範囲の最大の桁数で、数字を 8 にしたもの。マイナス記号の分は足さない) */
 internal fun ghostText(def: PidDef): String = def.digitTemplate().replace('0', '8')
+
+/**
+ * 目盛りの可変間隔。[pairs] は (値の割合 u, 目盛り上の位置 p) を平たく並べたもの (両端 (0,0)・(1,1) を含み、u・p とも増える順)。
+ * 点と点の間は直線でつなぐ
+ */
+internal object ScaleWarp {
+    /** 保存した点 (値, 位置) を [min]〜[max] の割合にして並べる。使える点が無ければ null (等間隔) */
+    fun pairs(min: Double, max: Double, points: List<com.obdmeter.data.ScalePoint>?): List<Float>? {
+        if (points.isNullOrEmpty() || max <= min) return null
+        val out = mutableListOf(0f, 0f)
+        for (pt in points.sortedBy { it.value }) {
+            val u = ((pt.value - min) / (max - min)).toFloat()
+            val p = pt.pos
+            if (u <= out[out.size - 2] + 1e-4f || u >= 1f - 1e-4f) continue
+            if (p <= out[out.size - 1] + 1e-4f || p >= 1f - 1e-4f) continue
+            out += u; out += p
+        }
+        if (out.size == 2) return null
+        out += 1f; out += 1f
+        // 全部が等間隔の線の上なら null
+        if ((0 until out.size / 2).all { abs(out[it * 2] - out[it * 2 + 1]) < 1e-4f }) return null
+        return out
+    }
+
+    /** 値の割合 → 目盛り上の位置 */
+    fun warp(pairs: List<Float>?, u: Float): Float = map(pairs, u, 0, 1)
+
+    /** 目盛り上の位置 → 値の割合 */
+    fun unwarp(pairs: List<Float>?, p: Float): Float = map(pairs, p, 1, 0)
+
+    private fun map(pairs: List<Float>?, x: Float, from: Int, to: Int): Float {
+        if (pairs == null) return x
+        val c = x.coerceIn(0f, 1f)
+        val n = pairs.size / 2
+        for (i in 0 until n - 1) {
+            val x0 = pairs[i * 2 + from]; val x1 = pairs[i * 2 + 2 + from]
+            if (c <= x1 || i == n - 2) {
+                val y0 = pairs[i * 2 + to]; val y1 = pairs[i * 2 + 2 + to]
+                return if (x1 - x0 < 1e-9f) y0 else y0 + (y1 - y0) * (c - x0) / (x1 - x0)
+            }
+        }
+        return c
+    }
+
+    /** アナログメーターの主目盛りの値 (最大値が切れ目に来ないときは最大値も足す) */
+    fun majors(min: Double, max: Double, divisions: Int?): List<Double> {
+        val scale = TickScale.of(min, max, divisions)
+        val regular = scale.values(max)
+        val endExtra = regular.isNotEmpty() && max - regular.last() > scale.step * 0.01
+        return if (endExtra) regular + max else regular
+    }
+
+    /** 区間の境目 (最小・主目盛り・最大) の値 */
+    fun bounds(min: Double, max: Double, divisions: Int?): List<Double> =
+        (listOf(min) + majors(min, max, divisions) + max).distinct().filter { it in min..max }.sorted()
+            .fold(mutableListOf<Double>()) { acc, v -> if (acc.isEmpty() || v - acc.last() > (max - min) * 1e-6) acc += v; acc }
+
+    /** 区間ごとの幅の比率 (等間隔 = 1) */
+    fun weights(min: Double, max: Double, bounds: List<Double>, points: List<com.obdmeter.data.ScalePoint>?): List<Float> {
+        val pr = pairs(min, max, points)
+        return (0 until bounds.size - 1).map { i ->
+            val u0 = ((bounds[i] - min) / (max - min)).toFloat(); val u1 = ((bounds[i + 1] - min) / (max - min)).toFloat()
+            val du = u1 - u0
+            if (du <= 0f) 1f else (warp(pr, u1) - warp(pr, u0)) / du
+        }
+    }
+
+    /** 区間ごとの幅の比率から点を作る (境目ごとに 1 点。全部 1 なら null = 等間隔) */
+    fun fromWeights(min: Double, max: Double, bounds: List<Double>, weights: List<Float>): List<com.obdmeter.data.ScalePoint>? {
+        val du = (0 until bounds.size - 1).map { ((bounds[it + 1] - bounds[it]) / (max - min)).toFloat() }
+        val w = weights.map { it.coerceIn(0.05f, 20f) }
+        val total = du.indices.sumOf { (du[it] * w[it]).toDouble() }.toFloat()
+        if (total <= 0f || w.all { abs(it - 1f) < 1e-3f }) return null
+        var acc = 0f
+        val out = mutableListOf<com.obdmeter.data.ScalePoint>()
+        for (i in 0 until bounds.size - 2) {
+            acc += du[i] * w[i] / total
+            out += com.obdmeter.data.ScalePoint(bounds[i + 1], acc)
+        }
+        return out
+    }
+
+    /** 境目の位置 (0〜1) の並びから点を作る (最初と最後は 0・1) */
+    fun fromPositions(bounds: List<Double>, pos: List<Float>): List<com.obdmeter.data.ScalePoint> =
+        (1 until bounds.size - 1).map { com.obdmeter.data.ScalePoint(bounds[it], pos[it]) }
+
+    /** よく使う形 (区間の中央の位置 x (0〜1) → 幅の比率) */
+    enum class Preset(val label: String, val weight: (Float) -> Float) {
+        MIDDLE("中ほどを広く", { x -> 0.6f + 1.6f * kotlin.math.exp(-((x - 0.4f) / 0.22f).let { it * it }) }),
+        LOW("低い側を広く", { x -> 2f - 1.5f * x }),
+        HIGH_NARROW("高い側を狭く", { x -> if (x < 0.65f) 1.3f else 0.55f }),
+    }
+}

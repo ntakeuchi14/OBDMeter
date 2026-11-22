@@ -108,6 +108,8 @@ data class GaugeLook(
     val midTickLength: Float = 0.7f,
     /** 目盛りの外側に最小から最大まで線を引く */
     val scaleOutline: Boolean = false,
+    /** 目盛りの可変間隔 ([ScaleWarp.pairs])。null = 等間隔 */
+    val scaleWarp: List<Float>? = null,
     /** 主目盛り・小目盛りの長さ (標準 = 1.0) */
     val majorTickLength: Float = 1f,
     val minorTickLength: Float = 1f,
@@ -569,10 +571,13 @@ fun AnalogGauge(
     // くぼみ・ガラスの反射は重いので、一度画像に描いておき、毎回はその画像を貼るだけにする
     val fx = remember { GaugeFxCache() }
     val tm = rememberTextMeasurer()
-    val f = if (layer == GaugeLayer.NEEDLE && needleState != null) needleState.floatValue else animated(def, value, look.smoothing)
+    // 目盛りの可変間隔: 値の割合 → 目盛り上の位置 (等間隔なら そのまま)
+    val warp = look.scaleWarp
+    fun wf(v: Double): Float = ScaleWarp.warp(warp, wf(v))
+    val f = if (layer == GaugeLayer.NEEDLE && needleState != null) needleState.floatValue else ScaleWarp.warp(warp, animated(def, value, look.smoothing))
     if (layer == GaugeLayer.BODY && needleState != null) SideEffect { needleState.floatValue = f }
     // 最大値の印・針の位置 (戻している間は今の針の位置へ近づける)
-    val pf = peak?.let { val p = fraction(def, it); p + (f - p) * peakReturn.coerceIn(0f, 1f) }
+    val pf = peak?.let { val p = wf(it); p + (f - p) * peakReturn.coerceIn(0f, 1f) }
     val warn = isWarn(def, value)
     Canvas(modifier) {
         val d = min(size.width, size.height)
@@ -665,7 +670,7 @@ fun AnalogGauge(
         val arcBase = if (warn && !look.barZoneColors) GaugeColors.Warn else look.accent
         fun zoneCol(p: Float): Color {
             if (!look.barZoneColors) return arcBase
-            val v = def.min + (def.max - def.min) * p
+            val v = def.min + (def.max - def.min) * ScaleWarp.unwarp(warp, p)
             val z = look.redZone
             if (z != null && v >= z.start && v <= z.endInclusive) return look.redZoneColor
             val m = look.barMidFrom
@@ -698,8 +703,8 @@ fun AnalogGauge(
             } else if (hi > lo) {
                 val cuts = mutableListOf(lo, hi)
                 if (look.barZoneColors) {
-                    look.barMidFrom?.let { cuts += fraction(def, it) }
-                    look.redZone?.let { cuts += fraction(def, it.start); cuts += fraction(def, it.endInclusive) }
+                    look.barMidFrom?.let { cuts += wf(it) }
+                    look.redZone?.let { cuts += wf(it.start); cuts += wf(it.endInclusive) }
                 }
                 val pts = cuts.filter { it in lo..hi }.distinct().sorted()
                 for (j in 0 until pts.size - 1) {
@@ -720,8 +725,8 @@ fun AnalogGauge(
         val zoneInsideW = d * 0.025f
         // 色分けするときは、レッドゾーンは弧の色で表すので帯は描かない (弧が無いときは帯で描く)
         look.redZone?.takeIf { arcHidden || !look.barZoneColors }?.let { z ->
-            val s = fraction(def, z.start)
-            val e = fraction(def, z.endInclusive)
+            val s = wf(z.start)
+            val e = wf(z.endInclusive)
             if (e > s) {
                 if (arcHidden) {
                     // 目盛りの範囲内の外側寄せに帯で描く (目盛りは上から重ねて描く)
@@ -756,6 +761,21 @@ fun AnalogGauge(
         val majors = if (endExtra) regular + def.max else regular
         // 最大値のすぐ手前の主目盛りは、数字が重なるので数字を出さない (目盛りは描く)
         val hideLabelAt = if (endExtra && def.max - regular.last() < scale.step * 0.5) regular.lastIndex else -1
+        // 可変間隔で狭くした区間は数字が重なるので、近すぎる数字は間引く (最大値の数字は残す)
+        val labelHidden = BooleanArray(majors.size)
+        if (warp != null && majors.size > 1) {
+            val labelR0 = tickOuter - (if (look.showTicks) majorLen else d * 0.05f) - d * 0.06f * look.labelSize - d * look.labelGap
+            val minGap = d * 0.07f * look.labelSize * 1.6f
+            fun dist(i: Int, j: Int) = abs(wf(majors[i]) - wf(majors[j])) * abs(sweep) * (kotlin.math.PI.toFloat() / 180f) * max(labelR0, 1f)
+            var last = -1
+            for (i in majors.indices) {
+                if (i == hideLabelAt) continue
+                if (last >= 0 && dist(i, last) < minGap) {
+                    if (i == majors.lastIndex) labelHidden[last] = true else { labelHidden[i] = true; continue }
+                }
+                last = i
+            }
+        }
         fun DrawScope.tick(a: Offset, b: Offset, w: Float) {
             if (look.scaleGlow > 0f) {
                 drawLine(look.tickColor.copy(alpha = 0.16f * look.scaleGlow), a, b, strokeWidth = w + d * 0.03f * look.scaleGlow, cap = StrokeCap.Round)
@@ -779,12 +799,12 @@ fun AnalogGauge(
         for ((i, t) in majors.withIndex()) {
             // 時計の 12 は 0 と同じ場所なので、0 を「12」として描き、最後の 12 は描かない
             if (look.clock != null && i == majors.lastIndex && t >= def.max) continue
-            val a = com.obdmeter.util.toRadians((start + sweep * fraction(def, t)).toDouble())
+            val a = com.obdmeter.util.toRadians((start + sweep * wf(t)).toDouble())
             if (look.showTicks) tick(
                 Offset(pc.x + (tickOuter - majorLen) * cos(a).toFloat(), pc.y + q * (tickOuter - majorLen) * sin(a).toFloat()),
                 Offset(pc.x + tickOuter * cos(a).toFloat(), pc.y + q * tickOuter * sin(a).toFloat()),
                 d * 0.012f)
-            if (look.showLabels && i != hideLabelAt) {
+            if (look.showLabels && i != hideLabelAt && !labelHidden[i]) {
                 // 数字は主目盛りの内側 (主目盛りを描かないときも、標準の長さの位置を基準にする)
                 val labelR = tickOuter - (if (look.showTicks) majorLen else d * 0.05f) - d * 0.06f * look.labelSize - d * look.labelGap
                 drawCenteredText(tm, if (look.clock != null && t == 0.0) "12" else scale.label(t),
@@ -802,7 +822,7 @@ fun AnalogGauge(
                 for (k in 1..look.minorDivisions) {
                     val tv = t + seg * k / (look.minorDivisions + 1)
                     if (tv >= next - seg * 1e-6) break
-                    val b = com.obdmeter.util.toRadians((start + sweep * fraction(def, tv)).toDouble())
+                    val b = com.obdmeter.util.toRadians((start + sweep * wf(tv)).toDouble())
                     val len = if (k == mid) max(minorLen, majorLen * look.midTickLength) else minorLen
                     tick(
                         Offset(pc.x + (tickOuter - len) * cos(b).toFloat(), pc.y + q * (tickOuter - len) * sin(b).toFloat()),
@@ -815,7 +835,7 @@ fun AnalogGauge(
         if (look.scaleGlow > 0f) {
             fx.scale.draw(this, listOf(
                 look.tickColor, look.labelColor, look.majorDivisions, look.minorDivisions, look.midTick, look.midTickLength, look.scaleOutline,
-                look.majorTickLength, look.minorTickLength, look.labelGap,
+                look.majorTickLength, look.minorTickLength, look.labelGap, warp,
                 look.labelSize, look.showTicks, look.showLabels, look.scaleGlow, start, sweep, def.min, def.max, pc, q, tickOuter,
                 fonts.label, d,
             ), drawScale)
