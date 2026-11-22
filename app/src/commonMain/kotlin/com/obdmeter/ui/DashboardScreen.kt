@@ -1342,6 +1342,8 @@ private fun MisfireLogDialog(g: GaugeConfig, onClose: () -> Unit) {
     val all by com.obdmeter.data.MisfireLog.events.collectAsStateWithLifecycle()
     val src = com.obdmeter.data.MisfireLog.sourceOf(g.pidKey)
     val list = all[src].orEmpty()
+    val counts by com.obdmeter.data.MisfireLog.counts.collectAsStateWithLifecycle()
+    val total = counts[src] ?: list.size
     val n = g.design.misfireLogCount.coerceIn(1, com.obdmeter.data.MisfireLog.MAX_SHOWN)
     androidx.compose.material3.AlertDialog(
         onDismissRequest = onClose,
@@ -1354,7 +1356,7 @@ private fun MisfireLogDialog(g: GaugeConfig, onClose: () -> Unit) {
                 }
                 Spacer(Modifier.size(8.dp))
                 Text(
-                    if (list.size > n) "新しい順に $n 件 (この接続で全 ${list.size} 件)" else "この接続で ${list.size} 件 (新しい順)",
+                    if (total > n) "新しい順に $n 件 (この接続で全 $total 件)" else "この接続で $total 件 (新しい順)",
                     fontSize = 12.sp, color = GaugeColors.SubText,
                 )
             }

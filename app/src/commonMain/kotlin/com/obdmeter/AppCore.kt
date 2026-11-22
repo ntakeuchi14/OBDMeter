@@ -73,7 +73,7 @@ class AppCore(val platform: AppPlatform) {
         .stateIn(scope, SharingStarted.Eagerly, PidCatalog())
 
     /** メーターに出す値 (車から読んだ値 + 端末のセンサーの値) */
-    val values: StateFlow<Map<String, Double>> = combine(session.values, deviceSensors.values, settings, com.obdmeter.data.MisfireLog.events) { car0, dev, st, mis ->
+    val values: StateFlow<Map<String, Double>> = combine(session.values, deviceSensors.values, settings, com.obdmeter.data.MisfireLog.counts) { car0, dev, st, mis ->
         // デモ表示 (シミュレーター) では、値をメーターで設定した目盛りの範囲 (無ければ項目の範囲) に収める
         val car = if (st.connectionType == com.obdmeter.data.ConnectionType.SIMULATOR) demoClamp(car0) else car0
         // 失火履歴 (今の接続で失火カウンタが増えた件数)

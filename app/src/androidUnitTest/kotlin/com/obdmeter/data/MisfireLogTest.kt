@@ -35,6 +35,7 @@ class MisfireLogTest {
         t.observe(mapOf("MISFIRE_LIFE_6" to 0.0), 0)
         for (i in 1..80) t.observe(mapOf("MISFIRE_LIFE_6" to i.toDouble()), i.toLong())
         assertEquals(MisfireLog.MAX_EVENTS, t.events.size)
+        assertEquals("件数は残す件数を超えても数える", 80, t.total)
         assertEquals(6, t.events.first().cyl)
         assertEquals(80L, t.events.first().time)
     }
@@ -50,7 +51,7 @@ class MisfireLogTest {
 
     @Test
     fun itemValueIsEventCountAndZeroShowsDashes() {
-        val v = MisfireLog.values(mapOf(MisfireLog.Source.OBD to listOf(MisfireLog.Event(1, 0, 1), MisfireLog.Event(2, 0, 1))))
+        val v = MisfireLog.values(mapOf(MisfireLog.Source.OBD to 2))
         assertEquals(2.0, v[com.obdmeter.core.DeviceItems.MISFIRE_LOG]!!, 0.0)
         assertEquals(0.0, v[com.obdmeter.core.DeviceItems.MISFIRE_LOG_LIFE]!!, 0.0)
         val def = com.obdmeter.core.Pids.get(com.obdmeter.core.DeviceItems.MISFIRE_LOG)!!

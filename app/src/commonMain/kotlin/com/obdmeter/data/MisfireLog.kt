@@ -31,10 +31,10 @@ object MisfireLog {
 
     fun keysFor(pidKey: String): List<String> = sourceOf(pidKey).keys
 
-    /** 項目の値 (今の接続で増えた件数) */
-    fun values(events: Map<Source, List<Event>>): Map<String, Double> = mapOf(
-        DeviceItems.MISFIRE_LOG to (events[Source.OBD]?.size ?: 0).toDouble(),
-        DeviceItems.MISFIRE_LOG_LIFE to (events[Source.BMW]?.size ?: 0).toDouble(),
+    /** 項目の値 (今の接続で増えた件数。残しておく件数 [MAX_EVENTS] を超えても数える) */
+    fun values(counts: Map<Source, Int>): Map<String, Double> = mapOf(
+        DeviceItems.MISFIRE_LOG to (counts[Source.OBD] ?: 0).toDouble(),
+        DeviceItems.MISFIRE_LOG_LIFE to (counts[Source.BMW] ?: 0).toDouble(),
     )
 
     /** 1 つのカウンタの組 (6 気筒) の変化を見る */
@@ -42,8 +42,11 @@ object MisfireLog {
         private val base = HashMap<Int, Double>()
         private val list = ArrayList<Event>()
         val events: List<Event> get() = list
+        /** 今の接続で増えた件数 (残しておく件数を超えても数える) */
+        var total = 0
+            private set
 
-        fun reset() { base.clear(); list.clear() }
+        fun reset() { base.clear(); list.clear(); total = 0 }
 
         /** 読んだ値 (項目キー → 値) を見て、増えた気筒を記録する。記録したら true */
         fun observe(values: Map<String, Double>, time: Long): Boolean {
@@ -58,6 +61,7 @@ object MisfireLog {
                 if (prev != null && v > prev) {
                     val d = kotlin.math.ceil(v - prev - 1e-9).toInt().coerceAtLeast(1)
                     list.add(0, Event(cyl, time, d))
+                    total++
                     changed = true
                 }
             }
@@ -70,17 +74,25 @@ object MisfireLog {
     /** 今の接続での変化 (新しい順) */
     val events: StateFlow<Map<Source, List<Event>>> = _events
 
+    private val _counts = MutableStateFlow<Map<Source, Int>>(emptyMap())
+    /** 今の接続で増えた件数 */
+    val counts: StateFlow<Map<Source, Int>> = _counts
+
     private val trackers = Source.entries.associateWith { Tracker(it) }
 
     /** 接続し直したとき: 履歴も基準も捨てる */
     fun resetAll() {
         trackers.values.forEach { it.reset() }
         _events.value = emptyMap()
+        _counts.value = emptyMap()
     }
 
     fun observe(source: Source, values: Map<String, Double>, time: Long) {
         val t = trackers.getValue(source)
-        if (t.observe(values, time)) _events.value = _events.value + (source to t.events.toList())
+        if (t.observe(values, time)) {
+            _events.value = _events.value + (source to t.events.toList())
+            _counts.value = _counts.value + (source to t.total)
+        }
     }
 
     /** 表示用の 1 行 ("#3 12:34:56"、2 回以上増えていれば " +2") */
