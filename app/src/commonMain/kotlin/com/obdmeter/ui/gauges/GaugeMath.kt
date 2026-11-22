@@ -126,7 +126,8 @@ internal object ScaleWarp {
 
     /** 区間の境目 (最小・主目盛り・最大) の値 */
     fun bounds(min: Double, max: Double, divisions: Int?): List<Double> =
-        (listOf(min) + majors(min, max, divisions) + max).distinct().filter { it in min..max }.sorted()
+        // -0.0 は 0.0 にそろえる (0 の主目盛りが -0.0 になることがある)
+        (listOf(min) + majors(min, max, divisions) + max).map { it + 0.0 }.distinct().filter { it in min..max }.sorted()
             .fold(mutableListOf<Double>()) { acc, v -> if (acc.isEmpty() || v - acc.last() > (max - min) * 1e-6) acc += v; acc }
 
     /** 区間ごとの幅の比率 (等間隔 = 1) */
