@@ -573,7 +573,7 @@ fun AnalogGauge(
     val tm = rememberTextMeasurer()
     // 目盛りの可変間隔: 値の割合 → 目盛り上の位置 (等間隔なら そのまま)
     val warp = look.scaleWarp
-    fun wf(v: Double): Float = ScaleWarp.warp(warp, wf(v))
+    fun wf(v: Double): Float = ScaleWarp.warp(warp, fraction(def, v))
     val f = if (layer == GaugeLayer.NEEDLE && needleState != null) needleState.floatValue else ScaleWarp.warp(warp, animated(def, value, look.smoothing))
     if (layer == GaugeLayer.BODY && needleState != null) SideEffect { needleState.floatValue = f }
     // 最大値の印・針の位置 (戻している間は今の針の位置へ近づける)
