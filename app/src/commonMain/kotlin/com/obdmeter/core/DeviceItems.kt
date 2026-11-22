@@ -33,6 +33,9 @@ object DeviceItems {
     const val BUTTON = "APP_BUTTON"
     /** 画像 (値は無い。画像を置くだけ) */
     const val IMAGE = "APP_IMAGE"
+    /** 失火履歴 (失火カウンタ #1〜#6 が増えた気筒と時刻。値は無い) */
+    const val MISFIRE_LOG = "APP_MISFIRE_LOG"
+    const val MISFIRE_LOG_BMW = "APP_MISFIRE_LOG_BMW"
 
     val ALL: List<PidDef> = listOf(
         dev(PITCH, "傾き 前後", "前後の傾き", "°", -90.0, 90.0),
@@ -59,6 +62,9 @@ object DeviceItems {
         // 値は無い。メーターの追加でこれを選ぶと「ボタン」を置く
         PidDef(BUTTON, "ボタン (最大値のリセットなど)", "リセット", "", 0.0, 1.0, kind = PidDef.Kind.DEVICE),
         PidDef(IMAGE, "画像 (画像を置くだけ)", "画像", "", 0.0, 1.0, kind = PidDef.Kind.DEVICE),
+        // 値は無い。メーターの追加でこれを選ぶと「失火履歴」を置く
+        PidDef(MISFIRE_LOG, "失火履歴 (失火カウンタ #1〜#6 が増えた気筒と時刻)", "失火履歴", "", 0.0, 1.0, kind = PidDef.Kind.DEVICE),
+        PidDef(MISFIRE_LOG_BMW, "失火履歴 BMW (生涯失火数 #1〜#6 が増えた気筒と時刻)", "失火履歴", "", 0.0, 1.0, kind = PidDef.Kind.DEVICE),
     )
 
     fun isDevice(d: PidDef): Boolean = d.kind == PidDef.Kind.DEVICE

@@ -213,6 +213,7 @@ fun GaugeSettingsDialog(
                                 EditorTab.BUTTON -> ButtonTab(draft, ::update, { draft = it }, onPickFont)
                                 EditorTab.TABLE -> TableTab(draft, ::update, onPickFont)
                                 EditorTab.VIEW -> if (draft.style == GaugeStyle.CHART) ChartViewTab(draft, ::update, onPickFont)
+                                    else if (draft.style == GaugeStyle.MISFIRE_LOG) MisfireViewTab(draft, ::update, onPickFont)
                                     else MonitorViewTab(draft, ::update, onPickFont)
                                 EditorTab.RECORD -> ChartRecordTab(draft, catalog, ::update)
                                 EditorTab.LOOK -> LookTab(draft, ::update, onPickFont)
@@ -393,7 +394,14 @@ private fun ItemTab(
         else -> {}
     }
 
-    if (g.style != GaugeStyle.MONITOR) {
+    if (g.style == GaugeStyle.MISFIRE_LOG) {
+        Hint(
+            "失火カウンタ #1〜#6 (項目「失火履歴」は OBD の今回の運転の失火カウンタ、「失火履歴 BMW」は DME の生涯失火数) を見て、" +
+                "増えた気筒と時刻 (日本時間) を新しい順に表示します。変化は接続ごとで、接続した後の最初の値を基準にし、" +
+                "切断して再接続すると履歴は消えます (変化が無ければ --)。このページを表示していないときも見ています。"
+        )
+    }
+    if (g.style != GaugeStyle.MONITOR && g.style != GaugeStyle.MISFIRE_LOG) {
         Head("代替項目 (イグニッション OFF 時など)")
         Hint(
             "上の項目が読めないときに、代わりに表示する項目です。BMW ではイグニッション OFF の間、" +
@@ -1255,6 +1263,27 @@ private fun ChartViewTab(g: GaugeConfig, update: ((GaugeDesign) -> GaugeDesign) 
     FontSection(d, onPickFont)
     GlowSection(g, update)
     CardSwitch(d, update)
+}
+
+@Composable
+private fun MisfireViewTab(g: GaugeConfig, update: ((GaugeDesign) -> GaugeDesign) -> Unit, onPickFont: (String) -> Unit) {
+    val d = g.design
+    Head("表示する件数")
+    SliderLine("件数 (新しい順)", d.misfireLogCount.toFloat(), 1f..com.obdmeter.data.MisfireLog.MAX_SHOWN.toFloat(), "%.0f 件") { v ->
+        update { it.copy(misfireLogCount = kotlin.math.round(v).toInt().coerceIn(1, com.obdmeter.data.MisfireLog.MAX_SHOWN)) }
+    }
+    Hint("1 行に「#気筒 時:分:秒」を出します (一度に 2 回以上増えたときは「+回数」も)。行の高さはメーターの高さを件数で割ったものです。")
+    Head("文字")
+    ColorLine("気筒・時刻の色", d.valueColor, GaugeColors.Text) { c -> update { it.copy(valueColor = c) } }
+    SliderLine("気筒・時刻の大きさ", d.valueSize * 100, 30f..300f, "%.0f%%") { v -> update { it.copy(valueSize = snap(v, 5f) / 100f) } }
+    SwitchLine("名前を表示", null, d.showName) { v -> update { it.copy(showName = v) } }
+    if (d.showName) {
+        ColorLine("名前の色", d.nameColor, GaugeColors.SubText) { c -> update { it.copy(nameColor = c) } }
+        SliderLine("名前の大きさ", d.labelSize * 100, 40f..250f, "%.0f%%") { v -> update { it.copy(labelSize = snap(v, 5f) / 100f) } }
+    }
+    ColorLine("背景色 (既定 = なし)", d.faceColor, Color.Transparent) { c -> update { it.copy(faceColor = c) } }
+    FontSection(d, onPickFont)
+    GlowSection(g, update)
 }
 
 @Composable

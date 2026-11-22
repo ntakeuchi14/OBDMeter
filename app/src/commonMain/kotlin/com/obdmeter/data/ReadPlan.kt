@@ -14,6 +14,7 @@ object ReadPlan {
 
     fun gaugeKeys(g: GaugeConfig): List<String> =
         if (g.style == GaugeStyle.BUTTON || g.style == GaugeStyle.IMAGE) emptyList() // ボタン・画像は何も読まない
+        else if (g.style == GaugeStyle.MISFIRE_LOG) MisfireLog.keysFor(g.pidKey)
         // 「エンジン停止中は最大値を記録しない」は回転数も読む
         else if (g.style in setOf(GaugeStyle.ANALOG, GaugeStyle.BAR, GaugeStyle.DIGITAL) && g.design.showPeak && g.design.peakEngineRunningOnly)
             listOf(g.pidKey, engineRpmKey(g.pidKey))
@@ -89,6 +90,10 @@ object ReadPlan {
         }
         return out
     }
+
+    /** 失火履歴のメーターが見ているカウンタの組 (どのページにあっても、表示していなくても見る) */
+    fun misfireSources(pages: List<Dashboard>): Set<MisfireLog.Source> =
+        pages.flatMap { it.gauges }.filter { it.style == GaugeStyle.MISFIRE_LOG }.mapTo(HashSet()) { MisfireLog.sourceOf(it.pidKey) }
 
     /** 変動監視で、変動したときに前後の値を残す項目 (メーター → 項目キー)。設定していないメーターは含めない */
     fun captureKeys(pages: List<Dashboard>): Map<String, List<String>> =

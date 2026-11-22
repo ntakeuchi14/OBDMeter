@@ -163,6 +163,7 @@ fun GaugeDesign.toLook(def: PidDef, style: GaugeStyle): GaugeLook {
         monitorCapture = monitorCaptureKeys.isNotEmpty(),
         legendBgAlpha = legendBgAlpha.coerceIn(0f, 1f),
         tableMaxRows = tableMaxRows.coerceIn(1, 30),
+        misfireLogCount = misfireLogCount.coerceIn(1, com.obdmeter.data.MisfireLog.MAX_SHOWN),
         tableValueBg = tableValueBg?.let { Color(it) },
         tableValueImage = tableValueImage,
         tableNameRatio = tableNameRatio.coerceIn(0f, 0.7f),

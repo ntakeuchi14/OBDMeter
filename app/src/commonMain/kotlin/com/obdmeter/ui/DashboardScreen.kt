@@ -624,6 +624,7 @@ fun statusColor(state: ConnectionState): Color = when (state) {
 fun defaultStyleFor(def: PidDef): GaugeStyle = when (def.key) {
     com.obdmeter.core.DeviceItems.BUTTON -> GaugeStyle.BUTTON
     com.obdmeter.core.DeviceItems.IMAGE -> GaugeStyle.IMAGE
+    com.obdmeter.core.DeviceItems.MISFIRE_LOG, com.obdmeter.core.DeviceItems.MISFIRE_LOG_BMW -> GaugeStyle.MISFIRE_LOG
     "RPM", "SPEED", "LOAD", "THROTTLE", "PEDAL", "BOOST", "TIMING" -> GaugeStyle.ANALOG
     "STFT1", "STFT2", "LTFT1", "LTFT2", "FUEL_LEVEL", "COOLANT", "OIL_TEMP" -> GaugeStyle.BAR
     else -> GaugeStyle.DIGITAL
@@ -1274,6 +1275,7 @@ internal fun solidAt(g: GaugeConfig, x: Float, y: Float, w: Float, h: Float): Bo
         GaugeStyle.CHART, GaugeStyle.MONITOR -> true
         // 画像は飾りなので、通常表示中のタップは下のメーターに届ける
         GaugeStyle.IMAGE -> false
+        GaugeStyle.MISFIRE_LOG -> (d.faceColor != null && inFace()) || d.backgroundImage != null
     }
 }
 

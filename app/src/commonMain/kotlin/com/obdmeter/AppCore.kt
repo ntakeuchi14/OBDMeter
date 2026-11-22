@@ -148,6 +148,41 @@ class AppCore(val platform: AppPlatform) {
                 was = now
             }
         }
+        // 失火履歴: 失火カウンタ #1〜#6 を見て、増えた気筒と時刻を残す (接続ごと。表示していないページのメーターでも見る)
+        scope.launch {
+            var was = false
+            val lastSample = HashMap<com.obdmeter.data.MisfireLog.Source, Long>()
+            while (true) {
+                delay(500)
+                val connected = session.state.value is ConnectionState.Connected
+                // 接続し直したら、前の接続の履歴と基準は捨てる (最初の値をまた基準にする)
+                if (connected && !was) { com.obdmeter.data.MisfireLog.resetAll(); lastSample.clear() }
+                was = connected
+                if (!connected) continue
+                val sources = ReadPlan.misfireSources(dashboards.value)
+                if (sources.isEmpty()) continue
+                for (src in sources) {
+                    // 表示中のメーターで読んでいる項目はその値を使い、それ以外は 2 秒に 1 回読む
+                    val live = values.value
+                    val active = session.activePids.mapTo(HashSet()) { it.key }
+                    val read = HashMap<String, Double>()
+                    for (k in src.keys) if (k in active) live[k]?.let { read[k] = it }
+                    val need = src.keys.filter { it !in read }
+                    val now = com.obdmeter.util.nowMs()
+                    if (need.isNotEmpty()) {
+                        if (now - (lastSample[src] ?: 0L) < 2_000L) {
+                            if (read.isEmpty()) continue
+                        } else {
+                            lastSample[src] = now
+                            val defs = need.mapNotNull { catalog.value.get(it) }
+                            if (defs.isNotEmpty()) session.sample(defs)?.let { read.putAll(it) }
+                            if (session.state.value !is ConnectionState.Connected) continue
+                        }
+                    }
+                    com.obdmeter.data.MisfireLog.observe(src, read, com.obdmeter.util.nowMs())
+                }
+            }
+        }
     }
 
     init {
