@@ -430,6 +430,11 @@ private fun ItemTab(
             singleLine = true,
             modifier = Modifier.fillMaxWidth(),
         )
+        SwitchLine(
+            "表示名を表示",
+            if (com.obdmeter.core.DeviceItems.isMisfireLog(g.pidKey)) "OFF にするとランプの上の表示名と、タップで出す一覧のタイトルを消します" else null,
+            d.showName,
+        ) { v -> update { it.copy(showName = v) } }
     }
 
     if (EditorTabs.usesRange(g.style)) {
@@ -1507,7 +1512,6 @@ private fun LampSettings(g: GaugeConfig, update: ((GaugeDesign) -> GaugeDesign) 
                 "切断して再接続すると消えます。値はこの接続で増えた件数で、0 件は「--」。空欄の点灯条件では 1 件以上で点灯します。" +
                 "ダッシュボードでランプをタップすると、気筒と時刻を新しい順に下の件数だけ出します。このページを表示していないときも見ています。"
         )
-        SwitchLine("一覧のタイトルを表示", "タップで出す一覧の上の「失火履歴 (…)」", d.misfirePopupTitle) { v -> update { it.copy(misfirePopupTitle = v) } }
         SliderLine("タップで出す件数", d.misfireLogCount.toFloat(), 1f..com.obdmeter.data.MisfireLog.MAX_SHOWN.toFloat(), "%.0f 件") { v ->
             update { it.copy(misfireLogCount = kotlin.math.round(v).toInt().coerceIn(1, com.obdmeter.data.MisfireLog.MAX_SHOWN)) }
         }

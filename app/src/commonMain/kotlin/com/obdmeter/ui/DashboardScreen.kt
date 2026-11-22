@@ -1347,7 +1347,10 @@ private fun MisfireLogDialog(g: GaugeConfig, onClose: () -> Unit) {
     val n = g.design.misfireLogCount.coerceIn(1, com.obdmeter.data.MisfireLog.MAX_SHOWN)
     androidx.compose.material3.AlertDialog(
         onDismissRequest = onClose,
-        title = if (!g.design.misfirePopupTitle) null else { { Text(if (src == com.obdmeter.data.MisfireLog.Source.BMW) "失火履歴 (生涯失火数)" else "失火履歴 (今回の運転の失火カウンタ)") } },
+        // タイトルは表示名 (表示名を出さない設定なら無し)
+        title = if (!g.design.showName) null else {
+            { Text(g.design.label?.takeIf { it.isNotBlank() } ?: com.obdmeter.core.Pids.get(g.pidKey)?.shortName ?: "失火履歴") }
+        },
         text = {
             Column {
                 if (list.isEmpty()) Text("--", fontSize = 22.sp, fontWeight = FontWeight.Bold)
