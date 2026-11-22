@@ -112,7 +112,8 @@ internal fun LampGauge(
                 max(size.width, size.height) * look.imageScale, look.imageFilter())
         }
         val nameH = if (look.showName) size.height * 0.2f else 0f
-        val valueH = if (look.showValue) size.height * 0.2f else 0f
+        val inside = look.lampValueInside
+        val valueH = if (look.showValue && !inside) size.height * 0.2f else 0f
         val areaH = size.height - nameH - valueH
         // 外周リングを付けるときは、その分ランプを小さくして内側に収める
         val outer = min(size.width, areaH) * 0.4f
@@ -145,7 +146,13 @@ internal fun LampGauge(
                 TextStyle(color = look.nameColor, fontFamily = fonts.label, fontWeight = FontWeight.Medium,
                     fontSize = (unit * 0.11f * look.labelSize * look.tableNameSize).toSp()))
         }
-        if (look.showValue) {
+        if (look.showValue && inside) {
+            // 玉の中に数値 (単位は付けない)
+            val text = if (unsupported) "非対応" else look.formatValue(def, value)
+            drawCenteredText(tm, text, c,
+                TextStyle(color = look.valueColor, fontFamily = fonts.value, fontWeight = FontWeight.Bold,
+                    fontSize = (r * (if (text.length <= 2) 0.9f else 1.8f / text.length) * look.valueSize).toSp()))
+        } else if (look.showValue) {
             val text = if (unsupported) "非対応" else look.formatValue(def, value) + if (look.showUnit) " ${def.unitText}" else ""
             drawCenteredText(tm, text, Offset(size.width / 2, size.height - valueH / 2),
                 TextStyle(color = look.valueColor, fontFamily = fonts.value,

@@ -163,6 +163,8 @@ data class GaugeLook(
     val unitColor: Color = GaugeColors.SubText,
     /** ランプの点灯条件 (null = 警告値で点灯) */
     val lampCondition: Condition? = null,
+    /** ランプ: 数値を玉の中に出す */
+    val lampValueInside: Boolean = false,
     /** 数値の代わりに出す文字 (条件, 文字)。上から順に見る */
     val valueTexts: List<Pair<Condition, String>> = emptyList(),
     val lampOnColor: Color = GaugeColors.Warn,

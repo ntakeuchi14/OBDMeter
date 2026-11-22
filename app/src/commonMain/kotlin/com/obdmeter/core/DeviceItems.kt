@@ -63,9 +63,9 @@ object DeviceItems {
         PidDef(BUTTON, "ボタン (最大値のリセットなど)", "リセット", "", 0.0, 1.0, kind = PidDef.Kind.DEVICE),
         PidDef(IMAGE, "画像 (画像を置くだけ)", "画像", "", 0.0, 1.0, kind = PidDef.Kind.DEVICE),
         // 値 = 今の接続で失火カウンタが増えた回数 (件数)。0 なら "--"。ランプで置き、1 件でもあれば点灯、タップで気筒と時刻を出す
-        PidDef(MISFIRE_LOG, "失火履歴 (今回の運転の失火カウンタ #1〜#6 の増加)", "失火履歴", "件", 0.0, 10.0, warnAbove = 1.0,
+        PidDef(MISFIRE_LOG, "失火履歴 (今回の運転の失火カウンタ #1〜#6 の増加)", "失火履歴", "", 0.0, 10.0, warnAbove = 1.0,
             kind = PidDef.Kind.DEVICE, textFormat = ::formatCount, textTemplate = "00"),
-        PidDef(MISFIRE_LOG_LIFE, "失火履歴 (生涯失火数 #1〜#6 の増加、DME)", "失火履歴", "件", 0.0, 10.0, warnAbove = 1.0,
+        PidDef(MISFIRE_LOG_LIFE, "失火履歴 (生涯失火数 #1〜#6 の増加、DME)", "失火履歴", "", 0.0, 10.0, warnAbove = 1.0,
             kind = PidDef.Kind.DEVICE, textFormat = ::formatCount, textTemplate = "00"),
     )
 

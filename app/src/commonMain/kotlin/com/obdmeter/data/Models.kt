@@ -432,6 +432,10 @@ data class GaugeDesign(
     // --- 2 値ランプ ---
     /** 点灯条件 (値を x と書く。例: x >= 100)。空欄 = 警告値を超えたら点灯 */
     val lampCondition: String = "",
+    /** ランプ: 数値を玉の中に出す (null = 項目で決める。失火履歴は中) */
+    val lampValueInside: Boolean? = null,
+    /** 失火履歴: タップで出す一覧にタイトルを出す */
+    val misfirePopupTitle: Boolean = true,
     /** ボタン: 押したときの動作 */
     val buttonAction: ButtonAction = ButtonAction.RESET_PEAKS,
     /** 発光の ON / OFF ボタン: 発光 ON のときにページのメーターに使う前景色 (null = 各メーターの色のまま) */

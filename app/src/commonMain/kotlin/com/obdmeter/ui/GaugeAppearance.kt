@@ -143,6 +143,7 @@ fun GaugeDesign.toLook(def: PidDef, style: GaugeStyle): GaugeLook {
         unitOffsetX = unitOffsetX.coerceIn(-0.6f, 0.6f),
         unitOffsetY = unitOffsetY.coerceIn(-0.6f, 0.6f),
         unitColor = unitColor.color(labelColor.color(GaugeColors.SubText)),
+        lampValueInside = lampValueInside ?: com.obdmeter.core.DeviceItems.isMisfireLog(def.key),
         lampCondition = lampCondition.takeIf { it.isNotBlank() }?.let { runCatching { Condition.compile(it) }.getOrNull() },
         valueTexts = valueTexts.mapNotNull { v ->
             v.condition.takeIf { it.isNotBlank() }?.let { runCatching { Condition.compile(it) }.getOrNull() }?.let { it to v.text }

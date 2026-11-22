@@ -1028,6 +1028,10 @@ private fun ValueNameUnitSection(g: GaugeConfig, update: ((GaugeDesign) -> Gauge
     val positions = g.style != GaugeStyle.LAMP
     Head("数値")
     SwitchLine("数値を表示", null, d.showValue) { v -> update { it.copy(showValue = v) } }
+    if (g.style == GaugeStyle.LAMP) {
+        val inside = d.lampValueInside ?: com.obdmeter.core.DeviceItems.isMisfireLog(g.pidKey)
+        SwitchLine("数値をランプの中に表示", "玉の中に数値だけを出します (単位は出しません)", inside) { v -> update { it.copy(lampValueInside = v) } }
+    }
     if (d.showValue) {
         ColorLine("数値の色", d.valueColor, GaugeColors.Text) { c -> update { it.copy(valueColor = c) } }
         SliderLine("数値の大きさ", d.valueSize * 100, 30f..300f, "%.0f%%") { v -> update { it.copy(valueSize = snap(v, 5f) / 100f) } }
@@ -1503,6 +1507,7 @@ private fun LampSettings(g: GaugeConfig, update: ((GaugeDesign) -> GaugeDesign) 
                 "切断して再接続すると消えます。値はこの接続で増えた件数で、0 件は「--」。空欄の点灯条件では 1 件以上で点灯します。" +
                 "ダッシュボードでランプをタップすると、気筒と時刻を新しい順に下の件数だけ出します。このページを表示していないときも見ています。"
         )
+        SwitchLine("一覧のタイトルを表示", "タップで出す一覧の上の「失火履歴 (…)」", d.misfirePopupTitle) { v -> update { it.copy(misfirePopupTitle = v) } }
         SliderLine("タップで出す件数", d.misfireLogCount.toFloat(), 1f..com.obdmeter.data.MisfireLog.MAX_SHOWN.toFloat(), "%.0f 件") { v ->
             update { it.copy(misfireLogCount = kotlin.math.round(v).toInt().coerceIn(1, com.obdmeter.data.MisfireLog.MAX_SHOWN)) }
         }
