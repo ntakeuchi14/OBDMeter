@@ -1036,6 +1036,14 @@ private fun ValueNameUnitSection(g: GaugeConfig, update: ((GaugeDesign) -> Gauge
     if (g.style == GaugeStyle.LAMP) {
         val inside = d.lampValueInside ?: com.obdmeter.core.DeviceItems.isMisfireLog(g.pidKey)
         SwitchLine("数値をランプの中に表示", "玉の中に数値だけを出します (単位は出しません)", inside) { v -> update { it.copy(lampValueInside = v) } }
+        if (inside && d.showValue) {
+            SwitchLine("消えている 7 セグを薄く表示", "数値の後ろに「88」をうっすら出します (デジタルと同じ。7 セグ風のフォントと合わせて使います)", d.ghostDigits) { v ->
+                update { it.copy(ghostDigits = v) }
+            }
+            if (d.ghostDigits) {
+                SliderLine("薄さ", d.ghostAlpha * 100, 3f..60f, "%.0f%%") { v -> update { it.copy(ghostAlpha = snap(v, 1f) / 100f) } }
+            }
+        }
     }
     if (d.showValue) {
         ColorLine("数値の色", d.valueColor, GaugeColors.Text) { c -> update { it.copy(valueColor = c) } }

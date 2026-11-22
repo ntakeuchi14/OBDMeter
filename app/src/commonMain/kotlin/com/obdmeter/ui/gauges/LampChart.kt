@@ -149,7 +149,25 @@ internal fun LampGauge(
         if (look.showValue && inside) {
             // 玉の中に数値 (単位は付けない)
             val text = if (unsupported) "非対応" else look.formatValue(def, value)
-            drawCenteredText(tm, text, c,
+            if (look.ghostDigits && !unsupported) {
+                // デジタルと同じ: 消えている 7 セグ (8) を玉の中央に置き、数値はその右端にそろえる
+                val gt = ghostText(def)
+                val vs = TextStyle(color = look.valueColor, fontFamily = fonts.value, fontWeight = FontWeight.Bold,
+                    fontSize = (r * (if (gt.length <= 2) 0.9f else 1.8f / gt.length) * look.valueSize).toSp())
+                var ghost = tm.measure(gt, vs.copy(color = look.valueColor.copy(alpha = look.ghostAlpha)))
+                var style = vs
+                val maxW = r * 1.8f
+                if (ghost.size.width > maxW && maxW > 0f) {
+                    val k = maxW / ghost.size.width
+                    style = vs.copy(fontSize = vs.fontSize * k)
+                    ghost = tm.measure(gt, style.copy(color = look.valueColor.copy(alpha = look.ghostAlpha)))
+                }
+                val gx = c.x - ghost.size.width / 2f
+                val gy = c.y - ghost.size.height / 2f
+                drawText(ghost, topLeft = Offset(gx, gy))
+                val vl = tm.measure(text, style)
+                drawText(vl, topLeft = Offset(gx + ghost.size.width - vl.size.width, gy))
+            } else drawCenteredText(tm, text, c,
                 TextStyle(color = look.valueColor, fontFamily = fonts.value, fontWeight = FontWeight.Bold,
                     fontSize = (r * (if (text.length <= 2) 0.9f else 1.8f / text.length) * look.valueSize).toSp()))
         } else if (look.showValue) {
