@@ -5,7 +5,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 
 /**
- * 失火履歴 (表示形式 [GaugeStyle.MISFIRE_LOG]): 気筒 1〜6 の失火カウンタを見て、増えた気筒と時刻を残す。
+ * 失火履歴 (項目 [DeviceItems.MISFIRE_LOG]): 気筒 1〜6 の失火カウンタを見て、増えた気筒と時刻を残す。
  * 変化は接続ごと: 接続した後の最初の値を基準にし (最初の値は変化ではない)、切断して再接続したら履歴も基準も捨てる
  */
 object MisfireLog {
@@ -27,9 +27,15 @@ object MisfireLog {
 
     /** メーターの項目からどのカウンタを見るか */
     fun sourceOf(pidKey: String): Source =
-        if (pidKey == DeviceItems.MISFIRE_LOG_BMW || pidKey.startsWith("MISFIRE_LIFE_")) Source.BMW else Source.OBD
+        if (pidKey == DeviceItems.MISFIRE_LOG_LIFE || pidKey.startsWith("MISFIRE_LIFE_")) Source.BMW else Source.OBD
 
     fun keysFor(pidKey: String): List<String> = sourceOf(pidKey).keys
+
+    /** 項目の値 (今の接続で増えた件数) */
+    fun values(events: Map<Source, List<Event>>): Map<String, Double> = mapOf(
+        DeviceItems.MISFIRE_LOG to (events[Source.OBD]?.size ?: 0).toDouble(),
+        DeviceItems.MISFIRE_LOG_LIFE to (events[Source.BMW]?.size ?: 0).toDouble(),
+    )
 
     /** 1 つのカウンタの組 (6 気筒) の変化を見る */
     class Tracker(private val source: Source) {

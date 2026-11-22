@@ -35,7 +35,7 @@ object DeviceItems {
     const val IMAGE = "APP_IMAGE"
     /** 失火履歴 (失火カウンタ #1〜#6 が増えた気筒と時刻。値は無い) */
     const val MISFIRE_LOG = "APP_MISFIRE_LOG"
-    const val MISFIRE_LOG_BMW = "APP_MISFIRE_LOG_BMW"
+    const val MISFIRE_LOG_LIFE = "APP_MISFIRE_LOG_LIFE"
 
     val ALL: List<PidDef> = listOf(
         dev(PITCH, "傾き 前後", "前後の傾き", "°", -90.0, 90.0),
@@ -62,9 +62,11 @@ object DeviceItems {
         // 値は無い。メーターの追加でこれを選ぶと「ボタン」を置く
         PidDef(BUTTON, "ボタン (最大値のリセットなど)", "リセット", "", 0.0, 1.0, kind = PidDef.Kind.DEVICE),
         PidDef(IMAGE, "画像 (画像を置くだけ)", "画像", "", 0.0, 1.0, kind = PidDef.Kind.DEVICE),
-        // 値は無い。メーターの追加でこれを選ぶと「失火履歴」を置く
-        PidDef(MISFIRE_LOG, "失火履歴 (失火カウンタ #1〜#6 が増えた気筒と時刻)", "失火履歴", "", 0.0, 1.0, kind = PidDef.Kind.DEVICE),
-        PidDef(MISFIRE_LOG_BMW, "失火履歴 BMW (生涯失火数 #1〜#6 が増えた気筒と時刻)", "失火履歴", "", 0.0, 1.0, kind = PidDef.Kind.DEVICE),
+        // 値 = 今の接続で失火カウンタが増えた回数 (件数)。0 なら "--"。ランプで置き、1 件でもあれば点灯、タップで気筒と時刻を出す
+        PidDef(MISFIRE_LOG, "失火履歴 (今回の運転の失火カウンタ #1〜#6 の増加)", "失火履歴", "件", 0.0, 10.0, warnAbove = 1.0,
+            kind = PidDef.Kind.DEVICE, textFormat = ::formatCount, textTemplate = "00"),
+        PidDef(MISFIRE_LOG_LIFE, "失火履歴 (生涯失火数 #1〜#6 の増加、DME)", "失火履歴", "件", 0.0, 10.0, warnAbove = 1.0,
+            kind = PidDef.Kind.DEVICE, textFormat = ::formatCount, textTemplate = "00"),
     )
 
     fun isDevice(d: PidDef): Boolean = d.kind == PidDef.Kind.DEVICE
@@ -91,6 +93,11 @@ object DeviceItems {
     }
 
     /** 秒数 → "HH:mm:ss" */
+    /** 件数。0 件は "--" */
+    fun formatCount(v: Double): String = if (v < 0.5) "--" else kotlin.math.round(v).toLong().toString()
+
+    fun isMisfireLog(key: String): Boolean = key == MISFIRE_LOG || key == MISFIRE_LOG_LIFE
+
     fun formatTime(v: Double): String {
         val s = kotlin.math.floor(v).toLong().mod(86400L)
         return "${two(s / 3600)}:${two(s / 60 % 60)}:${two(s % 60)}"

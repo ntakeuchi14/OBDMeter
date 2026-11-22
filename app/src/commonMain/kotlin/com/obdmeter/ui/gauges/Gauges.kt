@@ -169,8 +169,6 @@ data class GaugeLook(
     val lampOffColor: Color = Color(0xFF2A2F36),
     /** 値テーブル */
     val tableMaxRows: Int = 5,
-    /** 失火履歴: 表示する件数 */
-    val misfireLogCount: Int = 3,
     val tableValueBg: Color? = null,
     val tableValueImage: String? = null,
     val tableNameRatio: Float = 0.4f,
@@ -463,7 +461,6 @@ fun GaugeCard(
                 series.ifEmpty { listOf(ChartSeries(def, value)) }, look, fonts, interactive, Modifier.fillMaxSize(), historySlot,
             )
             GaugeStyle.IMAGE -> PictureObject(look, image, Modifier.fillMaxSize(), placeholder = !interactive)
-            GaugeStyle.MISFIRE_LOG -> MisfireLogGauge(def, look, fonts, Modifier.fillMaxSize())
         }
     }
 }

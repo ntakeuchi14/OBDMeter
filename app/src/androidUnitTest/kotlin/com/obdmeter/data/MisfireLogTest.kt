@@ -41,10 +41,27 @@ class MisfireLogTest {
 
     @Test
     fun sourceFollowsItem() {
-        assertEquals(MisfireLog.Source.BMW, MisfireLog.sourceOf(com.obdmeter.core.DeviceItems.MISFIRE_LOG_BMW))
+        assertEquals(MisfireLog.Source.BMW, MisfireLog.sourceOf(com.obdmeter.core.DeviceItems.MISFIRE_LOG_LIFE))
         assertEquals(MisfireLog.Source.OBD, MisfireLog.sourceOf(com.obdmeter.core.DeviceItems.MISFIRE_LOG))
         // 0:00:05 UTC = 9:00:05 JST
         assertEquals("#2 09:00:05 +3", MisfireLog.format(MisfireLog.Event(2, 5000, 3)))
         assertEquals("#2 09:00:05", MisfireLog.format(MisfireLog.Event(2, 5000, 1)))
+    }
+
+    @Test
+    fun itemValueIsEventCountAndZeroShowsDashes() {
+        val v = MisfireLog.values(mapOf(MisfireLog.Source.OBD to listOf(MisfireLog.Event(1, 0, 1), MisfireLog.Event(2, 0, 1))))
+        assertEquals(2.0, v[com.obdmeter.core.DeviceItems.MISFIRE_LOG]!!, 0.0)
+        assertEquals(0.0, v[com.obdmeter.core.DeviceItems.MISFIRE_LOG_LIFE]!!, 0.0)
+        val def = com.obdmeter.core.Pids.get(com.obdmeter.core.DeviceItems.MISFIRE_LOG)!!
+        assertEquals("--", def.format(0.0))
+        assertEquals("2", def.format(2.0))
+    }
+
+    @Test
+    fun readPlanWatchesCountersOfMisfireLamp() {
+        val g = GaugeConfig(id = 1, pidKey = com.obdmeter.core.DeviceItems.MISFIRE_LOG_LIFE, style = GaugeStyle.LAMP, x = 0, y = 0, w = 1, h = 1)
+        assertTrue("MISFIRE_LIFE_1" in ReadPlan.gaugeKeys(g))
+        assertEquals(setOf(MisfireLog.Source.BMW), ReadPlan.misfireSources(listOf(Dashboard(id = 1, name = "p", gauges = listOf(g)))))
     }
 }

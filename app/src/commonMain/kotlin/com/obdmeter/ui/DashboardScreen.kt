@@ -624,7 +624,7 @@ fun statusColor(state: ConnectionState): Color = when (state) {
 fun defaultStyleFor(def: PidDef): GaugeStyle = when (def.key) {
     com.obdmeter.core.DeviceItems.BUTTON -> GaugeStyle.BUTTON
     com.obdmeter.core.DeviceItems.IMAGE -> GaugeStyle.IMAGE
-    com.obdmeter.core.DeviceItems.MISFIRE_LOG, com.obdmeter.core.DeviceItems.MISFIRE_LOG_BMW -> GaugeStyle.MISFIRE_LOG
+    com.obdmeter.core.DeviceItems.MISFIRE_LOG, com.obdmeter.core.DeviceItems.MISFIRE_LOG_LIFE -> GaugeStyle.LAMP
     "RPM", "SPEED", "LOAD", "THROTTLE", "PEDAL", "BOOST", "TIMING" -> GaugeStyle.ANALOG
     "STFT1", "STFT2", "LTFT1", "LTFT2", "FUEL_LEVEL", "COOLANT", "OIL_TEMP" -> GaugeStyle.BAR
     else -> GaugeStyle.DIGITAL
@@ -690,6 +690,8 @@ private fun DashboardCanvas(
 ) {
     // メーターごとのピーク値リセット回数 (長押しで増やす)
     val peakResets = remember { mutableStateMapOf<Long, Int>() }
+    // 失火履歴のランプをタップしたら、増えた気筒と時刻を出す
+    var misfirePopup by remember { mutableStateOf<GaugeConfig?>(null) }
     // 配置のグループと、グループをドラッグ中の移動量・大きさ変更量 (px)
     val groups = remember(dashboard.gauges) { Layout.groups(dashboard.gauges) }
     var groupMove by remember { mutableStateOf<Pair<Long, Offset>?>(null) }
@@ -701,6 +703,7 @@ private fun DashboardCanvas(
     Box(Modifier.fillMaxSize().clipToBounds()) {
     // ページの背景 (色・柄・画像)。メーターは必ずこの上に描く
     PageBackgroundView(dashboard.background, Modifier.matchParentSize())
+    misfirePopup?.let { g -> MisfireLogDialog(g) { misfirePopup = null } }
     val gaugesNow by rememberUpdatedState(dashboard.gauges)
     val foreground = dashboard.foreground()
     // タップの受け取りは作り直さないので、最新の処理を呼ぶ
@@ -713,7 +716,11 @@ private fun DashboardCanvas(
             // 背景の無いメーターが前に重なっていても、見えている部分 (カード・文字盤・ランプなど) があるメーターを優先する
             fun hit(p: Offset): GaugeConfig? = viewHit(gaugesNow, p, cellPx.first, cellPx.second, 2.dp.toPx(), 6.dp.toPx())
             detectTapGestures(
-                onTap = { p -> hit(p)?.takeIf { it.style == GaugeStyle.BUTTON }?.let { com.obdmeter.ui.gauges.ButtonActions.press(it) { toggleGlowNow() } } },
+                onTap = { p ->
+                    val g = hit(p)
+                    if (g?.style == GaugeStyle.BUTTON) com.obdmeter.ui.gauges.ButtonActions.press(g) { toggleGlowNow() }
+                    else if (g != null && com.obdmeter.core.DeviceItems.isMisfireLog(g.pidKey)) misfirePopup = g
+                },
                 onLongPress = { p -> hit(p)?.let { g -> peakResets[g.id] = (peakResets[g.id] ?: 0) + 1 } },
             )
         }
@@ -1275,7 +1282,6 @@ internal fun solidAt(g: GaugeConfig, x: Float, y: Float, w: Float, h: Float): Bo
         GaugeStyle.CHART, GaugeStyle.MONITOR -> true
         // 画像は飾りなので、通常表示中のタップは下のメーターに届ける
         GaugeStyle.IMAGE -> false
-        GaugeStyle.MISFIRE_LOG -> (d.faceColor != null && inFace()) || d.backgroundImage != null
     }
 }
 
@@ -1327,4 +1333,32 @@ private fun BlockTouches(modifier: Modifier) {
     Box(modifier.pointerInput(Unit) {
         awaitPointerEventScope { while (true) awaitPointerEvent().changes.forEach { it.consume() } }
     })
+}
+
+
+/** 失火履歴: 今の接続で失火カウンタが増えた気筒と時刻 (新しい順に設定した件数。無ければ "--") */
+@Composable
+private fun MisfireLogDialog(g: GaugeConfig, onClose: () -> Unit) {
+    val all by com.obdmeter.data.MisfireLog.events.collectAsStateWithLifecycle()
+    val src = com.obdmeter.data.MisfireLog.sourceOf(g.pidKey)
+    val list = all[src].orEmpty()
+    val n = g.design.misfireLogCount.coerceIn(1, com.obdmeter.data.MisfireLog.MAX_SHOWN)
+    androidx.compose.material3.AlertDialog(
+        onDismissRequest = onClose,
+        title = { Text(if (src == com.obdmeter.data.MisfireLog.Source.BMW) "失火履歴 (生涯失火数)" else "失火履歴 (今回の運転の失火カウンタ)") },
+        text = {
+            Column {
+                if (list.isEmpty()) Text("--", fontSize = 22.sp, fontWeight = FontWeight.Bold)
+                else list.take(n).forEach { e ->
+                    Text(com.obdmeter.data.MisfireLog.format(e), fontSize = 20.sp, fontWeight = FontWeight.Bold)
+                }
+                Spacer(Modifier.size(8.dp))
+                Text(
+                    if (list.size > n) "新しい順に $n 件 (この接続で全 ${list.size} 件)" else "この接続で ${list.size} 件 (新しい順)",
+                    fontSize = 12.sp, color = GaugeColors.SubText,
+                )
+            }
+        },
+        confirmButton = { androidx.compose.material3.TextButton(onClick = onClose) { Text("閉じる") } },
+    )
 }

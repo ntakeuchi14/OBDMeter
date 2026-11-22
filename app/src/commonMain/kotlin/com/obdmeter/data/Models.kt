@@ -110,8 +110,6 @@ enum class GaugeStyle(val label: String) {
     BUTTON("ボタン"),
     /** 画像: 画像を置くだけ (項目の値は使わない) */
     IMAGE("画像"),
-    /** 失火履歴: 失火カウンタ #1〜#6 が増えた気筒と時刻を新しい順に並べる (接続ごと) */
-    MISFIRE_LOG("失火履歴"),
 }
 
 /** ライト連動で発光を切り替える方法 (車載ナビはライトを点けると画面を夜用にする) */
@@ -450,8 +448,8 @@ data class GaugeDesign(
     // --- 値テーブル ---
     /** 1 段に並べる最大の行数 (超えたら右に段を増やす) */
     val tableMaxRows: Int = 5,
-    /** 失火履歴: 表示する件数 (新しい順) */
-    val misfireLogCount: Int = 3,
+    /** 失火履歴: タップで出す件数 (新しい順) */
+    val misfireLogCount: Int = 5,
     /** 値の部分の背景色・背景画像 (null = なし) */
     val tableValueBg: Long? = null,
     val tableValueImage: String? = null,
