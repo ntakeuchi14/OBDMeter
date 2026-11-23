@@ -159,6 +159,19 @@ internal object ScaleWarp {
     fun fromPositions(bounds: List<Double>, pos: List<Float>): List<com.obdmeter.data.ScalePoint> =
         (1 until bounds.size - 1).map { com.obdmeter.data.ScalePoint(bounds[it], pos[it]) }
 
+    /** 幅の比率を手入力用の文字にする ("0.6, 0.8, 2, 2") */
+    fun formatWeights(w: List<Float>): String = w.joinToString(", ") { v ->
+        com.obdmeter.util.format("%.2f", v.toDouble()).trimEnd('0').trimEnd('.')
+    }
+
+    /** 手入力した幅の比率 (カンマ・読点・空白区切り) を読む。区間の数 [n] と合わない・0 以下・数でないときは null */
+    fun parseWeights(text: String, n: Int): List<Float>? {
+        val parts = text.split(',', '、', '，', ' ', '　', ';', '\n').map { it.trim() }.filter { it.isNotEmpty() }
+        if (parts.size != n) return null
+        val w = parts.map { it.toFloatOrNull() ?: return null }
+        return if (w.all { it > 0f && it.isFinite() }) w else null
+    }
+
     /** よく使う形 (区間の中央の位置 x (0〜1) → 幅の比率) */
     enum class Preset(val label: String, val weight: (Float) -> Float) {
         MIDDLE("中ほどを広く", { x -> 0.6f + 1.6f * kotlin.math.exp(-((x - 0.4f) / 0.22f).let { it * it }) }),

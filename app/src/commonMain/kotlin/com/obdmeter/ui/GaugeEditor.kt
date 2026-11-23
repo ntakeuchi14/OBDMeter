@@ -567,6 +567,40 @@ private fun ScaleWarpSection(d: GaugeDesign, def: com.obdmeter.core.PidDef, upda
     Hint("プレビューのメーターの主目盛りを指でつまんで左右に動かしても変えられます。区間の幅は等間隔のときを 1 とした比率です。")
     val sc = com.obdmeter.ui.gauges.TickScale.of(def.min, def.max, d.majorDivisions)
     val weights = w.weights(def.min, def.max, bounds, d.scaleWarp)
+    val n = bounds.size - 1
+    // 全部の区間の幅をカンマ区切りで手入力。入力したとおりの文字は、その結果が変わらない間は残す
+    var typed by remember { mutableStateOf<Pair<List<com.obdmeter.data.ScalePoint>?, String>?>(null) }
+    var text by remember(d.scaleWarp, d.majorDivisions, def.min, def.max) {
+        mutableStateOf(typed?.takeIf { it.first == d.scaleWarp }?.second ?: w.formatWeights(weights))
+    }
+    val parsed = w.parseWeights(text, n)
+    fun apply() {
+        val p = parsed ?: return
+        val pts = w.fromWeights(def.min, def.max, bounds, p) ?: emptyList()
+        typed = pts to text
+        update { it.copy(scaleWarp = pts) }
+    }
+    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        OutlinedTextField(
+            value = text,
+            onValueChange = { text = it },
+            label = { Text("全区間の幅 (カンマ区切りで $n 個)") },
+            isError = parsed == null,
+            supportingText = {
+                Text(
+                    if (parsed == null) "数を $n 個 (0 より大きい値) カンマで区切って入れてください" else
+                        (0 until n).joinToString("  ") { "${sc.label(bounds[it])}〜${sc.label(bounds[it + 1])}" },
+                    fontSize = 11.sp,
+                )
+            },
+            singleLine = true,
+            keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(imeAction = androidx.compose.ui.text.input.ImeAction.Done),
+            keyboardActions = androidx.compose.foundation.text.KeyboardActions(onDone = { apply() }),
+            modifier = Modifier.weight(1f),
+        )
+        FilledTonalButton(onClick = { apply() }, enabled = parsed != null) { Text("反映") }
+    }
+    Hint("例: 0.6, 0.8, 2, 2, 1.2, 1, 0.6, 0.5 (左から最小値側の区間。合計は自動でメーター全体に割り振ります)")
     for (i in 0 until bounds.size - 1) {
         SliderLine("${sc.label(bounds[i])}〜${sc.label(bounds[i + 1])}${sc.unitSuffix} の幅", weights[i], 0.2f..4f, "%.2f") { v ->
             update {

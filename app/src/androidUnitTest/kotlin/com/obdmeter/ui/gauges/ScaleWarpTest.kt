@@ -39,4 +39,13 @@ class ScaleWarpTest {
         // 最大値が切れ目に来ないとき (0〜7500) も最後の区間がある
         assertEquals(7500.0, ScaleWarp.bounds(0.0, 7500.0, null).last(), 0.0)
     }
+
+    @Test
+    fun parseAndFormatTypedWeights() {
+        assertEquals(listOf(0.6f, 0.8f, 2f, 2f), ScaleWarp.parseWeights("0.6, 0.8,2 、2", 4))
+        assertNull("数が合わない", ScaleWarp.parseWeights("1, 2, 3", 4))
+        assertNull("0 以下", ScaleWarp.parseWeights("1, 0, 2, 2", 4))
+        assertNull("数でない", ScaleWarp.parseWeights("1, a, 2, 2", 4))
+        assertEquals("0.6, 1, 2.25", ScaleWarp.formatWeights(listOf(0.6f, 1f, 2.25f)))
+    }
 }
