@@ -569,7 +569,8 @@ data class GaugeConfig(
     val h: Int = 0,
     val design: GaugeDesign = GaugeDesign(),
     /**
-     * ページの発光を OFF にしているときに使うデザイン (アナログ・バー・デジタル)。null = 発光の ON / OFF で同じデザイン ([design])
+     * ページの発光を OFF にしているときに使う色 (アナログ・バー・デジタル)。使うのは色の設定だけ ([GaugeDesign.withColorsFrom])
+     * で、それ以外は [design] と共通。null = 発光の ON / OFF で同じ
      */
     val glowOffDesign: GaugeDesign? = null,
     /**
@@ -630,16 +631,30 @@ val GaugeStyle.drawsBackgroundImage: Boolean
 val GaugeStyle.hasGlowOffDesign: Boolean
     get() = this == GaugeStyle.ANALOG || this == GaugeStyle.BAR || this == GaugeStyle.DIGITAL
 
-/** このメーターのデザインすべて (発光 OFF 用のデザインがあればそれも) */
-val GaugeConfig.designs: List<GaugeDesign> get() = listOfNotNull(design, glowOffDesign)
+/** このメーターのデザインすべて (発光 OFF 用は色だけを使うので、画像・フォントは [design] のもの) */
+val GaugeConfig.designs: List<GaugeDesign> get() = listOf(design)
 
 /** デザインすべて (発光 OFF 用も) に [f] をかける */
 fun GaugeConfig.mapDesigns(f: (GaugeDesign) -> GaugeDesign): GaugeConfig =
     copy(design = f(design), glowOffDesign = glowOffDesign?.let(f))
 
-/** 発光を止めているかどうかで使うデザインにしたもの (発光 OFF 用のデザインが無ければそのまま) */
+/** 発光を止めているかどうかで使うデザインにしたもの (発光 OFF 用の色が無ければそのまま。色以外は発光 ON と共通) */
 fun GaugeConfig.forGlow(glowOff: Boolean): GaugeConfig =
-    if (glowOff && glowOffDesign != null && style.hasGlowOffDesign) copy(design = glowOffDesign) else this
+    if (glowOff && glowOffDesign != null && style.hasGlowOffDesign) copy(design = design.withColorsFrom(glowOffDesign)) else this
+
+/** このデザインの色の設定だけを [o] のものにしたもの (発光 ON / OFF で分けられるのは色の設定だけ) */
+fun GaugeDesign.withColorsFrom(o: GaugeDesign): GaugeDesign = copy(
+    color = o.color, tickColor = o.tickColor, labelColor = o.labelColor, ringColor = o.ringColor,
+    redZoneColor = o.redZoneColor, needleColor = o.needleColor, knobColor = o.knobColor,
+    peakNeedleColor = o.peakNeedleColor, peakColor = o.peakColor, peakTextColor = o.peakTextColor,
+    valueColor = o.valueColor, nameColor = o.nameColor, unitColor = o.unitColor, faceColor = o.faceColor,
+    barOffColor = o.barOffColor, barZoneColors = o.barZoneColors, barMidColor = o.barMidColor,
+    trackColor = o.trackColor, arcTipColor = o.arcTipColor,
+    clockHour = clockHour.copy(color = o.clockHour.color), clockMinute = clockMinute.copy(color = o.clockMinute.color),
+    clockSecond = clockSecond.copy(color = o.clockSecond.color),
+    glowOnColor = o.glowOnColor, glowOffColor = o.glowOffColor, colorParts = o.colorParts,
+    lampOnColor = o.lampOnColor, lampOffColor = o.lampOffColor, chartColors = o.chartColors, tableValueBg = o.tableValueBg,
+)
 
 /** メーターが今の表示形式で実際に表示している画像の名前 (ほかの形式用に残っている設定は含めない) */
 fun GaugeConfig.imageNames(): List<String> = designs.flatMap { d ->
@@ -651,7 +666,10 @@ fun GaugeConfig.imageNames(): List<String> = designs.flatMap { d ->
 
 /** 今の表示形式で使わない画像の設定 (と、使わない発光 OFF 用のデザイン) を外したもの */
 fun GaugeConfig.withoutUnusedImages(): GaugeConfig {
-    val g = if (glowOffDesign != null && !style.hasGlowOffDesign) copy(glowOffDesign = null) else this
+    // 発光 OFF 用は色だけを使うので、色以外は発光 ON のものにそろえておく (使わない画像の名前を残さない)
+    val g = if (glowOffDesign != null && !style.hasGlowOffDesign) copy(glowOffDesign = null)
+    else if (glowOffDesign != null) copy(glowOffDesign = design.withColorsFrom(glowOffDesign)).let { if (it == this) this else it }
+    else this
     return g.mapDesigns { d ->
         val bg = d.backgroundImage.takeIf { style.drawsBackgroundImage }
         val tv = d.tableValueImage.takeIf { style == GaugeStyle.TABLE }

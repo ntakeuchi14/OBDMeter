@@ -12,7 +12,8 @@ class GlowOffDesignTest {
     @Test
     fun glowOffUsesSecondDesignOnlyWhenPresentAndSupported() {
         val g = GaugeConfig(pidKey = "RPM", style = GaugeStyle.ANALOG, design = on, glowOffDesign = off)
-        assertEquals(off, g.forGlow(true).design)
+        // 発光 OFF で変わるのは色だけ (画像・フォントは発光 ON のもの)
+        assertEquals(on.copy(valueColor = 0xFFFF0000), g.forGlow(true).design)
         assertEquals(on, g.forGlow(false).design)
         val single = g.copy(glowOffDesign = null)
         assertSame(single, single.forGlow(true))
@@ -21,12 +22,14 @@ class GlowOffDesignTest {
     }
 
     @Test
-    fun imagesAndRenamesCoverBothDesigns() {
+    fun onlyColorsAreKeptForGlowOff() {
         val g = GaugeConfig(pidKey = "RPM", style = GaugeStyle.DIGITAL, design = on, glowOffDesign = off)
-        assertEquals(listOf("a.png", "b.png"), g.imageNames())
-        val d = Dashboard(id = 1, name = "p", gauges = listOf(g))
-        val r = BackupLogic.renameImages(listOf(d), mapOf("b.png" to "a.png")).single().gauges.single()
-        assertEquals("a.png", r.glowOffDesign!!.backgroundImage)
+        assertEquals(listOf("a.png"), g.imageNames())
+        // 書き出すときは、発光 OFF 用の色以外を発光 ON のものにそろえる
+        val clean = g.withoutUnusedImages().glowOffDesign!!
+        assertEquals("a.png", clean.backgroundImage)
+        assertEquals("f1", clean.valueFont)
+        assertEquals(0xFFFF0000, clean.valueColor)
         // 発光 OFF 用を持たない形式に変えたら、書き出すときに外す
         assertNull(g.copy(style = GaugeStyle.LAMP).withoutUnusedImages().glowOffDesign)
     }

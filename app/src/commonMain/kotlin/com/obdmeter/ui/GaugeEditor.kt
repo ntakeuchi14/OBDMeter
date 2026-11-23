@@ -83,6 +83,7 @@ import com.obdmeter.data.GaugeConfig
 import com.obdmeter.data.GaugeDesign
 import com.obdmeter.data.GaugeStyle
 import com.obdmeter.data.hasGlowOffDesign
+import com.obdmeter.data.withColorsFrom
 import com.obdmeter.data.Layout
 import com.obdmeter.data.RingStyle
 import com.obdmeter.ui.gauges.GaugeCard
@@ -144,10 +145,12 @@ fun GaugeSettingsDialog(
     var editOff by remember { mutableStateOf(false) }
     val editingOff = editOff && draft.glowOffDesign != null && draft.style.hasGlowOffDesign
     /** タブ・プレビューに渡すメーター (発光 OFF 用を編集中は、そのデザインに差し替えたもの) */
-    val shown = if (editingOff) draft.copy(design = draft.glowOffDesign!!) else draft
-    /** タブからメーター全体を変えたとき (発光 OFF 用を編集中は、デザインは発光 OFF 用に入れる) */
+    val shown = if (editingOff) draft.copy(design = draft.design.withColorsFrom(draft.glowOffDesign!!)) else draft
+    /** 発光 OFF 用を編集中に変えたデザイン [d]: 色は発光 OFF 用に、色以外は共通 (発光 ON のデザイン) に入れる */
+    fun splitOff(c: GaugeConfig, d: GaugeDesign): GaugeConfig = c.copy(design = d.withColorsFrom(draft.design), glowOffDesign = d)
+    /** タブからメーター全体を変えたとき */
     fun setConfig(c: GaugeConfig) {
-        draft = if (editingOff) c.copy(design = draft.design, glowOffDesign = c.design) else c
+        draft = if (editingOff) splitOff(c, c.design) else c
     }
     val def = shown.resolvedDef(catalog)
     var useLive by remember { mutableStateOf(false) }
@@ -156,7 +159,8 @@ fun GaugeSettingsDialog(
 
     fun update(transform: (GaugeDesign) -> GaugeDesign) {
         val off = draft.glowOffDesign
-        draft = if (editingOff && off != null) draft.copy(glowOffDesign = transform(off)) else draft.copy(design = transform(draft.design))
+        draft = if (editingOff && off != null) splitOff(draft, transform(draft.design.withColorsFrom(off)))
+        else draft.copy(design = transform(draft.design))
     }
 
     Dialog(onDismissRequest = close, properties = DialogProperties(usePlatformDefaultWidth = false)) {
@@ -219,7 +223,7 @@ fun GaugeSettingsDialog(
                         if (draft.style.hasGlowOffDesign) {
                             // 発光の ON / OFF ボタンでページの発光を止めたとき用に、別のデザインを持てる (既定は 1 つ)
                             Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-                                Text("発光 ON / OFF で別のデザインにする", fontSize = 13.sp, modifier = Modifier.weight(1f))
+                                Text("発光 ON / OFF で色を分ける", fontSize = 13.sp, modifier = Modifier.weight(1f))
                                 Switch(checked = draft.glowOffDesign != null, onCheckedChange = { on ->
                                     draft = draft.copy(glowOffDesign = if (on) draft.design else null)
                                     editOff = on
@@ -232,8 +236,12 @@ fun GaugeSettingsDialog(
                                 ) {
                                     FilterChip(!editingOff, { editOff = false }, { Text("発光 ON のとき") })
                                     FilterChip(editingOff, { editOff = true }, { Text("発光 OFF のとき") })
-                                    if (editingOff) TextButton(onClick = { draft = draft.copy(glowOffDesign = draft.design) }) { Text("ON のデザインをコピー") }
+                                    if (editingOff) TextButton(onClick = { draft = draft.copy(glowOffDesign = draft.design) }) { Text("ON の色をコピー") }
                                 }
+                                Text(
+                                    "発光 ON / OFF で分かれるのは色の設定だけです。色以外 (大きさ・目盛り・針の形など) は、どちらで変えても共通です。",
+                                    fontSize = 11.sp, color = GaugeColors.SubText, modifier = Modifier.padding(horizontal = 12.dp),
+                                )
                             }
                         }
                         ScrollableTabRow(selectedTabIndex = tabs.indexOf(currentTab), edgePadding = 8.dp) {
