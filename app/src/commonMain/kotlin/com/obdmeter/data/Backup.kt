@@ -119,7 +119,7 @@ object BackupLogic {
         fun r(n: String?) = n?.let { rename[it] ?: it }
         return dashboards.map { d ->
             d.copy(background = d.background.copy(image = r(d.background.image)), gauges = d.gauges.map { g ->
-                g.copy(design = g.design.copy(backgroundImage = r(g.design.backgroundImage), tableValueImage = r(g.design.tableValueImage)))
+                g.mapDesigns { it.copy(backgroundImage = r(it.backgroundImage), tableValueImage = r(it.tableValueImage)) }
             })
         }
     }
@@ -145,12 +145,12 @@ object BackupLogic {
     ): MergeResult {
         // 画像・フォントの参照を付け替える (取り込めなかったものは外して既定に戻す)
         fun fixImages(d: Dashboard) = d.copy(background = d.background.copy(image = d.background.image?.let { imageRename[it] }), gauges = d.gauges.map { g ->
-            g.copy(design = g.design.copy(
-                backgroundImage = g.design.backgroundImage?.let { imageRename[it] },
-                tableValueImage = g.design.tableValueImage?.let { imageRename[it] },
-                valueFont = g.design.valueFont?.let { fontRename[it] },
-                labelFont = g.design.labelFont?.let { fontRename[it] },
-            ))
+            g.mapDesigns { ds -> ds.copy(
+                backgroundImage = ds.backgroundImage?.let { imageRename[it] },
+                tableValueImage = ds.tableValueImage?.let { imageRename[it] },
+                valueFont = ds.valueFont?.let { fontRename[it] },
+                labelFont = ds.labelFont?.let { fontRename[it] },
+            ) }
         })
 
         if (mode == ImportMode.REPLACE) {

@@ -82,6 +82,7 @@ import com.obdmeter.core.PidCatalog
 import com.obdmeter.data.GaugeConfig
 import com.obdmeter.data.GaugeDesign
 import com.obdmeter.data.GaugeStyle
+import com.obdmeter.data.hasGlowOffDesign
 import com.obdmeter.data.Layout
 import com.obdmeter.data.RingStyle
 import com.obdmeter.ui.gauges.GaugeCard
@@ -139,13 +140,23 @@ fun GaugeSettingsDialog(
     var fontPickerFor by remember { mutableStateOf<String?>(null) }
     var confirmDelete by remember { mutableStateOf(false) }
 
-    val def = draft.resolvedDef(catalog)
+    // 発光の ON / OFF で別のデザインを持つとき、いま編集しているのが発光 OFF 用か
+    var editOff by remember { mutableStateOf(false) }
+    val editingOff = editOff && draft.glowOffDesign != null && draft.style.hasGlowOffDesign
+    /** タブ・プレビューに渡すメーター (発光 OFF 用を編集中は、そのデザインに差し替えたもの) */
+    val shown = if (editingOff) draft.copy(design = draft.glowOffDesign!!) else draft
+    /** タブからメーター全体を変えたとき (発光 OFF 用を編集中は、デザインは発光 OFF 用に入れる) */
+    fun setConfig(c: GaugeConfig) {
+        draft = if (editingOff) c.copy(design = draft.design, glowOffDesign = c.design) else c
+    }
+    val def = shown.resolvedDef(catalog)
     var useLive by remember { mutableStateOf(false) }
     var previewFraction by remember { mutableFloatStateOf(0.65f) }
     val previewValue = if (useLive) liveValue else def?.let { it.min + (it.max - it.min) * previewFraction }
 
     fun update(transform: (GaugeDesign) -> GaugeDesign) {
-        draft = draft.copy(design = transform(draft.design))
+        val off = draft.glowOffDesign
+        draft = if (editingOff && off != null) draft.copy(glowOffDesign = transform(off)) else draft.copy(design = transform(draft.design))
     }
 
     Dialog(onDismissRequest = close, properties = DialogProperties(usePlatformDefaultWidth = false)) {
@@ -169,15 +180,16 @@ fun GaugeSettingsDialog(
                             } else Modifier.aspectRatio(ratio)
                             if (def != null) {
                                 // 目盛りの可変間隔: 目盛りタブを開いているときは、プレビューの主目盛りを指で動かせる
-                                val warpDrag = draft.style == GaugeStyle.ANALOG && !draft.design.clockMode && draft.design.scaleWarp != null &&
+                                val warpDrag = draft.style == GaugeStyle.ANALOG && !shown.design.clockMode && shown.design.scaleWarp != null &&
                                     EditorTabs.keepOrFirst(draft.style, tab) == EditorTab.SCALE
                                 GaugeCard(
                                     def = def,
                                     value = previewValue,
                                     style = draft.style,
                                     unsupported = false,
-                                    look = draft.look(def),
-                                    modifier = if (warpDrag) previewModifier.then(scaleWarpDrag(draft, def, ::update)) else previewModifier,
+                                    // 発光 OFF 用を編集中は、ダッシュボードと同じく発光を止めて描く
+                                    look = shown.look(def).let { if (editingOff) it.copy(glow = 0f, scaleGlow = 0f, needleGlow = 0f) else it },
+                                    modifier = if (warpDrag) previewModifier.then(scaleWarpDrag(shown, def, ::update)) else previewModifier,
                                     series = if (draft.style == GaugeStyle.CHART || draft.style == GaugeStyle.TABLE || draft.style == GaugeStyle.MONITOR) {
                                         chartSeries(draft, def, mapOf(def.key to (previewValue ?: 0.0)), catalog)
                                     } else emptyList(),
@@ -204,6 +216,26 @@ fun GaugeSettingsDialog(
                 val onPickFont: (String) -> Unit = { target -> fontPickerFor = target }
                 val settings: @Composable (Modifier) -> Unit = { m ->
                     Column(m) {
+                        if (draft.style.hasGlowOffDesign) {
+                            // 発光の ON / OFF ボタンでページの発光を止めたとき用に、別のデザインを持てる (既定は 1 つ)
+                            Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+                                Text("発光 ON / OFF で別のデザインにする", fontSize = 13.sp, modifier = Modifier.weight(1f))
+                                Switch(checked = draft.glowOffDesign != null, onCheckedChange = { on ->
+                                    draft = draft.copy(glowOffDesign = if (on) draft.design else null)
+                                    editOff = on
+                                })
+                            }
+                            if (draft.glowOffDesign != null) {
+                                Row(
+                                    Modifier.fillMaxWidth().padding(horizontal = 12.dp).horizontalScroll(rememberScrollState()),
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically,
+                                ) {
+                                    FilterChip(!editingOff, { editOff = false }, { Text("発光 ON のとき") })
+                                    FilterChip(editingOff, { editOff = true }, { Text("発光 OFF のとき") })
+                                    if (editingOff) TextButton(onClick = { draft = draft.copy(glowOffDesign = draft.design) }) { Text("ON のデザインをコピー") }
+                                }
+                            }
+                        }
                         ScrollableTabRow(selectedTabIndex = tabs.indexOf(currentTab), edgePadding = 8.dp) {
                             tabs.forEach { t ->
                                 Tab(selected = currentTab == t, onClick = { tab = t }, text = { Text(t.label) })
@@ -211,19 +243,19 @@ fun GaugeSettingsDialog(
                         }
                         Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = 16.dp)) {
                             when (currentTab) {
-                                EditorTab.ITEM, EditorTab.ITEM_AXIS -> ItemTab(draft, catalog, ::update, { draft = it }, { showPicker = true },
+                                EditorTab.ITEM, EditorTab.ITEM_AXIS -> ItemTab(shown, catalog, ::update, ::setConfig, { showPicker = true },
                                     { showFallbackPicker = true }, { showChartPicker = true }, { showCapturePicker = true })
-                                EditorTab.SCALE -> ScaleTab(draft, def, ::update)
-                                EditorTab.BAR -> BarTab(draft, def, ::update)
-                                EditorTab.LAMP -> LampTab(draft, ::update, onPickFont)
+                                EditorTab.SCALE -> ScaleTab(shown, def, ::update)
+                                EditorTab.BAR -> BarTab(shown, def, ::update)
+                                EditorTab.LAMP -> LampTab(shown, ::update, onPickFont)
                                 EditorTab.BUTTON -> ButtonTab(draft, ::update, { draft = it }, onPickFont)
-                                EditorTab.TABLE -> TableTab(draft, ::update, onPickFont)
+                                EditorTab.TABLE -> TableTab(shown, ::update, onPickFont)
                                 EditorTab.VIEW -> if (draft.style == GaugeStyle.CHART) ChartViewTab(draft, ::update, onPickFont)
                                     else MonitorViewTab(draft, ::update, onPickFont)
                                 EditorTab.RECORD -> ChartRecordTab(draft, catalog, ::update)
-                                EditorTab.LOOK -> LookTab(draft, ::update, onPickFont)
-                                EditorTab.IMAGE -> ImageTab(draft, ::update)
-                                EditorTab.PLACE -> PlaceTab(draft, { draft = it }, {
+                                EditorTab.LOOK -> LookTab(shown, ::update, onPickFont)
+                                EditorTab.IMAGE -> ImageTab(shown, ::update)
+                                EditorTab.PLACE -> PlaceTab(shown, ::setConfig, {
                                     vm.copyGauge(draft)
                                     toast("コピーしました。下の「貼り付け」で、このページや別のページに貼り付けられます")
                                 }, onMoveZ) { confirmDelete = true }

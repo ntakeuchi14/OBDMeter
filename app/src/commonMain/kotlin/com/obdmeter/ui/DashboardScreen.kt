@@ -5,6 +5,7 @@ import com.obdmeter.util.format
 import androidx.compose.ui.zIndex
 import com.obdmeter.ui.gauges.PageBackgroundView
 import com.obdmeter.data.HistorySlot
+import com.obdmeter.data.forGlow
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.flow.first
 import androidx.compose.runtime.snapshotFlow
@@ -791,7 +792,9 @@ private fun DashboardCanvas(
         dashboard.gauges.forEachIndexed { zi, g ->
             if (g.id in editHidden) return@forEachIndexed
             key(g.id) {
-                val def = g.resolvedDef(catalog)
+                // 発光 OFF のページでは、発光 OFF 用のデザインがあればそちらで描く
+                val gv = g.forGlow(dashboard.glowOff)
+                val def = gv.resolvedDef(catalog)
                 val gid = g.layoutGroup?.takeIf { it in groups }
                 val needle = remember(g.id) { androidx.compose.runtime.mutableFloatStateOf(0f) }
                 GaugeOnGrid(
@@ -818,10 +821,10 @@ private fun DashboardCanvas(
                     // アナログの針は、ほかのメーター (中に重ねて置いたものも) より手前に描く
                     // (グループにするメーターを選んでいる間は、選んだ印が隠れないよう針もメーターと一緒に描く)
                     overlay = if (g.style == GaugeStyle.ANALOG && def != null && !(editing && selecting)) {
-                        { GaugeView(g, def, values, supported, layer = com.obdmeter.ui.gauges.GaugeLayer.NEEDLE, needleState = needle, glowOff = dashboard.glowOff, foreground = foreground) }
+                        { GaugeView(gv, def, values, supported, layer = com.obdmeter.ui.gauges.GaugeLayer.NEEDLE, needleState = needle, glowOff = dashboard.glowOff, foreground = foreground) }
                     } else null,
                 ) {
-                    GaugeView(g, def, values, supported, peakResets[g.id] ?: 0, catalog = catalog, interactive = !editing,
+                    GaugeView(gv, def, values, supported, peakResets[g.id] ?: 0, catalog = catalog, interactive = !editing,
                         historySlot = HistorySlot.of(dashboard.id, g.id),
                         layer = if (g.style == GaugeStyle.ANALOG && !(editing && selecting)) com.obdmeter.ui.gauges.GaugeLayer.BODY else com.obdmeter.ui.gauges.GaugeLayer.ALL,
                         needleState = needle, glowOff = dashboard.glowOff, foreground = foreground)

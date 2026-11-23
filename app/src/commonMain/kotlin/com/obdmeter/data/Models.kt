@@ -569,6 +569,10 @@ data class GaugeConfig(
     val h: Int = 0,
     val design: GaugeDesign = GaugeDesign(),
     /**
+     * ページの発光を OFF にしているときに使うデザイン (アナログ・バー・デジタル)。null = 発光の ON / OFF で同じデザイン ([design])
+     */
+    val glowOffDesign: GaugeDesign? = null,
+    /**
      * 代替項目のキー。メイン項目が読めないとき (イグニッション OFF で標準 PID が拒否されるときなど)
      * に、代わりにこの項目の値を表示する。カスタム PID を指定することを想定。
      */
@@ -622,18 +626,37 @@ val GaugeStyle.drawsBackgroundImage: Boolean
     get() = this == GaugeStyle.ANALOG || this == GaugeStyle.BAR || this == GaugeStyle.DIGITAL || this == GaugeStyle.LAMP ||
         this == GaugeStyle.BUTTON || this == GaugeStyle.IMAGE
 
-/** メーターが今の表示形式で実際に表示している画像の名前 (ほかの形式用に残っている設定は含めない) */
-fun GaugeConfig.imageNames(): List<String> = listOfNotNull(
-    design.backgroundImage.takeIf { style.drawsBackgroundImage },
-    design.tableValueImage.takeIf { style == GaugeStyle.TABLE },
-)
+/** 発光の ON / OFF で別のデザインを持てる表示形式 */
+val GaugeStyle.hasGlowOffDesign: Boolean
+    get() = this == GaugeStyle.ANALOG || this == GaugeStyle.BAR || this == GaugeStyle.DIGITAL
 
-/** 今の表示形式で使わない画像の設定を外したもの */
+/** このメーターのデザインすべて (発光 OFF 用のデザインがあればそれも) */
+val GaugeConfig.designs: List<GaugeDesign> get() = listOfNotNull(design, glowOffDesign)
+
+/** デザインすべて (発光 OFF 用も) に [f] をかける */
+fun GaugeConfig.mapDesigns(f: (GaugeDesign) -> GaugeDesign): GaugeConfig =
+    copy(design = f(design), glowOffDesign = glowOffDesign?.let(f))
+
+/** 発光を止めているかどうかで使うデザインにしたもの (発光 OFF 用のデザインが無ければそのまま) */
+fun GaugeConfig.forGlow(glowOff: Boolean): GaugeConfig =
+    if (glowOff && glowOffDesign != null && style.hasGlowOffDesign) copy(design = glowOffDesign) else this
+
+/** メーターが今の表示形式で実際に表示している画像の名前 (ほかの形式用に残っている設定は含めない) */
+fun GaugeConfig.imageNames(): List<String> = designs.flatMap { d ->
+    listOfNotNull(
+        d.backgroundImage.takeIf { style.drawsBackgroundImage },
+        d.tableValueImage.takeIf { style == GaugeStyle.TABLE },
+    )
+}.distinct()
+
+/** 今の表示形式で使わない画像の設定 (と、使わない発光 OFF 用のデザイン) を外したもの */
 fun GaugeConfig.withoutUnusedImages(): GaugeConfig {
-    val bg = design.backgroundImage.takeIf { style.drawsBackgroundImage }
-    val tv = design.tableValueImage.takeIf { style == GaugeStyle.TABLE }
-    return if (bg == design.backgroundImage && tv == design.tableValueImage) this
-    else copy(design = design.copy(backgroundImage = bg, tableValueImage = tv))
+    val g = if (glowOffDesign != null && !style.hasGlowOffDesign) copy(glowOffDesign = null) else this
+    return g.mapDesigns { d ->
+        val bg = d.backgroundImage.takeIf { style.drawsBackgroundImage }
+        val tv = d.tableValueImage.takeIf { style == GaugeStyle.TABLE }
+        if (bg == d.backgroundImage && tv == d.tableValueImage) d else d.copy(backgroundImage = bg, tableValueImage = tv)
+    }.let { if (it == this) this else it }
 }
 
 /** ページとメーターが使っている画像の名前 */

@@ -8,6 +8,8 @@ import com.obdmeter.data.AppSettings
 import com.obdmeter.data.BackupLogic
 import com.obdmeter.data.BackupManifest
 import com.obdmeter.data.BackupZip
+import com.obdmeter.data.designs
+import com.obdmeter.data.mapDesigns
 import com.obdmeter.data.CustomPid
 import com.obdmeter.data.Dashboard
 import com.obdmeter.data.Defaults
@@ -108,7 +110,7 @@ class MainViewModel(val core: AppCore) : ViewModel() {
                 val usedKeys = pages.flatMap { d ->
                     d.gauges.flatMap { g -> g.chartAllKeys + listOfNotNull(g.fallbackKey) + g.design.monitorCaptureKeys }
                 }.toSet()
-                val usedFonts = pages.flatMap { d -> d.gauges.flatMap { listOfNotNull(it.design.labelFont, it.design.valueFont) } }.toSet()
+                val usedFonts = pages.flatMap { d -> d.gauges.flatMap { g -> g.designs.flatMap { listOfNotNull(it.labelFont, it.valueFont) } } }.toSet()
                 val manifest = BackupManifest(
                     appVersion = platform.appVersion,
                     exportedAt = DateFmt("yyyy-MM-dd HH:mm").format(nowMs()),
@@ -234,11 +236,11 @@ class MainViewModel(val core: AppCore) : ViewModel() {
         editDashboards { pages ->
             pages.map { d ->
                 d.copy(gauges = d.gauges.map { g ->
-                    if (g.design.valueFont == id || g.design.labelFont == id) {
-                        g.copy(design = g.design.copy(
-                            valueFont = g.design.valueFont.takeIf { it != id },
-                            labelFont = g.design.labelFont.takeIf { it != id },
-                        ))
+                    if (g.designs.any { it.valueFont == id || it.labelFont == id }) {
+                        g.mapDesigns { ds -> ds.copy(
+                            valueFont = ds.valueFont.takeIf { it != id },
+                            labelFont = ds.labelFont.takeIf { it != id },
+                        ) }
                     } else g
                 })
             }
