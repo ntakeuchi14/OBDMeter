@@ -61,4 +61,14 @@ class GlowOffDesignTest {
         assertEquals("行数などは共通", 4, d.tableMaxRows)
         assertEquals(listOf("on.png", "off.png"), g.imageNames())
     }
+
+    @Test
+    fun analogSplitsImageBrightnessAndContrast() {
+        val g = GaugeConfig(pidKey = "RPM", style = GaugeStyle.ANALOG, design = GaugeDesign(imageBrightness = 0f, imageContrast = 1f, imageScale = 1.2f),
+            glowOffDesign = GaugeDesign(imageBrightness = -0.4f, imageContrast = 0.8f, imageScale = 2f))
+        val d = g.forGlow(true).design
+        assertEquals(-0.4f, d.imageBrightness, 0f)
+        assertEquals(0.8f, d.imageContrast, 0f)
+        assertEquals("大きさは共通", 1.2f, d.imageScale, 0f)
+    }
 }

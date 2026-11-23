@@ -646,13 +646,14 @@ fun GaugeConfig.forGlow(glowOff: Boolean): GaugeConfig =
     if (glowOff && glowOffDesign != null && style.hasGlowOffDesign) copy(design = design.withGlowOffFrom(glowOffDesign, style)) else this
 
 /**
- * 発光 ON / OFF で分けられる設定だけを [o] のものにしたもの。分けられるのは色の設定と、
- * 画像オブジェクト ([style] = IMAGE) では画像・明るさ・コントラスト (大きさ・位置・角度などは共通)、
+ * 発光 ON / OFF で分けられる設定だけを [o] のものにしたもの。分けられるのは色の設定と画像の明るさ・コントラスト、
+ * 画像オブジェクト ([style] = IMAGE) では画像も (大きさ・位置・角度などは共通)、
  * 値テーブル ([style] = TABLE) では値の部分の背景画像も
  */
-fun GaugeDesign.withGlowOffFrom(o: GaugeDesign, style: GaugeStyle): GaugeDesign = withColorsFrom(o).let {
+fun GaugeDesign.withGlowOffFrom(o: GaugeDesign, style: GaugeStyle): GaugeDesign =
+    withColorsFrom(o).copy(imageBrightness = o.imageBrightness, imageContrast = o.imageContrast).let {
     when (style) {
-        GaugeStyle.IMAGE -> it.copy(backgroundImage = o.backgroundImage, imageBrightness = o.imageBrightness, imageContrast = o.imageContrast)
+        GaugeStyle.IMAGE -> it.copy(backgroundImage = o.backgroundImage)
         GaugeStyle.TABLE -> it.copy(tableValueImage = o.tableValueImage)
         else -> it
     }

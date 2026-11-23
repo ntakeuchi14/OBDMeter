@@ -242,7 +242,7 @@ fun GaugeSettingsDialog(
                                 Text(
                                     if (draft.style == GaugeStyle.IMAGE) "発光 ON / OFF で分かれるのは画像・明るさ・コントラストです。大きさ・位置・角度・反転・影などは、どちらで変えても共通です。"
                                     else if (draft.style == GaugeStyle.TABLE) "発光 ON / OFF で分かれるのは色の設定と、値の部分の背景画像です。行数・幅・文字の大きさなどは、どちらで変えても共通です。"
-                                    else "発光 ON / OFF で分かれるのは色の設定だけです。色以外 (大きさ・目盛り・針の形など) は、どちらで変えても共通です。",
+                                    else "発光 ON / OFF で分かれるのは色の設定と、画像の明るさ・コントラストです。それ以外 (大きさ・目盛り・針の形・画像など) は、どちらで変えても共通です。",
                                     fontSize = 11.sp, color = GaugeColors.SubText, modifier = Modifier.padding(horizontal = 12.dp),
                                 )
                             }
