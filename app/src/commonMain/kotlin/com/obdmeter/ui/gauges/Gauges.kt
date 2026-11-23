@@ -807,10 +807,9 @@ fun AnalogGauge(
             if (look.showLabels && i != hideLabelAt && !labelHidden[i]) {
                 // 数字は主目盛りの内側 (主目盛りを描かないときも、標準の長さの位置を基準にする)
                 val labelR = tickOuter - (if (look.showTicks) majorLen else d * 0.05f) - d * 0.06f * look.labelSize - d * look.labelGap
-                drawCenteredText(tm, if (look.clock != null && t == 0.0) "12" else scale.label(t),
+                drawCenteredGlowText(tm, if (look.clock != null && t == 0.0) "12" else scale.label(t),
                     Offset(pc.x + labelR * cos(a).toFloat(), pc.y + q * labelR * sin(a).toFloat()),
-                    TextStyle(color = look.labelColor, fontFamily = fonts.label, fontSize = labelSize,
-                        shadow = glowShadow(look.labelColor, look.scaleGlow, d * 0.07f * look.labelSize)))
+                    TextStyle(color = look.labelColor, fontFamily = fonts.label, fontSize = labelSize), look.scaleGlow, d * 0.07f * look.labelSize)
             }
             // 小目盛り
             if (look.showTicks && look.minorDivisions > 0 && (i < majors.lastIndex)) {
@@ -873,10 +872,10 @@ fun AnalogGauge(
         // 名前・数値・単位 (目盛りを大きく外へ出しても、文字の位置は従来の範囲 (外周の 120%) までで決める)
         val textR = min(gaugeR, (outer - ringWidth - d * 0.01f) * 1.2f)
         if (look.showName) {
-            drawCenteredText(tm, def.shortName,
+            drawCenteredGlowText(tm, def.shortName,
                 Offset(center.x + d * look.nameOffsetX, center.y - textR * 0.38f + d * look.nameOffsetY),
-                TextStyle(color = look.nameColor, fontFamily = fonts.label, fontSize = (d * 0.07f * look.tableNameSize).toSp(), fontWeight = FontWeight.Medium,
-                    shadow = glowShadow(look.nameColor, look.scaleGlow, d * 0.07f * look.tableNameSize)))
+                TextStyle(color = look.nameColor, fontFamily = fonts.label, fontSize = (d * 0.07f * look.tableNameSize).toSp(), fontWeight = FontWeight.Medium),
+                look.scaleGlow, d * 0.07f * look.tableNameSize)
         }
         val valueY = center.y + textR * look.valuePosition
         val valueX = center.x + textR * look.valueOffsetX
@@ -899,10 +898,10 @@ fun AnalogGauge(
             }
         }
         if (look.showUnit) {
-            drawCenteredText(tm, def.unitText + scale.unitSuffix,
+            drawCenteredGlowText(tm, def.unitText + scale.unitSuffix,
                 Offset(valueX + d * look.unitOffsetX, valueY + d * 0.1f * max(look.valueSize, 0.6f) + d * look.unitOffsetY),
-                TextStyle(color = look.unitColor, fontFamily = fonts.label, fontSize = (d * 0.055f * look.tableUnitSize).toSp(),
-                    shadow = glowShadow(look.unitColor, look.scaleGlow, d * 0.055f * look.tableUnitSize)))
+                TextStyle(color = look.unitColor, fontFamily = fonts.label, fontSize = (d * 0.055f * look.tableUnitSize).toSp()),
+                look.scaleGlow, d * 0.055f * look.tableUnitSize)
         }
         if (peak != null && look.showPeakValue) {
             drawCenteredText(tm, "MAX " + def.format(peak),
@@ -966,6 +965,20 @@ fun AnalogGauge(
 internal fun DrawScope.drawCenteredText(tm: TextMeasurer, text: String, center: Offset, style: TextStyle) {
     val layout = tm.measure(text, style)
     drawTextHit(layout, topLeft = Offset(center.x - layout.size.width / 2f, center.y - layout.size.height / 2f))
+}
+
+/**
+ * 目盛りの数字・名前・単位の発光 ([glow] 0〜1、[size] は文字の大きさ px)。目盛りの線と同じくらい光って見えるように、
+ * 広くぼかした光を下に重ねてから、近いぼかしの文字を描く
+ */
+internal fun DrawScope.drawCenteredGlowText(tm: TextMeasurer, text: String, center: Offset, style: TextStyle, glow: Float, size: Float) {
+    val c = style.color
+    if (glow > 0f) {
+        val wide = style.copy(shadow = androidx.compose.ui.graphics.Shadow(c.copy(alpha = 1f), Offset.Zero, size * 0.35f * glow + 2f))
+        drawCenteredText(tm, text, center, wide)
+        drawCenteredText(tm, text, center, wide)
+    }
+    drawCenteredText(tm, text, center, style.copy(shadow = glowShadow(c, glow, size)))
 }
 
 /** [drawCenteredText] と同じだが、幅が [maxWidth] を超えるときは文字を縮める */
