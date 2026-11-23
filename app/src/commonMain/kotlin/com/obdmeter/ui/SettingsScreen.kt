@@ -577,6 +577,15 @@ private fun PollIntervalSection(vm: MainViewModel, s: AppSettings) {
             com.obdmeter.data.ReadPlan.gaugeKeys(g) + listOfNotNull(g.fallbackKey) +
                 (if (g.style == com.obdmeter.data.GaugeStyle.MONITOR) g.design.monitorCaptureKeys else emptyList())
         }.distinct()
+            // 失火履歴そのものは読まない (失火カウンタ #1〜#6 から数える) ので、周期は失火カウンタの方で決める
+            .filterNot { com.obdmeter.core.DeviceItems.isMisfireLog(it) }
+    }
+    if (dashboards.any { p -> p.gauges.any { com.obdmeter.core.DeviceItems.isMisfireLog(it.pidKey) } }) {
+        Text(
+            "失火履歴: 失火履歴そのものは読まず、失火カウンタ #1〜#6 (失火#1〜#6 または 生涯失火#1〜#6) を読んで増えたかを見ます。" +
+                "読む間隔はその 6 項目の周期で決まります (ページを表示していない間は 6 項目の周期の短い方、最短 2 秒)。",
+            color = GaugeColors.SubText, fontSize = 12.sp, modifier = Modifier.padding(top = 4.dp),
+        )
     }
     if (captureMonitors.isNotEmpty()) {
         Text(

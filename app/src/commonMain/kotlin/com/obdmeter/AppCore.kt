@@ -163,7 +163,7 @@ class AppCore(val platform: AppPlatform) {
                 val sources = ReadPlan.misfireSources(dashboards.value)
                 if (sources.isEmpty()) continue
                 for (src in sources) {
-                    // 表示中のメーターで読んでいる項目はその値を使い、それ以外は 2 秒に 1 回読む
+                    // 表示中のメーターで読んでいる項目はその値を使い、それ以外は下の間隔で読む
                     val live = values.value
                     val active = session.activePids.mapTo(HashSet()) { it.key }
                     val read = HashMap<String, Double>()
@@ -171,7 +171,10 @@ class AppCore(val platform: AppPlatform) {
                     val need = src.keys.filter { it !in read }
                     val now = com.obdmeter.util.nowMs()
                     if (need.isNotEmpty()) {
-                        if (now - (lastSample[src] ?: 0L) < 2_000L) {
+                        // ページを表示していない間は、失火カウンタ #1〜#6 の取得周期の短い方 (最短 2 秒) ごとに読む
+                        val poll = settings.value.pollIntervalsMs
+                        val every = src.keys.minOf { (poll[it] ?: 0).toLong() }.coerceAtLeast(2_000L)
+                        if (now - (lastSample[src] ?: 0L) < every) {
                             if (read.isEmpty()) continue
                         } else {
                             lastSample[src] = now
