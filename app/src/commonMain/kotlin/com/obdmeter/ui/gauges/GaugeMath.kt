@@ -161,7 +161,7 @@ internal object ScaleWarp {
 
     /** 幅の比率を手入力用の文字にする ("0.6, 0.8, 2, 2") */
     fun formatWeights(w: List<Float>): String = w.joinToString(", ") { v ->
-        com.obdmeter.util.format("%.2f", v.toDouble()).trimEnd('0').trimEnd('.')
+        "%.2f".format(v.toDouble()).trimEnd('0').trimEnd('.')
     }
 
     /** 手入力した幅の比率 (カンマ・読点・空白区切り) を読む。区間の数 [n] と合わない・0 以下・数でないときは null */
