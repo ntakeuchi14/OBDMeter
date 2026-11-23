@@ -627,13 +627,15 @@ val GaugeStyle.drawsBackgroundImage: Boolean
     get() = this == GaugeStyle.ANALOG || this == GaugeStyle.BAR || this == GaugeStyle.DIGITAL || this == GaugeStyle.LAMP ||
         this == GaugeStyle.BUTTON || this == GaugeStyle.IMAGE
 
-/** 発光の ON / OFF で別の色 (画像オブジェクトは画像) を持てる表示形式 */
+/** 発光の ON / OFF で別の色 (画像オブジェクトは画像、値テーブルは色と値の背景画像) を持てる表示形式 */
 val GaugeStyle.hasGlowOffDesign: Boolean
-    get() = this == GaugeStyle.ANALOG || this == GaugeStyle.BAR || this == GaugeStyle.DIGITAL || this == GaugeStyle.IMAGE
+    get() = this == GaugeStyle.ANALOG || this == GaugeStyle.BAR || this == GaugeStyle.DIGITAL || this == GaugeStyle.IMAGE ||
+        this == GaugeStyle.TABLE
 
 /** このメーターのデザインすべて (発光 OFF 用は色だけを使うので、画像・フォントは [design] のもの) */
 val GaugeConfig.designs: List<GaugeDesign> get() =
-    if (style == GaugeStyle.IMAGE && glowOffDesign != null) listOf(design, design.withGlowOffFrom(glowOffDesign, style)) else listOf(design)
+    if ((style == GaugeStyle.IMAGE || style == GaugeStyle.TABLE) && glowOffDesign != null) listOf(design, design.withGlowOffFrom(glowOffDesign, style))
+    else listOf(design)
 
 /** デザインすべて (発光 OFF 用も) に [f] をかける */
 fun GaugeConfig.mapDesigns(f: (GaugeDesign) -> GaugeDesign): GaugeConfig =
@@ -645,11 +647,15 @@ fun GaugeConfig.forGlow(glowOff: Boolean): GaugeConfig =
 
 /**
  * 発光 ON / OFF で分けられる設定だけを [o] のものにしたもの。分けられるのは色の設定と、
- * 画像オブジェクト ([style] = IMAGE) では画像・明るさ・コントラスト (大きさ・位置・角度などは共通)
+ * 画像オブジェクト ([style] = IMAGE) では画像・明るさ・コントラスト (大きさ・位置・角度などは共通)、
+ * 値テーブル ([style] = TABLE) では値の部分の背景画像も
  */
 fun GaugeDesign.withGlowOffFrom(o: GaugeDesign, style: GaugeStyle): GaugeDesign = withColorsFrom(o).let {
-    if (style == GaugeStyle.IMAGE) it.copy(backgroundImage = o.backgroundImage, imageBrightness = o.imageBrightness, imageContrast = o.imageContrast)
-    else it
+    when (style) {
+        GaugeStyle.IMAGE -> it.copy(backgroundImage = o.backgroundImage, imageBrightness = o.imageBrightness, imageContrast = o.imageContrast)
+        GaugeStyle.TABLE -> it.copy(tableValueImage = o.tableValueImage)
+        else -> it
+    }
 }
 
 /** このデザインの色の設定だけを [o] のものにしたもの */

@@ -48,4 +48,17 @@ class GlowOffDesignTest {
         // アナログでは画像は分けない
         assertEquals("day.png", g.copy(style = GaugeStyle.ANALOG).forGlow(true).design.backgroundImage)
     }
+
+    @Test
+    fun tableSplitsColorsAndValueImage() {
+        val tOn = GaugeDesign(valueColor = 0xFFFFFFFF, tableValueBg = 0xFF000000, tableValueImage = "on.png", tableMaxRows = 4)
+        val tOff = GaugeDesign(valueColor = 0xFFFF0000, tableValueBg = 0xFF111111, tableValueImage = "off.png", tableMaxRows = 9)
+        val g = GaugeConfig(pidKey = "RPM", style = GaugeStyle.TABLE, design = tOn, glowOffDesign = tOff)
+        val d = g.forGlow(true).design
+        assertEquals(0xFFFF0000, d.valueColor)
+        assertEquals(0xFF111111, d.tableValueBg)
+        assertEquals("off.png", d.tableValueImage)
+        assertEquals("行数などは共通", 4, d.tableMaxRows)
+        assertEquals(listOf("on.png", "off.png"), g.imageNames())
+    }
 }
