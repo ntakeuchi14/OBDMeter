@@ -569,8 +569,8 @@ data class GaugeConfig(
     val h: Int = 0,
     val design: GaugeDesign = GaugeDesign(),
     /**
-     * ページの発光を OFF にしているときに使う色 (アナログ・バー・デジタル)。使うのは色の設定だけ ([GaugeDesign.withColorsFrom])
-     * で、それ以外は [design] と共通。null = 発光の ON / OFF で同じ
+     * ページの発光を OFF にしているときに使う色 (アナログ・バー・デジタル) と画像 (画像オブジェクト)。
+     * 使うのは [GaugeDesign.withGlowOffFrom] の設定だけで、それ以外は [design] と共通。null = 発光の ON / OFF で同じ
      */
     val glowOffDesign: GaugeDesign? = null,
     /**
@@ -627,12 +627,13 @@ val GaugeStyle.drawsBackgroundImage: Boolean
     get() = this == GaugeStyle.ANALOG || this == GaugeStyle.BAR || this == GaugeStyle.DIGITAL || this == GaugeStyle.LAMP ||
         this == GaugeStyle.BUTTON || this == GaugeStyle.IMAGE
 
-/** 発光の ON / OFF で別のデザインを持てる表示形式 */
+/** 発光の ON / OFF で別の色 (画像オブジェクトは画像) を持てる表示形式 */
 val GaugeStyle.hasGlowOffDesign: Boolean
-    get() = this == GaugeStyle.ANALOG || this == GaugeStyle.BAR || this == GaugeStyle.DIGITAL
+    get() = this == GaugeStyle.ANALOG || this == GaugeStyle.BAR || this == GaugeStyle.DIGITAL || this == GaugeStyle.IMAGE
 
 /** このメーターのデザインすべて (発光 OFF 用は色だけを使うので、画像・フォントは [design] のもの) */
-val GaugeConfig.designs: List<GaugeDesign> get() = listOf(design)
+val GaugeConfig.designs: List<GaugeDesign> get() =
+    if (style == GaugeStyle.IMAGE && glowOffDesign != null) listOf(design, design.withGlowOffFrom(glowOffDesign, style)) else listOf(design)
 
 /** デザインすべて (発光 OFF 用も) に [f] をかける */
 fun GaugeConfig.mapDesigns(f: (GaugeDesign) -> GaugeDesign): GaugeConfig =
@@ -640,9 +641,18 @@ fun GaugeConfig.mapDesigns(f: (GaugeDesign) -> GaugeDesign): GaugeConfig =
 
 /** 発光を止めているかどうかで使うデザインにしたもの (発光 OFF 用の色が無ければそのまま。色以外は発光 ON と共通) */
 fun GaugeConfig.forGlow(glowOff: Boolean): GaugeConfig =
-    if (glowOff && glowOffDesign != null && style.hasGlowOffDesign) copy(design = design.withColorsFrom(glowOffDesign)) else this
+    if (glowOff && glowOffDesign != null && style.hasGlowOffDesign) copy(design = design.withGlowOffFrom(glowOffDesign, style)) else this
 
-/** このデザインの色の設定だけを [o] のものにしたもの (発光 ON / OFF で分けられるのは色の設定だけ) */
+/**
+ * 発光 ON / OFF で分けられる設定だけを [o] のものにしたもの。分けられるのは色の設定と、
+ * 画像オブジェクト ([style] = IMAGE) では画像・明るさ・コントラスト (大きさ・位置・角度などは共通)
+ */
+fun GaugeDesign.withGlowOffFrom(o: GaugeDesign, style: GaugeStyle): GaugeDesign = withColorsFrom(o).let {
+    if (style == GaugeStyle.IMAGE) it.copy(backgroundImage = o.backgroundImage, imageBrightness = o.imageBrightness, imageContrast = o.imageContrast)
+    else it
+}
+
+/** このデザインの色の設定だけを [o] のものにしたもの */
 fun GaugeDesign.withColorsFrom(o: GaugeDesign): GaugeDesign = copy(
     color = o.color, tickColor = o.tickColor, labelColor = o.labelColor, ringColor = o.ringColor,
     redZoneColor = o.redZoneColor, needleColor = o.needleColor, knobColor = o.knobColor,
@@ -668,7 +678,7 @@ fun GaugeConfig.imageNames(): List<String> = designs.flatMap { d ->
 fun GaugeConfig.withoutUnusedImages(): GaugeConfig {
     // 発光 OFF 用は色だけを使うので、色以外は発光 ON のものにそろえておく (使わない画像の名前を残さない)
     val g = if (glowOffDesign != null && !style.hasGlowOffDesign) copy(glowOffDesign = null)
-    else if (glowOffDesign != null) copy(glowOffDesign = design.withColorsFrom(glowOffDesign)).let { if (it == this) this else it }
+    else if (glowOffDesign != null) copy(glowOffDesign = design.withGlowOffFrom(glowOffDesign, style)).let { if (it == this) this else it }
     else this
     return g.mapDesigns { d ->
         val bg = d.backgroundImage.takeIf { style.drawsBackgroundImage }

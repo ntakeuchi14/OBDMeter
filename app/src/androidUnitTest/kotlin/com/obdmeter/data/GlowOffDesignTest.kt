@@ -33,4 +33,19 @@ class GlowOffDesignTest {
         // 発光 OFF 用を持たない形式に変えたら、書き出すときに外す
         assertNull(g.copy(style = GaugeStyle.LAMP).withoutUnusedImages().glowOffDesign)
     }
+
+    @Test
+    fun imageObjectSplitsImageBrightnessAndContrast() {
+        val a = GaugeDesign(backgroundImage = "day.png", imageScale = 0.5f, imageBrightness = 0.2f)
+        val b = GaugeDesign(backgroundImage = "night.png", imageScale = 2f, imageBrightness = -0.3f, imageContrast = 1.5f)
+        val g = GaugeConfig(pidKey = "APP_IMAGE", style = GaugeStyle.IMAGE, design = a, glowOffDesign = b)
+        val off = g.forGlow(true).design
+        assertEquals("night.png", off.backgroundImage)
+        assertEquals(-0.3f, off.imageBrightness, 0f)
+        assertEquals(1.5f, off.imageContrast, 0f)
+        assertEquals("大きさは共通", 0.5f, off.imageScale, 0f)
+        assertEquals(listOf("day.png", "night.png"), g.imageNames())
+        // アナログでは画像は分けない
+        assertEquals("day.png", g.copy(style = GaugeStyle.ANALOG).forGlow(true).design.backgroundImage)
+    }
 }
