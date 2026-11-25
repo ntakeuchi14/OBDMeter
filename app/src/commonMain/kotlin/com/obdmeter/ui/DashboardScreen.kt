@@ -820,13 +820,15 @@ private fun DashboardCanvas(
                     zOrder = zi.toFloat(),
                     // アナログの針は、ほかのメーター (中に重ねて置いたものも) より手前に描く
                     // (グループにするメーターを選んでいる間は、選んだ印が隠れないよう針もメーターと一緒に描く)
-                    overlay = if (g.style == GaugeStyle.ANALOG && def != null && !(editing && selecting)) {
+                    // 「針をメーターと同じ重なり順に描く」にしたメーターは、針もメーター本体と一緒に描く
+                    overlay = if (g.style == GaugeStyle.ANALOG && def != null && !(editing && selecting) && !g.design.needleSameZ) {
                         { GaugeView(gv, def, values, supported, layer = com.obdmeter.ui.gauges.GaugeLayer.NEEDLE, needleState = needle, glowOff = dashboard.glowOff, foreground = foreground) }
                     } else null,
                 ) {
                     GaugeView(gv, def, values, supported, peakResets[g.id] ?: 0, catalog = catalog, interactive = !editing,
                         historySlot = HistorySlot.of(dashboard.id, g.id),
-                        layer = if (g.style == GaugeStyle.ANALOG && !(editing && selecting)) com.obdmeter.ui.gauges.GaugeLayer.BODY else com.obdmeter.ui.gauges.GaugeLayer.ALL,
+                        layer = if (g.style == GaugeStyle.ANALOG && !(editing && selecting) && !g.design.needleSameZ) com.obdmeter.ui.gauges.GaugeLayer.BODY
+                            else com.obdmeter.ui.gauges.GaugeLayer.ALL,
                         needleState = needle, glowOff = dashboard.glowOff, foreground = foreground)
                 }
             }

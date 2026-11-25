@@ -789,6 +789,12 @@ private fun ScaleTab(g: GaugeConfig, def: com.obdmeter.core.PidDef?, update: ((G
     Head("針 (ポインター)")
     SwitchLine("針を表示", null, d.showNeedle) { v -> update { it.copy(showNeedle = v) } }
     if (d.showNeedle) {
+        SwitchLine(
+            "針をメーターと同じ重なり順に描く",
+            "OFF (既定) は、針をほかのメーター (中に重ねて置いたものも) より手前に描きます。ON にすると、メーター本体と同じ重なり順になります",
+            d.needleSameZ,
+        ) { v -> update { it.copy(needleSameZ = v) } }
+        if (!d.clockMode) NeedleImageSection(d, update)
         ColorLine("針の色", d.needleColor, GaugeColors.Text) { c -> update { it.copy(needleColor = c) } }
         SliderLine("針の長さ", d.needleLength * 100, 30f..130f, "%.0f%%") { v -> update { it.copy(needleLength = snap(v, 5f) / 100f) } }
         SliderLine("針の太さ", d.needleWidth * 100, 20f..400f, "%.0f%%") { v -> update { it.copy(needleWidth = snap(v, 5f) / 100f) } }
@@ -1735,6 +1741,42 @@ private fun TableLayoutSettings(
         }
     }
     Hint("背景画像は値の部分いっぱいに伸ばして表示します (背景色の上に重ねます)。")
+}
+
+/** 針の画像: 画像の中心を軸に回す。大きさは縦横比のまま、中心を軸に変える */
+@Composable
+private fun NeedleImageSection(d: GaugeDesign, update: ((GaugeDesign) -> GaugeDesign) -> Unit) {
+    val toast = rememberToast()
+    var loading by remember { mutableStateOf(false) }
+    val latestUpdate by rememberUpdatedState(update)
+    val picker = rememberImageImporter(onStart = { loading = true }) { r ->
+        r.onSuccess { name -> latestUpdate { it.copy(needleImage = name) } }
+            .onFailure { toast(it.message ?: "画像を読み込めませんでした") }
+        loading = false
+    }
+    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(vertical = 8.dp)) {
+        FilledTonalButton(enabled = !loading, onClick = {
+            if (!picker()) toast("この端末では画像を選ぶ画面を開けません")
+        }) { Text(if (loading) "読み込み中…" else if (d.needleImage == null) "針の画像を選ぶ" else "針の画像を変更") }
+        if (d.needleImage != null) {
+            OutlinedButton(onClick = { update { it.copy(needleImage = null) } }) { Text("画像を外す") }
+        }
+    }
+    if (d.needleImage != null) {
+        Hint("画像の中心を針の軸 (回転の中心) にして回します。軸が画像の中心に来るように、透明な余白を付けた画像にしてください。")
+        SliderLine("針の画像の大きさ (メーターの直径に対して)", d.needleImageScale * 100, 5f..300f, "%.0f%%") { v ->
+            update { it.copy(needleImageScale = snap(v, 1f) / 100f) }
+        }
+        SliderLine("画像の針の向き (真上 = 0°、時計回り)", d.needleImageAngle, -180f..180f, "%.0f°") { v ->
+            update { it.copy(needleImageAngle = snap(v, 1f)) }
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            for ((label, a) in listOf("上向き" to 0f, "右向き" to 90f, "下向き" to 180f, "左向き" to -90f)) {
+                OutlinedButton(onClick = { update { it.copy(needleImageAngle = a) } }) { Text(label, fontSize = 12.sp) }
+            }
+        }
+        Hint("画像を使う間は、針の色・長さ・太さ・尾・根元の位置・発光・影は使いません (最大値の針は線のままです)。")
+    }
 }
 
 /** 変動監視: 変動したときに前後の値を残す項目 */

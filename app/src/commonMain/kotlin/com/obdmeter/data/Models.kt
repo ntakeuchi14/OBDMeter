@@ -273,6 +273,14 @@ data class GaugeDesign(
     val needleTail: Float = 0.12f,
     /** 針の根元の位置 (中心からの距離。目盛りまで = 1、0 = 中心から)。0 より大きいと中心を空けて外側だけに針を描く (尾は無し) */
     val needleStart: Float = 0f,
+    /** 針をメーター本体と同じ重なり順に描く (false = 既定。針はほかのメーターより手前に描く) */
+    val needleSameZ: Boolean = false,
+    /** 針の画像 (画像の中心を針の軸にして回す)。null = 線の針 */
+    val needleImage: String? = null,
+    /** 針の画像の大きさ (メーターの直径 = 1。縦横比はそのまま) */
+    val needleImageScale: Float = 1f,
+    /** 針の画像で、針が向いている方向 (12 時 = 0°、時計回り)。画像の針が真上を向いていれば 0 */
+    val needleImageAngle: Float = 0f,
     /** 中心のノブの色。null = 針と同じ色 */
     val knobColor: Long? = null,
     /** ノブの大きさ (1.0 = 標準、0 = なし) */
@@ -682,6 +690,7 @@ fun GaugeConfig.imageNames(): List<String> = designs.flatMap { d ->
     listOfNotNull(
         d.backgroundImage.takeIf { style.drawsBackgroundImage },
         d.tableValueImage.takeIf { style == GaugeStyle.TABLE },
+        d.needleImage.takeIf { style == GaugeStyle.ANALOG },
     )
 }.distinct()
 
@@ -694,7 +703,9 @@ fun GaugeConfig.withoutUnusedImages(): GaugeConfig {
     return g.mapDesigns { d ->
         val bg = d.backgroundImage.takeIf { style.drawsBackgroundImage }
         val tv = d.tableValueImage.takeIf { style == GaugeStyle.TABLE }
-        if (bg == d.backgroundImage && tv == d.tableValueImage) d else d.copy(backgroundImage = bg, tableValueImage = tv)
+        val nd = d.needleImage.takeIf { style == GaugeStyle.ANALOG }
+        if (bg == d.backgroundImage && tv == d.tableValueImage && nd == d.needleImage) d
+        else d.copy(backgroundImage = bg, tableValueImage = tv, needleImage = nd)
     }.let { if (it == this) this else it }
 }
 

@@ -71,4 +71,16 @@ class GlowOffDesignTest {
         assertEquals(0.8f, d.imageContrast, 0f)
         assertEquals("大きさは共通", 1.2f, d.imageScale, 0f)
     }
+
+    @Test
+    fun needleImageIsReferencedOnlyByAnalog() {
+        val d = GaugeDesign(needleImage = "needle.png")
+        assertEquals(listOf("needle.png"), GaugeConfig(pidKey = "RPM", style = GaugeStyle.ANALOG, design = d).imageNames())
+        val bar = GaugeConfig(pidKey = "RPM", style = GaugeStyle.BAR, design = d)
+        assertEquals(emptyList<String>(), bar.imageNames())
+        assertEquals(null, bar.withoutUnusedImages().design.needleImage)
+        val r = BackupLogic.renameImages(listOf(Dashboard(id = 1, name = "p", gauges = listOf(GaugeConfig(pidKey = "RPM", style = GaugeStyle.ANALOG, design = d)))),
+            mapOf("needle.png" to "n2.png"))
+        assertEquals("n2.png", r.single().gauges.single().design.needleImage)
+    }
 }

@@ -133,6 +133,9 @@ data class GaugeLook(
     val needleWidth: Float = 1f,
     val needleTail: Float = 0.12f,
     val needleStart: Float = 0f,
+    val needleImage: String? = null,
+    val needleImageScale: Float = 1f,
+    val needleImageAngle: Float = 0f,
     val knobColor: Color? = null,
     val knobSize: Float = 1f,
     val pivotX: Float = 0f,
@@ -577,6 +580,8 @@ fun AnalogGauge(
     val warp = look.scaleWarp
     fun wf(v: Double): Float = ScaleWarp.warp(warp, fraction(def, v))
     val f = if (layer == GaugeLayer.NEEDLE && needleState != null) needleState.floatValue else ScaleWarp.warp(warp, animated(def, value, look.smoothing))
+    // 針の画像 (本体の層だけ描くときは読まない)
+    val needleImg = if (layer != GaugeLayer.BODY) rememberGaugeImage(look.needleImage) else null
     if (layer == GaugeLayer.BODY && needleState != null) SideEffect { needleState.floatValue = f }
     // 最大値の印・針の位置 (戻している間は今の針の位置へ近づける)
     val pf = peak?.let { val p = wf(it); p + (f - p) * peakReturn.coerceIn(0f, 1f) }
@@ -941,7 +946,11 @@ fun AnalogGauge(
                 hand(fr, h.length * look.needleLength, h.width * look.needleWidth, h.color ?: look.needleColor, look.needleTail)
             }
         } else if (value != null && look.showNeedle) {
-            hand(f, look.needleLength, look.needleWidth, if (warn) GaugeColors.Warn else look.needleColor, look.needleTail)
+            if (needleImg != null) {
+                // 針の画像: 画像の中心を軸にして、針の角度に回す (縦横比はそのまま、大きさはメーターの直径に対する比率)
+                val a = start + sweep * f
+                rotate(a + 90f - look.needleImageAngle, pc) { drawImageFit(needleImg, pc, d * look.needleImageScale) }
+            } else hand(f, look.needleLength, look.needleWidth, if (warn) GaugeColors.Warn else look.needleColor, look.needleTail)
         }
         if (look.showNeedle && look.knobSize > 0f) {
             val kr = d * 0.035f * look.knobSize

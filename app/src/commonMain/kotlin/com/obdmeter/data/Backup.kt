@@ -119,7 +119,7 @@ object BackupLogic {
         fun r(n: String?) = n?.let { rename[it] ?: it }
         return dashboards.map { d ->
             d.copy(background = d.background.copy(image = r(d.background.image)), gauges = d.gauges.map { g ->
-                g.mapDesigns { it.copy(backgroundImage = r(it.backgroundImage), tableValueImage = r(it.tableValueImage)) }
+                g.mapDesigns { it.copy(backgroundImage = r(it.backgroundImage), tableValueImage = r(it.tableValueImage), needleImage = r(it.needleImage)) }
             })
         }
     }
@@ -148,6 +148,7 @@ object BackupLogic {
             g.mapDesigns { ds -> ds.copy(
                 backgroundImage = ds.backgroundImage?.let { imageRename[it] },
                 tableValueImage = ds.tableValueImage?.let { imageRename[it] },
+                needleImage = ds.needleImage?.let { imageRename[it] },
                 valueFont = ds.valueFont?.let { fontRename[it] },
                 labelFont = ds.labelFont?.let { fontRename[it] },
             ) }
