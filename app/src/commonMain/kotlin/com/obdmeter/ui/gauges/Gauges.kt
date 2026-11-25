@@ -625,7 +625,8 @@ fun AnalogGauge(
             // 根元を外側にずらすときは、中心を空けて外側だけに描く (尾は無し)
             val tail = if (look.needleStart > 0f) -min(tickOuter * look.needleStart * un, len * 0.95f) else tickOuter * lengthMul * tailMul
             val baseW = d * 0.016f * widthMul
-            val tipW = baseW * 0.35f
+            // 中心を空けた短い針は、先細りを弱くして棒に近い形にする
+            val tipW = baseW * (if (look.needleStart > 0f) 0.75f else 0.35f)
             val needle = Path().apply {
                 // 尾の端 → 根元 → 先端 → 根元 → 尾の端 (針の向きに垂直な方向へ幅を取る)
                 moveTo(pc.x - tail * ca - baseW * sa, pc.y - tail * sa + baseW * ca)
