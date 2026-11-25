@@ -132,6 +132,7 @@ data class GaugeLook(
     val needleLength: Float = 1f,
     val needleWidth: Float = 1f,
     val needleTail: Float = 0.12f,
+    val needleStart: Float = 0f,
     val knobColor: Color? = null,
     val knobSize: Float = 1f,
     val pivotX: Float = 0f,
@@ -150,6 +151,7 @@ data class GaugeLook(
     /** 文字盤の背景色 (背景画像が無いときだけ塗る) */
     val faceColor: Color? = null,
     val faceScale: Float = 1f,
+    val faceHole: Float = 0f,
     val panelStyle: com.obdmeter.data.PanelStyle = com.obdmeter.data.PanelStyle.FLAT,
     val panelDepth: Float = 0.6f,
     val panelGloss: Boolean = false,
@@ -620,7 +622,8 @@ fun AnalogGauge(
             val ca = ux / un
             val sa = uy / un
             val len = tickOuter * lengthMul * un
-            val tail = tickOuter * lengthMul * tailMul
+            // 根元を外側にずらすときは、中心を空けて外側だけに描く (尾は無し)
+            val tail = if (look.needleStart > 0f) -min(tickOuter * look.needleStart * un, len * 0.95f) else tickOuter * lengthMul * tailMul
             val baseW = d * 0.016f * widthMul
             val tipW = baseW * 0.35f
             val needle = Path().apply {
@@ -650,9 +653,14 @@ fun AnalogGauge(
         look.faceColor?.let { c ->
             val fc = if (image != null) Offset(center.x + d * look.imageOffsetX, center.y + d * look.imageOffsetY) else center
             val fr = (outer - ringWidth / 2) * look.faceScale
-            drawCircle(c, fr, fc)
             val rect = androidx.compose.ui.geometry.Rect(fc, fr)
-            drawPanel(Path().apply { addOval(rect) }, rect, look.panelStyle, look.panelDepth, look.panelGloss)
+            // センター穴: 背景色を輪にして、中心は下 (カードの背景) が見えるようにする
+            val facePath = Path().apply {
+                addOval(rect)
+                if (look.faceHole > 0f) { addOval(androidx.compose.ui.geometry.Rect(fc, fr * look.faceHole)); fillType = androidx.compose.ui.graphics.PathFillType.EvenOdd }
+            }
+            drawPath(facePath, c)
+            drawPanel(facePath, rect, look.panelStyle, look.panelDepth, look.panelGloss)
         }
         if (image != null) {
             drawImageFit(image, Offset(center.x + d * look.imageOffsetX, center.y + d * look.imageOffsetY), d * look.imageScale, look.imageFilter())

@@ -792,7 +792,9 @@ private fun ScaleTab(g: GaugeConfig, def: com.obdmeter.core.PidDef?, update: ((G
         ColorLine("針の色", d.needleColor, GaugeColors.Text) { c -> update { it.copy(needleColor = c) } }
         SliderLine("針の長さ", d.needleLength * 100, 30f..130f, "%.0f%%") { v -> update { it.copy(needleLength = snap(v, 5f) / 100f) } }
         SliderLine("針の太さ", d.needleWidth * 100, 20f..400f, "%.0f%%") { v -> update { it.copy(needleWidth = snap(v, 5f) / 100f) } }
-        SliderLine("反対側の尾の長さ", d.needleTail * 100, 0f..60f, "%.0f%%") { v -> update { it.copy(needleTail = snap(v, 1f) / 100f) } }
+        SliderLine("針の根元の位置 (中心から。0 = 中心)", d.needleStart * 100, 0f..90f, "%.0f%%") { v -> update { it.copy(needleStart = snap(v, 1f) / 100f) } }
+        if (d.needleStart > 0f) Hint("中心を空けて、目盛りまでの ${(d.needleStart * 100).toInt()}% の位置から外側だけに針を描きます (反対側の尾は描きません)。ノブを消すときは「ノブの大きさ」を 0 にします。")
+        else SliderLine("反対側の尾の長さ", d.needleTail * 100, 0f..60f, "%.0f%%") { v -> update { it.copy(needleTail = snap(v, 1f) / 100f) } }
         SliderLine("針の発光 (0 = なし)", d.needleGlow * 100, 0f..100f, "%.0f%%") { v -> update { it.copy(needleGlow = snap(v, 5f) / 100f) } }
 
         Head("針の中心の位置")
@@ -965,7 +967,7 @@ private fun LookTab(g: GaugeConfig, update: ((GaugeDesign) -> GaugeDesign) -> Un
         ColorLine("メーターの色 (現在値の弧)", d.color, GaugeColors.Accent) { c -> update { it.copy(color = c) } }
     }
     GlowSection(g, update)
-    FaceSection(d, update)
+    FaceSection(d, update, analog = g.style == GaugeStyle.ANALOG)
     if (EditorTabs.usesRing(g.style)) RingSection(d, update)
     if (g.style == GaugeStyle.ANALOG) RecessGlassSection(d, update)
 
@@ -1006,10 +1008,11 @@ private fun GlowSection(g: GaugeConfig, update: ((GaugeDesign) -> GaugeDesign) -
 
 /** メーターの背景色 */
 @Composable
-private fun FaceSection(d: GaugeDesign, update: ((GaugeDesign) -> GaugeDesign) -> Unit) {
+private fun FaceSection(d: GaugeDesign, update: ((GaugeDesign) -> GaugeDesign) -> Unit, analog: Boolean = false) {
     ColorLine("メーターの背景色 (既定 = なし)", d.faceColor, Color.Transparent) { c -> update { it.copy(faceColor = c) } }
     if (d.faceColor != null) {
         SliderLine("背景色の大きさ", d.faceScale * 100, 20f..150f, "%.0f%%") { v -> update { it.copy(faceScale = snap(v, 1f) / 100f) } }
+        if (analog) SliderLine("センター穴の大きさ (0 = なし)", d.faceHole * 100, 0f..95f, "%.0f%%") { v -> update { it.copy(faceHole = snap(v, 1f) / 100f) } }
         if (d.backgroundImage != null) {
             Hint("背景色は背景画像の下に塗ります。画像の透過した部分から見えるので、大きさを画像の内側に合わせてください。")
         }

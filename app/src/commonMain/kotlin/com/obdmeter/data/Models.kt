@@ -271,6 +271,8 @@ data class GaugeDesign(
     val needleWidth: Float = 1f,
     /** 中心から反対側に出る尾の長さ (針の長さに対する比率) */
     val needleTail: Float = 0.12f,
+    /** 針の根元の位置 (中心からの距離。目盛りまで = 1、0 = 中心から)。0 より大きいと中心を空けて外側だけに針を描く (尾は無し) */
+    val needleStart: Float = 0f,
     /** 中心のノブの色。null = 針と同じ色 */
     val knobColor: Long? = null,
     /** ノブの大きさ (1.0 = 標準、0 = なし) */
@@ -371,6 +373,8 @@ data class GaugeDesign(
     val faceColor: Long? = null,
     /** 背景色を塗る大きさ (倍率)。透過した背景画像の内側に合わせる */
     val faceScale: Float = 1f,
+    /** アナログ: 背景色の中心に空ける穴の大きさ (背景色の半径に対する比率、0 = 穴なし) */
+    val faceHole: Float = 0f,
     /** 背景色 (メーターの背景・値テーブルの値の部分) の立体感: なし / 埋め込み / 浮き出し */
     val panelStyle: PanelStyle = PanelStyle.FLAT,
     /** 立体感の強さ (0〜1) */
