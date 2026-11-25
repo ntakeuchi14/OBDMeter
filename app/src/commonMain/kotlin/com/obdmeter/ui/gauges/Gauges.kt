@@ -949,7 +949,7 @@ fun AnalogGauge(
             if (needleImg != null) {
                 // 針の画像: 画像の中心を軸にして、針の角度に回す (縦横比はそのまま、大きさはメーターの直径に対する比率)
                 val a = start + sweep * f
-                rotate(a + 90f - look.needleImageAngle, pc) { drawImageFit(needleImg, pc, d * look.needleImageScale) }
+                withTransform({ rotate(a + 90f - look.needleImageAngle, pc) }) { drawImageFit(needleImg, pc, d * look.needleImageScale) }
             } else hand(f, look.needleLength, look.needleWidth, if (warn) GaugeColors.Warn else look.needleColor, look.needleTail)
         }
         if (look.showNeedle && look.knobSize > 0f) {
