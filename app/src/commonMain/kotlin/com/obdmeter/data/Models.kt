@@ -287,6 +287,9 @@ data class GaugeDesign(
     val needleImageScale: Float = 1f,
     /** 針の画像で、針が向いている方向 (12 時 = 0°、時計回り)。画像の針が真上を向いていれば 0 */
     val needleImageAngle: Float = 0f,
+    /** 針の画像の中での回転軸の位置 (左端 0〜右端 1 / 上端 0〜下端 1。既定は画像の中心) */
+    val needleImagePivotX: Float = 0.5f,
+    val needleImagePivotY: Float = 0.5f,
     /** 中心のノブの色。null = 針と同じ色 */
     val knobColor: Long? = null,
     /** ノブの大きさ (1.0 = 標準、0 = なし) */

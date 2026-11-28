@@ -1763,7 +1763,13 @@ private fun NeedleImageSection(d: GaugeDesign, update: ((GaugeDesign) -> GaugeDe
         }
     }
     if (d.needleImage != null) {
-        Hint("画像の中心を針の軸 (回転の中心) にして回します。軸が画像の中心に来るように、透明な余白を付けた画像にしてください。")
+        Hint("「回転軸の位置」で、画像の中のどこを針の軸 (回転の中心) にするかを決めます (既定は画像の中心 50% / 50%)。")
+        SliderLine("回転軸の位置 横 (左端 0% 〜 右端 100%)", d.needleImagePivotX * 100, 0f..100f, "%.1f%%") { v ->
+            update { it.copy(needleImagePivotX = snap(v, 0.5f) / 100f) }
+        }
+        SliderLine("回転軸の位置 縦 (上端 0% 〜 下端 100%)", d.needleImagePivotY * 100, 0f..100f, "%.1f%%") { v ->
+            update { it.copy(needleImagePivotY = snap(v, 0.5f) / 100f) }
+        }
         SliderLine("針の画像の大きさ (メーターの直径に対して)", d.needleImageScale * 100, 5f..300f, "%.0f%%") { v ->
             update { it.copy(needleImageScale = snap(v, 1f) / 100f) }
         }

@@ -136,6 +136,8 @@ data class GaugeLook(
     val needleImage: String? = null,
     val needleImageScale: Float = 1f,
     val needleImageAngle: Float = 0f,
+    val needleImagePivotX: Float = 0.5f,
+    val needleImagePivotY: Float = 0.5f,
     val knobColor: Color? = null,
     val knobSize: Float = 1f,
     val pivotX: Float = 0f,
@@ -949,7 +951,11 @@ fun AnalogGauge(
             if (needleImg != null) {
                 // 針の画像: 画像の中心を軸にして、針の角度に回す (縦横比はそのまま、大きさはメーターの直径に対する比率)
                 val a = start + sweep * f
-                withTransform({ rotate(a + 90f - look.needleImageAngle, pc) }) { drawImageFit(needleImg, pc, d * look.needleImageScale) }
+                // 回転軸 (画像の中の位置) が針の軸 pc に来るように、画像の中心をずらす
+                val box = d * look.needleImageScale
+                val k = min(box / needleImg.width, box / needleImg.height)
+                val ic = Offset(pc.x + (0.5f - look.needleImagePivotX) * needleImg.width * k, pc.y + (0.5f - look.needleImagePivotY) * needleImg.height * k)
+                withTransform({ rotate(a + 90f - look.needleImageAngle, pc) }) { drawImageFit(needleImg, ic, box) }
             } else hand(f, look.needleLength, look.needleWidth, if (warn) GaugeColors.Warn else look.needleColor, look.needleTail)
         }
         if (look.showNeedle && look.knobSize > 0f) {

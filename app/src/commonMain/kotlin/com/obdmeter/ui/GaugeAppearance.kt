@@ -97,6 +97,8 @@ fun GaugeDesign.toLook(def: PidDef, style: GaugeStyle): GaugeLook {
         needleImage = needleImage,
         needleImageScale = needleImageScale.coerceIn(0.05f, 3f),
         needleImageAngle = needleImageAngle,
+        needleImagePivotX = needleImagePivotX.coerceIn(0f, 1f),
+        needleImagePivotY = needleImagePivotY.coerceIn(0f, 1f),
         knobColor = knobColor?.let { Color(it) },
         knobSize = knobSize.coerceIn(0f, 4f),
         pivotX = pivotX.coerceIn(-0.5f, 0.5f),
