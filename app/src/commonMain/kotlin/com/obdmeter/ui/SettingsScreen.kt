@@ -100,7 +100,9 @@ fun SettingsScreen(vm: MainViewModel, onBack: () -> Unit, onOpenCustomPids: () -
                 Text(
                     "端末の Wi-Fi を、アダプターが出しているアクセスポイント (MHD の場合は MHD_… など) につないでから接続します。" +
                         "アダプターの Wi-Fi はインターネットにつながらないので、「インターネットに接続されていません」と出ても接続したままにしてください。" +
-                        "通信のしかたがアダプターによって違うので、まずは「接続テスト」で、どのポートが応答するかを調べてください。",
+                        "MHD の Wi-Fi アダプターは、ポート 23・通信のしかた「K+DCAN ケーブル (INPA 互換)」でつなぎます " +
+                        "(設定のポートが開いていなければ 23 番・35000 番も自動で試します)。" +
+                        "ほかのアダプターは、まず「接続テスト」でどのポートが応答するかを調べてください。",
                     color = GaugeColors.SubText, fontSize = 12.sp,
                 )
                 var host by remember(s.wifiHost) { mutableStateOf(s.wifiHost) }
@@ -118,7 +120,7 @@ fun SettingsScreen(vm: MainViewModel, onBack: () -> Unit, onOpenCustomPids: () -
                         port = v.filter(Char::isDigit).take(5)
                         port.toIntOrNull()?.takeIf { it in 1..65535 }?.let { p -> vm.updateSettings { it.copy(wifiPort = p) } }
                     },
-                    label = { Text("ポート (ELM327 互換は 35000 が多い)") },
+                    label = { Text("ポート (MHD は 23、ELM327 互換は 35000 が多い)") },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
                 )

@@ -190,6 +190,45 @@ class ConnectionTest(private val context: Context, private val log: CommLogger) 
             }
         }
 
+        // BMW-FAST がそのまま通るポート (MHD の Wi-Fi アダプターは 23 番) で、DME にいろいろ問い合わせる
+        if (settings.usbAdapter == UsbAdapter.DCAN) {
+            val p = if (settings.wifiPort in open) settings.wifiPort else if (23 in open) 23 else open.first()
+            line("--- 3. BMW-FAST (K+DCAN と同じ) として問い合わせ ($host:$p) ---")
+            if (p != settings.wifiPort) line("※ 設定のポート ${settings.wifiPort} 番は開いていないので $p 番を使います (接続のときも同じように切り替えます)")
+            val t = com.obdmeter.net.WifiTransport(context, host, p)
+            runCatching { t.open() }.onFailure { line("✗ ${it.message}"); return }
+            try {
+                val target = settings.dcanTargetAddress
+                var ok = false
+                for ((name, data) in listOf(
+                    "1A 80 (ECU 識別 KWP)" to intArrayOf(0x1A, 0x80),
+                    "3E 00 (テスター接続)" to intArrayOf(0x3E, 0x00),
+                    "22 F1 90 (VIN UDS)" to intArrayOf(0x22, 0xF1, 0x90),
+                )) {
+                    currentCoroutineContext().ensureActive()
+                    val tel = BmwFastProtocol.buildTelegram(target, 0xF1, data)
+                    t.purge()
+                    t.write(tel)
+                    val rx = readFor(t, 1500)
+                    line("$name → 送信 ${Hex.of(tel)}")
+                    line("    受信 ${Hex.of(rx.take(64).toByteArray()).ifEmpty { "(なし)" }}")
+                    val echo = rx.size >= tel.size && (tel.indices).all { rx[it] == tel[it] }
+                    val reply = BmwFastProtocol.scanTelegrams(rx).firstOrNull { it.target == 0xF1 && it.source == target }
+                    if (reply != null) {
+                        ok = true
+                        val d = reply.data
+                        val meaning = if (d.isNotEmpty() && d[0] == 0x7F) "否定応答 (NRC=%02X)".format(d.getOrElse(2) { 0 }) else "肯定応答"
+                        line("    → ECU の応答: ${Hex.of(d)} ($meaning)" + if (echo) " / 送信のエコーあり" else " / エコーなし")
+                    }
+                }
+                line("--- 判定 ---")
+                if (ok) {
+                    line("○ Wi-Fi アダプター経由で DME (0x%02X) と通信できています。".format(target))
+                    line("・接続方式「Wi-Fi 接続」、通信のしかた「K+DCAN ケーブル (INPA 互換)」、ポート $p で接続してください")
+                } else line("✗ DME の応答がありません。イグニッション ON で再実行してください")
+            } finally { t.close() }
+        }
+
         if (settings.wifiPort in open && settings.usbAdapter == UsbAdapter.OBDLINK) {
             line("--- 3. ELM327 互換として接続 ($host:${settings.wifiPort}) ---")
             val t = com.obdmeter.net.WifiTransport(context, host, settings.wifiPort)

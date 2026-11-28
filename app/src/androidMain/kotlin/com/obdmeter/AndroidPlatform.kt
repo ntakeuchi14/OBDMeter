@@ -173,8 +173,17 @@ class AndroidPlatform(context: Context) : AppPlatform {
             ?: throw IllegalStateException("Wi-Fi につながっていません。端末の Wi-Fi をアダプター (MHD など) のアクセスポイントにつないでください")
         status("Wi-Fi アダプター ($host:${settings.wifiPort}) に接続しています…")
         log.log(CommLogger.Direction.INFO, "Wi-Fi アダプター: $host:${settings.wifiPort} (${settings.usbAdapter.name})")
-        val t = com.obdmeter.net.WifiTransport(context, host, settings.wifiPort)
-        t.open()
+        // 設定のポートが開いていなければ、よくあるポートも試す
+        // (MHD の Wi-Fi アダプターは 23 番が K+DCAN ケーブルと同じ BMW-FAST をそのまま流す。ELM327 互換は 35000 番が多い)
+        val ports = (listOf(settings.wifiPort) + if (settings.usbAdapter == UsbAdapter.DCAN) listOf(23, 35000) else listOf(35000, 23)).distinct()
+        var t: com.obdmeter.net.WifiTransport? = null
+        var lastError: Exception? = null
+        for (p in ports) {
+            val c = com.obdmeter.net.WifiTransport(context, host, p)
+            try { c.open(); t = c; if (p != settings.wifiPort) log.log(CommLogger.Direction.INFO, "${settings.wifiPort} 番が開いていないので $p 番で接続しました"); break }
+            catch (e: Exception) { lastError = e }
+        }
+        if (t == null) throw lastError ?: IllegalStateException("Wi-Fi アダプターに接続できません")
         return when (settings.usbAdapter) {
             // 通信速度の切り替えは無い (TCP)
             UsbAdapter.OBDLINK -> Elm327Protocol(
