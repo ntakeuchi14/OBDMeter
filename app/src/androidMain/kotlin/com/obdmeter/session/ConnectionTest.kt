@@ -221,6 +221,15 @@ class ConnectionTest(private val context: Context, private val log: CommLogger) 
                         line("    → ECU の応答: ${Hex.of(d)} ($meaning)" + if (echo) " / 送信のエコーあり" else " / エコーなし")
                     }
                 }
+                if (ok) {
+                    // 1 往復にかかる時間 (USB と比べるため)
+                    val bf = BmwFastProtocol(t, BmwFastProtocol.Options(targetAddress = target), CommLogger.NONE)
+                    val times = (1..10).mapNotNull {
+                        val t0 = System.nanoTime()
+                        bf.request(intArrayOf(0x3E, 0x00))?.let { (System.nanoTime() - t0) / 1_000_000 }
+                    }
+                    if (times.isNotEmpty()) line("1 往復の時間 (3E 00 × ${times.size}): 平均 ${times.average().toInt()} ms / 最短 ${times.min()} ms / 最長 ${times.max()} ms")
+                }
                 line("--- 判定 ---")
                 if (ok) {
                     line("○ Wi-Fi アダプター経由で DME (0x%02X) と通信できています。".format(target))

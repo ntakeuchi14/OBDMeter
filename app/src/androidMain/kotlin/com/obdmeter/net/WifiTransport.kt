@@ -25,8 +25,11 @@ class WifiTransport(
     private var socket: Socket? = null
     private var input: InputStream? = null
     private var output: OutputStream? = null
+    /** Wi-Fi の省電力を止めておくロック (省電力のままだと 1 往復ごとに数十〜数百 ms 遅れることがある) */
+    private var wifiLock: android.net.wifi.WifiManager.WifiLock? = null
 
     override fun open() {
+        acquireLowLatency()
         val s = try {
             val net = wifiNetwork(context)
             val sock = net?.socketFactory?.createSocket() ?: Socket()
@@ -63,9 +66,28 @@ class WifiTransport(
         }
     }
 
+    /** 溜まっているデータだけ捨てる (TCP は待たなくても届いた分がわかるので、待ち時間を入れない) */
+    override fun purge() {
+        val i = input ?: return
+        val tmp = ByteArray(512)
+        var guard = 0
+        runCatching { while (i.available() > 0 && guard++ < 50) { if (i.read(tmp, 0, minOf(tmp.size, i.available())) <= 0) break } }
+    }
+
     override fun close() {
         runCatching { socket?.close() }
         socket = null; input = null; output = null
+        runCatching { wifiLock?.takeIf { it.isHeld }?.release() }
+        wifiLock = null
+    }
+
+    @Suppress("DEPRECATION")
+    private fun acquireLowLatency() {
+        if (wifiLock?.isHeld == true) return
+        val wm = context.applicationContext.getSystemService(Context.WIFI_SERVICE) as? android.net.wifi.WifiManager ?: return
+        val mode = if (android.os.Build.VERSION.SDK_INT >= 29) android.net.wifi.WifiManager.WIFI_MODE_FULL_LOW_LATENCY
+        else android.net.wifi.WifiManager.WIFI_MODE_FULL_HIGH_PERF
+        wifiLock = runCatching { wm.createWifiLock(mode, "OBDMeter:adapter").apply { setReferenceCounted(false); acquire() } }.getOrNull()
     }
 
     companion object {

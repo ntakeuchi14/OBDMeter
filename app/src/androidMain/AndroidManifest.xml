@@ -7,6 +7,9 @@
     <!-- Wi-Fi アダプター (MHD など) と TCP でつなぐ -->
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <!-- Wi-Fi の省電力を止めて、アダプターとの往復を速くする (WifiLock) -->
+    <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
 
     <!-- フロート表示 (ほかのアプリやホーム画面の上にメーターを出す) -->
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
