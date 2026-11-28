@@ -123,6 +123,7 @@ class AndroidPlatform(context: Context) : AppPlatform {
 
     override suspend fun createProtocol(settings: AppSettings, log: CommLogger, status: (String) -> Unit): ObdProtocol {
         if (settings.connectionType == ConnectionType.SIMULATOR) return SimulatorProtocol()
+        if (settings.connectionType == ConnectionType.WIFI) return createWifiProtocol(settings, log, status)
 
         val drivers = UsbSerialTransport.findDrivers(context)
         val driver = drivers.firstOrNull()
@@ -163,6 +164,29 @@ class AndroidPlatform(context: Context) : AppPlatform {
                     log,
                 )
             }
+        }
+    }
+
+    /** Wi-Fi アダプター: TCP でつなぎ、アダプターの種類 (ELM327 互換 / BMW-FAST) の通信をそのまま流す */
+    private fun createWifiProtocol(settings: AppSettings, log: CommLogger, status: (String) -> Unit): ObdProtocol {
+        val host = com.obdmeter.net.WifiTransport.resolveHost(context, settings.wifiHost)
+            ?: throw IllegalStateException("Wi-Fi につながっていません。端末の Wi-Fi をアダプター (MHD など) のアクセスポイントにつないでください")
+        status("Wi-Fi アダプター ($host:${settings.wifiPort}) に接続しています…")
+        log.log(CommLogger.Direction.INFO, "Wi-Fi アダプター: $host:${settings.wifiPort} (${settings.usbAdapter.name})")
+        val t = com.obdmeter.net.WifiTransport(context, host, settings.wifiPort)
+        t.open()
+        return when (settings.usbAdapter) {
+            // 通信速度の切り替えは無い (TCP)
+            UsbAdapter.OBDLINK -> Elm327Protocol(
+                t,
+                Elm327Protocol.Options(protocol = settings.elmProtocol, singleResponseHint = settings.elmSingleResponseHint, baudRate = 115200),
+                log,
+            )
+            UsbAdapter.DCAN -> BmwFastProtocol(
+                t,
+                BmwFastProtocol.Options(targetAddress = settings.dcanTargetAddress, adapterEcho = settings.dcanEcho),
+                log,
+            )
         }
     }
 

@@ -29,7 +29,12 @@ class ConnectionTest(private val context: Context, private val log: CommLogger) 
         line("== 接続テスト ==")
         line("設定: ${settings.connectionType.name} / ${settings.usbAdapter.name} / ELM ${settings.elmBaudRate}bps ATSP${settings.elmProtocol} / DCAN 0x%02X".format(settings.dcanTargetAddress))
         if (settings.connectionType == ConnectionType.SIMULATOR) {
-            line("接続方式がシミュレーターです。設定で「USB 接続」にしてから実行してください。")
+            line("接続方式がシミュレーターです。設定で「USB 接続」か「Wi-Fi 接続」にしてから実行してください。")
+            return@withContext
+        }
+        if (settings.connectionType == ConnectionType.WIFI) {
+            testWifi(settings, ::line)
+            line("== テスト終了 ==")
             return@withContext
         }
 
@@ -128,6 +133,86 @@ class ConnectionTest(private val context: Context, private val log: CommLogger) 
     // ---------------------------------------------------------------------
     // K+DCAN
     // ---------------------------------------------------------------------
+
+    /**
+     * Wi-Fi アダプター (MHD など): つないでいる Wi-Fi とアダプターの IP を確かめ、よく使われるポートを順に開いて、
+     * どの通信 (ELM327 互換 / ENET (HSFZ) / BMW-FAST そのまま) に応答するかを生のデータで記録する。
+     * そのあと、設定のポートとアダプターの種類で通常の接続テストをする
+     */
+    private suspend fun testWifi(settings: AppSettings, line: (String) -> Unit) {
+        val net = com.obdmeter.net.WifiTransport.wifiNetwork(context)
+        if (net == null) {
+            line("✗ Wi-Fi につながっていません。端末の Wi-Fi をアダプターのアクセスポイント (MHD_… など) につないでください")
+            return
+        }
+        line("端末の Wi-Fi の IP: ${com.obdmeter.net.WifiTransport.wifiAddress(context) ?: "不明"}")
+        val gw = com.obdmeter.net.WifiTransport.wifiGateway(context)
+        line("Wi-Fi のゲートウェイ: ${gw ?: "不明"}")
+        val host = com.obdmeter.net.WifiTransport.resolveHost(context, settings.wifiHost)
+        if (host == null) { line("✗ 接続先の IP がわかりません。設定の「接続先の IP」に入れてください"); return }
+        line("接続先: $host (設定のポート ${settings.wifiPort})")
+
+        line("--- 1. ポートを調べる ---")
+        val ports = (listOf(settings.wifiPort) + WIFI_PORTS).distinct()
+        val open = mutableListOf<Int>()
+        for (p in ports) {
+            currentCoroutineContext().ensureActive()
+            val t = com.obdmeter.net.WifiTransport(context, host, p, connectTimeoutMs = 1500)
+            val ok = runCatching { t.open() }.isSuccess
+            if (ok) {
+                open += p
+                // 接続しただけで何か送ってくるか (あいさつ文など)
+                val hello = readFor(t, 600)
+                line("○ $p 番が開いています" + if (hello.isNotEmpty()) " / 最初の受信: ${dump(hello)}" else "")
+            }
+            t.close()
+        }
+        if (open.isEmpty()) {
+            line("✗ 開いているポートが見つかりません (調べたポート: ${ports.joinToString(", ")})")
+            return
+        }
+
+        line("--- 2. 開いているポートに問い合わせる ---")
+        for (p in open) {
+            currentCoroutineContext().ensureActive()
+            line("[$p 番]")
+            for ((name, data) in wifiProbes(settings.dcanTargetAddress)) {
+                val t = com.obdmeter.net.WifiTransport(context, host, p, connectTimeoutMs = 1500)
+                try {
+                    t.open()
+                    readFor(t, 200)
+                    t.write(data)
+                    val r = readFor(t, 1500)
+                    line("  $name 送信 ${dump(data)} → " + if (r.isEmpty()) "(応答なし)" else dump(r))
+                } catch (e: Exception) {
+                    line("  $name ✗ ${e.message}")
+                } finally { t.close() }
+            }
+        }
+
+        if (settings.wifiPort in open && settings.usbAdapter == UsbAdapter.OBDLINK) {
+            line("--- 3. ELM327 互換として接続 ($host:${settings.wifiPort}) ---")
+            val t = com.obdmeter.net.WifiTransport(context, host, settings.wifiPort)
+            runCatching { t.open() }.onFailure { line("✗ ${it.message}"); return }
+            testElm(t, settings, line, 115200)
+        }
+    }
+
+    /** Wi-Fi アダプターへの問い合わせ (名前, 送るデータ) */
+    private fun wifiProbes(target: Int): List<Pair<String, ByteArray>> = listOf(
+        "ELM327 (ATI)" to "ATZ\rATI\r".toByteArray(Charsets.US_ASCII),
+        // ENET (HSFZ): 長さ 0・種類 0x0011 (車両の識別) と、種類 0x0001 (診断。送信元 F4 → DME へ 3E 00)
+        "ENET 識別" to byteArrayOf(0, 0, 0, 0, 0, 0x11),
+        "ENET 診断" to byteArrayOf(0, 0, 0, 4, 0, 1, 0xF4.toByte(), target.toByte(), 0x3E, 0x00),
+        "BMW-FAST" to BmwFastProtocol.buildTelegram(target, 0xF1, intArrayOf(0x01, 0x00)),
+    )
+
+    /** 受信データを 16 進と文字で出す */
+    private fun dump(b: ByteArray): String {
+        val hex = Hex.of(b, 0, minOf(b.size, 64))
+        val text = b.take(64).joinToString("") { val c = it.toInt() and 0xFF; if (c in 0x20..0x7E) c.toChar().toString() else if (c == 0x0D) "|" else "." }
+        return "$hex  \"$text\"" + if (b.size > 64) " …(${b.size} バイト)" else ""
+    }
 
     private suspend fun testDcan(
         driver: com.hoho.android.usbserial.driver.UsbSerialDriver,
@@ -228,8 +313,14 @@ class ConnectionTest(private val context: Context, private val log: CommLogger) 
         driver: com.hoho.android.usbserial.driver.UsbSerialDriver,
         settings: AppSettings,
         line: (String) -> Unit,
+    ) = testElm(UsbSerialTransport(context, driver, 115200, dtr = true, rts = true), settings, line, settings.elmBaudRate)
+
+    private suspend fun testElm(
+        t: Transport,
+        settings: AppSettings,
+        line: (String) -> Unit,
+        baud: Int,
     ) {
-        val t = UsbSerialTransport(context, driver, 115200, dtr = true, rts = true)
         try {
             t.open()
         } catch (e: Exception) {
@@ -237,7 +328,7 @@ class ConnectionTest(private val context: Context, private val log: CommLogger) 
             return
         }
         try {
-            val elm = Elm327Protocol(t, Elm327Protocol.Options(protocol = settings.elmProtocol, commandTimeoutMs = 3000, baudRate = settings.elmBaudRate), log)
+            val elm = Elm327Protocol(t, Elm327Protocol.Options(protocol = settings.elmProtocol, commandTimeoutMs = 3000, baudRate = baud), log)
             fun cmd(c: String, timeout: Int = 3000): String {
                 val r = elm.command(c, timeout).joinToString(" | ").ifEmpty { "(応答なし)" }
                 line("$c → $r")
@@ -366,5 +457,10 @@ class ConnectionTest(private val context: Context, private val log: CommLogger) 
             if (n > 0) out.write(buf, 0, n)
         }
         return out.toByteArray()
+    }
+
+    companion object {
+        /** Wi-Fi アダプターでよく使われるポート (ELM327 互換 35000・23・3000 など、ENET (HSFZ) 6801) */
+        val WIFI_PORTS = listOf(35000, 6801, 23, 3000, 8080, 80, 1234, 5000, 6811, 10000)
     }
 }

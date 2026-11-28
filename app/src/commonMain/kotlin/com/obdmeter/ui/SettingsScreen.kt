@@ -95,9 +95,38 @@ fun SettingsScreen(vm: MainViewModel, onBack: () -> Unit, onOpenCustomPids: () -
                 RadioRow(t.label, null, s.connectionType == t) { vm.updateSettings { it.copy(connectionType = t) } }
             }
 
-            Section("USB アダプター")
+            if (s.connectionType == ConnectionType.WIFI) {
+                Section("Wi-Fi アダプター")
+                Text(
+                    "端末の Wi-Fi を、アダプターが出しているアクセスポイント (MHD の場合は MHD_… など) につないでから接続します。" +
+                        "アダプターの Wi-Fi はインターネットにつながらないので、「インターネットに接続されていません」と出ても接続したままにしてください。" +
+                        "通信のしかたがアダプターによって違うので、まずは「接続テスト」で、どのポートが応答するかを調べてください。",
+                    color = GaugeColors.SubText, fontSize = 12.sp,
+                )
+                var host by remember(s.wifiHost) { mutableStateOf(s.wifiHost) }
+                var port by remember(s.wifiPort) { mutableStateOf(s.wifiPort.toString()) }
+                OutlinedTextField(
+                    value = host,
+                    onValueChange = { v -> host = v.filter { it.isDigit() || it == '.' }; vm.updateSettings { it.copy(wifiHost = host) } },
+                    label = { Text("接続先の IP (空欄 = Wi-Fi のゲートウェイ)") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                )
+                OutlinedTextField(
+                    value = port,
+                    onValueChange = { v ->
+                        port = v.filter(Char::isDigit).take(5)
+                        port.toIntOrNull()?.takeIf { it in 1..65535 }?.let { p -> vm.updateSettings { it.copy(wifiPort = p) } }
+                    },
+                    label = { Text("ポート (ELM327 互換は 35000 が多い)") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                )
+            }
+
+            Section(if (s.connectionType == ConnectionType.WIFI) "アダプターの通信のしかた" else "USB アダプター")
             UsbAdapter.entries.forEach { a ->
-                RadioRow(a.label, a.detail, s.usbAdapter == a, enabled = s.connectionType == ConnectionType.USB) {
+                RadioRow(a.label, a.detail, s.usbAdapter == a, enabled = s.connectionType != ConnectionType.SIMULATOR) {
                     vm.updateSettings { it.copy(usbAdapter = a) }
                 }
             }

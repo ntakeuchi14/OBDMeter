@@ -27,6 +27,8 @@ class DataStoreRepository(private val context: Context) : Repository {
         val ELM_PROTOCOL = stringPreferencesKey("elm_protocol")
         val ELM_HINT = booleanPreferencesKey("elm_hint")
         val DCAN_TARGET = intPreferencesKey("dcan_target")
+        val WIFI_HOST = stringPreferencesKey("wifi_host")
+        val WIFI_PORT = intPreferencesKey("wifi_port")
         val DCAN_ECHO = booleanPreferencesKey("dcan_echo")
         val AUTO_RECONNECT = booleanPreferencesKey("auto_reconnect")
         val AUTO_CONNECT = booleanPreferencesKey("auto_connect")
@@ -102,6 +104,8 @@ class DataStoreRepository(private val context: Context) : Repository {
             p[Keys.ELM_PROTOCOL] = s.elmProtocol
             p[Keys.ELM_HINT] = s.elmSingleResponseHint
             p[Keys.DCAN_TARGET] = s.dcanTargetAddress
+            p[Keys.WIFI_HOST] = s.wifiHost
+            p[Keys.WIFI_PORT] = s.wifiPort
             p[Keys.DCAN_ECHO] = s.dcanEcho
             p[Keys.AUTO_RECONNECT] = s.autoReconnect
             p[Keys.AUTO_CONNECT] = s.autoConnect
@@ -145,6 +149,8 @@ class DataStoreRepository(private val context: Context) : Repository {
             elmProtocol = this[Keys.ELM_PROTOCOL] ?: d.elmProtocol,
             elmSingleResponseHint = this[Keys.ELM_HINT] ?: d.elmSingleResponseHint,
             dcanTargetAddress = this[Keys.DCAN_TARGET] ?: d.dcanTargetAddress,
+            wifiHost = this[Keys.WIFI_HOST] ?: d.wifiHost,
+            wifiPort = this[Keys.WIFI_PORT] ?: d.wifiPort,
             dcanEcho = this[Keys.DCAN_ECHO] ?: d.dcanEcho,
             autoReconnect = this[Keys.AUTO_RECONNECT] ?: d.autoReconnect,
             autoConnect = this[Keys.AUTO_CONNECT] ?: d.autoConnect,

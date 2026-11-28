@@ -8,6 +8,7 @@ import kotlinx.serialization.Serializable
 enum class ConnectionType(val label: String) {
     SIMULATOR("シミュレーター (車なしで動作確認)"),
     USB("USB 接続"),
+    WIFI("Wi-Fi 接続 (MHD の Wi-Fi アダプターなど)"),
 }
 
 /** USB で使うアダプターの種類 (設定で切り替え) */
@@ -27,6 +28,11 @@ data class AppSettings(
     // --- K+DCAN ---
     val dcanTargetAddress: Int = 0x12,
     val dcanEcho: Boolean = true,
+    // --- Wi-Fi アダプター ---
+    /** 接続先の IP。空 = つながっている Wi-Fi のゲートウェイ (アダプター自身であることが多い) */
+    val wifiHost: String = "",
+    /** 接続先のポート (ELM327 互換の Wi-Fi アダプターは 35000 が多い) */
+    val wifiPort: Int = 35000,
     // --- 共通 ---
     val autoReconnect: Boolean = true,
     /** 接続したときに、メーターの針・数値を最小 → 最大 → 最小と一度振る (スイープ) */

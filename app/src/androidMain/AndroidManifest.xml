@@ -4,6 +4,10 @@
     <!-- USB ホスト (OTG) が無い端末でもインストールはできるようにする -->
     <uses-feature android:name="android.hardware.usb.host" android:required="false" />
 
+    <!-- Wi-Fi アダプター (MHD など) と TCP でつなぐ -->
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+
     <!-- フロート表示 (ほかのアプリやホーム画面の上にメーターを出す) -->
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
